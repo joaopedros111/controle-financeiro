@@ -49,10 +49,7 @@
         <section class="bloco despesas" aria-labelledby="titulo-despesas">
             <div class="bloco-topo">
                 <h2 id="titulo-despesas">Despesas</h2>
-                <div class="acoes">
-                    <button id="gerenciar-categorias" class="btn btn-secundario" type="button">Categorias</button>
-                    <button id="adicionar-despesa" class="btn btn-primario" type="button">+ Adicionar despesa</button>
-                </div>
+                <button id="adicionar-despesa" class="btn btn-primario" type="button">+ Adicionar despesa</button>
             </div>
 
             <div id="lista-despesas"></div>
@@ -67,7 +64,10 @@
 
         <!-- Despesas por categoria -->
         <section class="bloco" aria-labelledby="titulo-categorias">
-            <h2 id="titulo-categorias">Gastos por categoria</h2>
+            <div class="bloco-topo">
+                <h2 id="titulo-categorias">Gastos por categoria</h2>
+                <button id="gerenciar-categorias" class="btn btn-secundario" type="button">Categorias</button>
+            </div>
             <div id="resumo-categorias"></div>
             <p class="vazio" id="vazio-categorias">Os gastos aparecem aqui conforme você lança despesas com valor.</p>
         </section>
@@ -109,11 +109,16 @@
         <section class="bloco" aria-labelledby="titulo-receitas">
             <div class="bloco-topo">
                 <h2 id="titulo-receitas">Receitas</h2>
-                <button id="adicionar-receita" class="btn btn-secundario" type="button">+ Adicionar receita</button>
+                <button id="adicionar-receita" class="btn btn-primario" type="button">+ Adicionar receita</button>
             </div>
 
             <div id="lista-receitas"></div>
             <p class="vazio" id="vazio-receitas">Nenhuma receita neste mês. Adicione seu salário ou outras entradas.</p>
+
+            <div class="total total-receitas">
+                <span>Total</span>
+                <span id="total-receitas-lista">R$ 0,00</span>
+            </div>
         </section>
 
         <!-- Ferramentas -->
@@ -164,6 +169,33 @@
 
             <div class="acoes acoes-dialogo">
                 <button id="cancelar-despesa" class="btn btn-secundario" type="button">Cancelar</button>
+                <button class="btn btn-primario" type="submit">Salvar</button>
+            </div>
+        </form>
+    </dialog>
+
+    <!-- Adicionar / editar receita -->
+    <dialog id="dialogo-receita" aria-labelledby="titulo-dialogo-receita">
+        <form id="form-receita" class="dialogo-corpo" novalidate>
+            <div class="bloco-topo">
+                <h2 id="titulo-dialogo-receita">Adicionar receita</h2>
+                <button id="fechar-receita" class="btn btn-icone" type="button" aria-label="Fechar">×</button>
+            </div>
+
+            <div class="campos">
+                <label class="campo">
+                    <span>Nome</span>
+                    <input id="receita-nome" type="text" maxlength="80" placeholder="Ex.: Salário" autocomplete="off">
+                </label>
+
+                <label class="campo">
+                    <span>Valor (R$)</span>
+                    <input id="receita-valor" type="number" min="0" step="0.01" inputmode="decimal" placeholder="0,00">
+                </label>
+            </div>
+
+            <div class="acoes acoes-dialogo">
+                <button id="cancelar-receita" class="btn btn-secundario" type="button">Cancelar</button>
                 <button class="btn btn-primario" type="submit">Salvar</button>
             </div>
         </form>

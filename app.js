@@ -51,6 +51,14 @@ const ui = {
     listaReceitas: $("lista-receitas"),
     vazioReceitas: $("vazio-receitas"),
     adicionarReceita: $("adicionar-receita"),
+    totalReceitasLista: $("total-receitas-lista"),
+    dialogoReceita: $("dialogo-receita"),
+    formReceita: $("form-receita"),
+    tituloDialogoReceita: $("titulo-dialogo-receita"),
+    receitaNome: $("receita-nome"),
+    receitaValor: $("receita-valor"),
+    fecharReceita: $("fechar-receita"),
+    cancelarReceita: $("cancelar-receita"),
 
     listaDespesas: $("lista-despesas"),
     vazioDespesas: $("vazio-despesas"),
@@ -376,29 +384,26 @@ function criarLinhaReceita(receita) {
         dataset: { id: receita.id }
     });
 
+    const nome = receita.nome.trim() || "Sem nome";
+
     linha.append(
-        criarEl("input", {
-            type: "text",
-            class: "nome-receita",
-            placeholder: "Nome da receita (ex.: Salário)",
-            value: receita.nome,
-            maxLength: 80,
-            "aria-label": "Nome da receita"
-        }),
-        criarEl("input", {
-            type: "number",
+        criarEl("span", { class: "nome-receita", text: nome }),
+        criarEl("span", {
             class: "valor-receita",
-            placeholder: "0,00",
-            min: "0",
-            step: "0.01",
-            value: receita.valor ? String(receita.valor) : "",
-            "aria-label": "Valor da receita"
+            text: formatarMoeda(numero(receita.valor))
+        }),
+        criarEl("button", {
+            type: "button",
+            class: "editar-receita",
+            title: "Editar receita",
+            "aria-label": "Editar receita " + nome,
+            text: "✎"
         }),
         criarEl("button", {
             type: "button",
             class: "remover-receita",
             title: "Remover receita",
-            "aria-label": "Remover receita",
+            "aria-label": "Remover receita " + nome,
             text: "×"
         })
     );
@@ -461,48 +466,13 @@ function criarLinhaDespesa(despesa) {
     return linha;
 }
 
-function criarGrupoDespesas(categoria, itens) {
-
-    const cor = criarEl("span", { class: "cat-cor" });
-    cor.style.background = corDaCategoria(categoria);
-
-    return criarEl("section", { class: "grupo-despesas" }, [
-        criarEl("div", { class: "grupo-topo" }, [
-            criarEl("h3", { class: "cat-nome" }, [cor, categoria])
-        ]),
-        criarEl("div", {}, itens.map(criarLinhaDespesa))
-    ]);
-}
-
 function renderDespesas() {
 
-    const todas = obterMes().despesas;
-    const lista = todas;
+    const despesas = obterMes().despesas;
 
-    // Agrupa por categoria, na ordem em que as categorias foram cadastradas
-    const grupos = new Map();
-
-    estado.categorias.forEach((c) => grupos.set(c, []));
-
-    lista.forEach((d) => {
-        if (!grupos.has(d.categoria)) grupos.set(d.categoria, []);
-        grupos.get(d.categoria).push(d);
-    });
-
-    const blocos = [];
-
-    grupos.forEach((itens, categoria) => {
-        if (itens.length) blocos.push(criarGrupoDespesas(categoria, itens));
-    });
-
-    ui.listaDespesas.replaceChildren(...blocos);
-
-    if (lista.length) {
-        ui.vazioDespesas.hidden = true;
-    } else {
-        ui.vazioDespesas.hidden = false;
-        ui.vazioDespesas.textContent = "Nenhuma despesa neste mês. Use “+ Adicionar despesa” para começar.";
-    }
+    ui.listaDespesas.replaceChildren(...despesas.map(criarLinhaDespesa));
+    ui.vazioDespesas.hidden = despesas.length > 0;
+    ui.vazioDespesas.textContent = "Nenhuma despesa neste mês. Use “+ Adicionar despesa” para começar.";
 }
 
 function corDaCategoria(nome) {
@@ -603,7 +573,8 @@ function atualizarResumo() {
             formatarPercentual(pctDespesa) + " da renda comprometida com despesas.";
     }
 
-    // Linha de total
+    // Linhas de total
+    ui.totalReceitasLista.textContent = formatarMoeda(receita);
     ui.totalRotulo.textContent = "Total";
     ui.totalValor.textContent = formatarMoeda(despesa);
     ui.totalPercentual.textContent =
@@ -624,51 +595,104 @@ function renderTudo() {
 
 /* ---------- Receitas ---------- */
 
-function adicionarReceita() {
+let receitaEmEdicao = null; // id da receita aberta no diálogo (null = nova)
 
-    obterMes().receitas.push({ id: uid(), nome: "", valor: 0 });
+function abrirDialogoReceita(id) {
 
-    renderReceitas();
-    atualizarResumo();
+    const receita = id
+        ? obterMes().receitas.find((r) => r.id === id)
+        : null;
 
-    const campos = ui.listaReceitas.querySelectorAll(".nome-receita");
-    if (campos.length) campos[campos.length - 1].focus();
+    if (id && !receita) return;
+
+    receitaEmEdicao = receita ? receita.id : null;
+
+    ui.tituloDialogoReceita.textContent = receita ? "Editar receita" : "Adicionar receita";
+
+    ui.receitaNome.value = receita ? receita.nome : "";
+    ui.receitaValor.value = receita && receita.valor ? String(receita.valor) : "";
+
+    ui.dialogoReceita.showModal();
+    ui.receitaNome.focus();
 }
 
-ui.adicionarReceita.addEventListener("click", adicionarReceita);
+function salvarReceita() {
 
-ui.listaReceitas.addEventListener("input", (evento) => {
+    const nome = ui.receitaNome.value.trim();
 
-    const alvo = evento.target;
-    const linha = alvo.closest(".receita");
-    if (!linha) return;
-
-    const receita = obterMes().receitas.find((r) => r.id === linha.dataset.id);
-    if (!receita) return;
-
-    if (alvo.classList.contains("nome-receita")) {
-        receita.nome = alvo.value;
-    } else if (alvo.classList.contains("valor-receita")) {
-        receita.valor = Math.max(0, numero(alvo.value));
-    } else {
+    if (!nome) {
+        avisar("Digite o nome da receita.");
+        ui.receitaNome.focus();
         return;
     }
 
+    const dados = {
+        nome,
+        valor: Math.max(0, numero(ui.receitaValor.value))
+    };
+
+    if (receitaEmEdicao) {
+
+        const receita = obterMes().receitas.find((r) => r.id === receitaEmEdicao);
+
+        if (receita) Object.assign(receita, dados);
+
+        avisar("Receita atualizada.");
+
+    } else {
+
+        obterMes().receitas.push({ id: uid(), ...dados });
+
+        avisar("Receita adicionada.");
+    }
+
+    ui.dialogoReceita.close();
+
+    renderReceitas();
     atualizarResumo();
+}
+
+ui.adicionarReceita.addEventListener("click", () => abrirDialogoReceita(null));
+
+ui.formReceita.addEventListener("submit", (evento) => {
+    evento.preventDefault();
+    salvarReceita();
+});
+
+ui.fecharReceita.addEventListener("click", () => ui.dialogoReceita.close());
+ui.cancelarReceita.addEventListener("click", () => ui.dialogoReceita.close());
+
+ui.dialogoReceita.addEventListener("click", (evento) => {
+    // clique no fundo escurecido fecha o diálogo
+    if (evento.target === ui.dialogoReceita) ui.dialogoReceita.close();
 });
 
 ui.listaReceitas.addEventListener("click", (evento) => {
 
-    const botao = evento.target.closest(".remover-receita");
-    if (!botao) return;
+    const editar = evento.target.closest(".editar-receita");
 
-    const id = botao.closest(".receita").dataset.id;
+    if (editar) {
+        abrirDialogoReceita(editar.closest(".receita").dataset.id);
+        return;
+    }
+
+    const remover = evento.target.closest(".remover-receita");
+
+    if (!remover) return;
+
+    const id = remover.closest(".receita").dataset.id;
     const mes = obterMes();
+    const receita = mes.receitas.find((r) => r.id === id);
+
+    if (!receita) return;
+
+    if (!confirm("Remover a receita “" + (receita.nome.trim() || "Sem nome") + "”?")) return;
 
     mes.receitas = mes.receitas.filter((r) => r.id !== id);
 
     renderReceitas();
     atualizarResumo();
+    avisar("Receita removida.");
 });
 
 /* ---------- Despesas ---------- */

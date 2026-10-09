@@ -348,62 +348,37 @@ input::placeholder {
     display: none;
 }
 
-/* ---------- Linhas de receitas e despesas ---------- */
+/* ---------- Linhas de despesas e receitas (mesmo padrão) ---------- */
 
-.receita,
-.total {
-    display: grid;
-    gap: 10px;
-    align-items: center;
-    padding: 10px 0;
-    border-bottom: 1px solid var(--borda);
-}
-
+.despesa,
 .receita {
-    grid-template-columns: 1fr 140px 34px;
-}
-
-.receita input {
-    width: 100%;
-}
-
-/* ---------- Despesas agrupadas por categoria ---------- */
-
-.grupo-despesas {
-    margin-top: 18px;
-}
-
-.grupo-despesas:first-child {
-    margin-top: 4px;
-}
-
-.grupo-topo {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    padding-bottom: 6px;
-    border-bottom: 2px solid var(--borda);
-}
-
-.grupo-topo .cat-nome {
-    margin: 0;
-    font-size: 16px;
-}
-
-.despesa {
     display: grid;
-    grid-template-columns: 24px 1fr auto 110px 34px 34px;
     gap: 10px;
     align-items: center;
     padding: 8px 0;
     border-bottom: 1px solid var(--borda);
 }
 
-.nome-despesa {
+.despesa {
+    grid-template-columns: 24px 1fr auto 110px 34px 34px;
+}
+
+.receita {
+    grid-template-columns: 1fr 130px 34px 34px;
+}
+
+.nome-despesa,
+.nome-receita {
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.valor-despesa,
+.valor-receita {
+    text-align: right;
+    font-weight: 600;
     white-space: nowrap;
 }
 
@@ -421,12 +396,6 @@ input::placeholder {
     color: var(--alerta);
 }
 
-.valor-despesa {
-    text-align: right;
-    font-weight: 600;
-    white-space: nowrap;
-}
-
 .despesa.paga .nome-despesa {
     color: var(--suave);
     text-decoration: line-through;
@@ -434,6 +403,7 @@ input::placeholder {
 
 .editar-despesa,
 .remover-despesa,
+.editar-receita,
 .remover-receita {
     width: 34px;
     height: 34px;
@@ -447,7 +417,8 @@ input::placeholder {
     cursor: pointer;
 }
 
-.editar-despesa:hover {
+.editar-despesa:hover,
+.editar-receita:hover {
     color: var(--primaria);
 }
 
@@ -456,12 +427,21 @@ input::placeholder {
     color: var(--perigo);
 }
 
+/* ---------- Linha de total ---------- */
+
 .total {
+    display: grid;
     grid-template-columns: 1fr auto 70px;
-    border-bottom: none;
+    gap: 10px;
+    align-items: center;
+    padding: 10px 0;
     border-top: 2px solid var(--texto);
     margin-top: 10px;
     font-weight: 700;
+}
+
+.total-receitas {
+    grid-template-columns: 1fr auto;
 }
 
 .total span:nth-child(2),
@@ -633,16 +613,29 @@ dialog::backdrop {
         grid-template-columns: repeat(2, 1fr);
     }
 
-    .despesa {
-        grid-template-columns: 20px 1fr auto auto 28px 28px;
+    .despesa,
+    .receita {
         gap: 6px;
-    }
-
-    .despesa {
         padding: 10px 0;
     }
 
-    .despesa .nome-despesa {
+    .despesa {
+        grid-template-columns: 20px 1fr auto auto 28px 28px;
+    }
+
+    .receita {
+        grid-template-columns: 1fr auto 28px 28px;
+    }
+
+    .editar-despesa,
+    .remover-despesa,
+    .editar-receita,
+    .remover-receita {
+        width: 28px;
+    }
+
+    .despesa .nome-despesa,
+    .receita .nome-receita {
         white-space: normal;
         overflow-wrap: anywhere;
         line-height: 1.25;
@@ -656,10 +649,6 @@ dialog::backdrop {
     .despesa .situacao::before {
         content: "●";
         font-size: 14px;
-    }
-
-    .receita {
-        grid-template-columns: 1fr 110px 34px;
     }
 
     .resumo,
