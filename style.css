@@ -349,7 +349,6 @@ input::placeholder {
 /* ---------- Linhas de receitas e despesas ---------- */
 
 .receita,
-.despesa,
 .total {
     display: grid;
     gap: 10px;
@@ -362,28 +361,86 @@ input::placeholder {
     grid-template-columns: 1fr 140px 34px;
 }
 
-.despesa {
-    grid-template-columns: 24px 1fr 150px 120px 60px 34px;
-}
-
-.receita input,
-.despesa input[type="text"],
-.despesa input[type="number"],
-.despesa select {
+.receita input {
     width: 100%;
 }
 
-.despesa.paga .nome-despesa {
-    text-decoration: line-through;
-    color: var(--suave);
+/* ---------- Despesas agrupadas por categoria ---------- */
+
+.grupo-despesas {
+    margin-top: 18px;
 }
 
-.percentual-despesa {
+.grupo-despesas:first-child {
+    margin-top: 4px;
+}
+
+.grupo-topo {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding-bottom: 6px;
+    border-bottom: 2px solid var(--borda);
+}
+
+.grupo-topo .cat-nome {
+    margin: 0;
+    font-size: 16px;
+}
+
+.grupo-total {
+    font-size: 16px;
+    font-weight: 700;
+}
+
+.despesa {
+    display: grid;
+    grid-template-columns: 24px 1fr auto auto auto;
+    gap: 10px;
+    align-items: center;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--borda);
+}
+
+.despesa-info {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.nome-despesa {
+    font-weight: 600;
+    overflow-wrap: anywhere;
+}
+
+.despesa-detalhe {
+    color: var(--suave);
+    font-size: 13px;
+}
+
+.situacao-paga {
+    color: var(--ok);
+    font-weight: 600;
+}
+
+.situacao-pendente {
+    color: var(--alerta);
+    font-weight: 600;
+}
+
+.valor-despesa {
     text-align: right;
-    color: var(--suave);
-    font-size: 14px;
+    font-weight: 600;
+    white-space: nowrap;
 }
 
+.despesa.paga .nome-despesa {
+    color: var(--suave);
+    text-decoration: line-through;
+}
+
+.editar-despesa,
 .remover-despesa,
 .remover-receita {
     width: 34px;
@@ -396,6 +453,10 @@ input::placeholder {
     border: none;
     border-radius: 6px;
     cursor: pointer;
+}
+
+.editar-despesa:hover {
+    color: var(--primaria);
 }
 
 .remover-despesa:hover,
@@ -522,6 +583,39 @@ dialog::backdrop {
     flex: 1;
 }
 
+/* ---------- Diálogo de despesa ---------- */
+
+.campos {
+    display: grid;
+    gap: 14px;
+    margin-bottom: 18px;
+}
+
+.campo {
+    display: grid;
+    gap: 4px;
+    font-size: 14px;
+    color: var(--suave);
+}
+
+.campo input,
+.campo select {
+    width: 100%;
+    color: var(--texto);
+    font-size: 16px;
+}
+
+.campo-check {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+}
+
+.acoes-dialogo {
+    justify-content: flex-end;
+}
+
 /* ---------- Aviso ---------- */
 
 .aviso {
@@ -559,26 +653,13 @@ dialog::backdrop {
     }
 
     .despesa {
-        grid-template-columns: 24px 1fr 1fr 34px;
-        row-gap: 8px;
-        padding: 12px 0;
+        grid-template-columns: 24px 1fr auto auto auto;
+        gap: 8px;
     }
 
-    .despesa .nome-despesa {
-        grid-column: 2 / 4;
-    }
-
-    .despesa .categoria-despesa {
-        grid-column: 1 / 3;
-    }
-
-    .despesa .valor-despesa {
-        grid-column: 3 / 5;
-    }
-
-    .despesa .percentual-despesa {
-        grid-column: 1 / -1;
-        font-size: 13px;
+    .editar-despesa,
+    .remover-despesa {
+        width: 30px;
     }
 
     .receita {

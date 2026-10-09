@@ -59,6 +59,15 @@ const ui = {
     vazioDespesas: $("vazio-despesas"),
     adicionarDespesa: $("adicionar-despesa"),
     gerenciarCategorias: $("gerenciar-categorias"),
+    dialogoDespesa: $("dialogo-despesa"),
+    formDespesa: $("form-despesa"),
+    tituloDialogoDespesa: $("titulo-dialogo-despesa"),
+    despesaNome: $("despesa-nome"),
+    despesaCategoria: $("despesa-categoria"),
+    despesaValor: $("despesa-valor"),
+    despesaPago: $("despesa-pago"),
+    fecharDespesa: $("fechar-despesa"),
+    cancelarDespesa: $("cancelar-despesa"),
     totalRotulo: $("total-rotulo"),
     totalValor: $("total-valor"),
     totalPercentual: $("total-percentual"),
@@ -446,53 +455,45 @@ function criarLinhaDespesa(despesa) {
         dataset: { id: despesa.id }
     });
 
-    const categorias = estado.categorias.includes(despesa.categoria)
-        ? estado.categorias
-        : [...estado.categorias, despesa.categoria];
+    const situacao = criarEl("span", {
+        class: despesa.pago ? "situacao situacao-paga" : "situacao situacao-pendente",
+        text: despesa.pago ? "Pago" : "A pagar"
+    });
 
     linha.append(
         criarEl("input", {
             type: "checkbox",
             class: "pago-despesa",
             checked: despesa.pago,
-            title: "Marcar como paga",
+            title: despesa.pago ? "Marcar como a pagar" : "Marcar como paga",
             "aria-label": "Despesa paga"
         }),
-        criarEl("input", {
-            type: "text",
-            class: "nome-despesa",
-            placeholder: "Nome da despesa",
-            value: despesa.nome,
-            maxLength: 80,
-            "aria-label": "Nome da despesa"
-        }),
-        criarEl("select", {
-            class: "categoria-despesa",
-            "aria-label": "Categoria"
-        }, categorias.map((c) => criarEl("option", {
-            value: c,
-            text: c,
-            selected: c === despesa.categoria
-        }))),
-        criarEl("input", {
-            type: "number",
-            class: "valor-despesa",
-            placeholder: "0,00",
-            min: "0",
-            step: "0.01",
-            value: despesa.valor ? String(despesa.valor) : "",
-            "aria-label": "Valor da despesa"
-        }),
+        criarEl("div", { class: "despesa-info" }, [
+            criarEl("span", {
+                class: "nome-despesa",
+                text: despesa.nome.trim() || "Sem nome"
+            }),
+            criarEl("span", { class: "despesa-detalhe" }, [
+                despesa.categoria + " · ",
+                situacao
+            ])
+        ]),
         criarEl("span", {
-            class: "percentual-despesa",
-            title: "Percentual da renda",
-            text: "0,0%"
+            class: "valor-despesa",
+            text: formatarMoeda(numero(despesa.valor))
+        }),
+        criarEl("button", {
+            type: "button",
+            class: "editar-despesa",
+            title: "Editar despesa",
+            "aria-label": "Editar despesa " + despesa.nome,
+            text: "✎"
         }),
         criarEl("button", {
             type: "button",
             class: "remover-despesa",
             title: "Remover despesa",
-            "aria-label": "Remover despesa",
+            "aria-label": "Remover despesa " + despesa.nome,
             text: "×"
         })
     );
@@ -500,12 +501,42 @@ function criarLinhaDespesa(despesa) {
     return linha;
 }
 
+function criarGrupoDespesas(categoria, itens) {
+
+    const cor = criarEl("span", { class: "cat-cor" });
+    cor.style.background = corDaCategoria(categoria);
+
+    return criarEl("section", { class: "grupo-despesas" }, [
+        criarEl("div", { class: "grupo-topo" }, [
+            criarEl("h3", { class: "cat-nome" }, [cor, categoria]),
+            criarEl("span", { class: "grupo-total", text: formatarMoeda(somar(itens)) })
+        ]),
+        criarEl("div", {}, itens.map(criarLinhaDespesa))
+    ]);
+}
+
 function renderDespesas() {
 
     const todas = obterMes().despesas;
     const lista = despesasFiltradas();
 
-    ui.listaDespesas.replaceChildren(...lista.map(criarLinhaDespesa));
+    // Agrupa por categoria, na ordem em que as categorias foram cadastradas
+    const grupos = new Map();
+
+    estado.categorias.forEach((c) => grupos.set(c, []));
+
+    lista.forEach((d) => {
+        if (!grupos.has(d.categoria)) grupos.set(d.categoria, []);
+        grupos.get(d.categoria).push(d);
+    });
+
+    const blocos = [];
+
+    grupos.forEach((itens, categoria) => {
+        if (itens.length) blocos.push(criarGrupoDespesas(categoria, itens));
+    });
+
+    ui.listaDespesas.replaceChildren(...blocos);
 
     if (lista.length) {
         ui.vazioDespesas.hidden = true;
@@ -615,15 +646,6 @@ function atualizarResumo() {
             formatarPercentual(pctDespesa) + " da renda comprometida com despesas.";
     }
 
-    // Percentual de cada linha visível
-    const porId = new Map(mes.despesas.map((d) => [d.id, d]));
-
-    ui.listaDespesas.querySelectorAll(".despesa").forEach((linha) => {
-        const d = porId.get(linha.dataset.id);
-        const pct = d && receita > 0 ? (numero(d.valor) / receita) * 100 : 0;
-        linha.querySelector(".percentual-despesa").textContent = formatarPercentual(pct);
-    });
-
     // Linha de total (respeita os filtros)
     const visiveis = despesasFiltradas();
     const totalVisivel = somar(visiveis);
@@ -700,94 +722,139 @@ ui.listaReceitas.addEventListener("click", (evento) => {
 
 /* ---------- Despesas ---------- */
 
-function adicionarDespesa() {
+let despesaEmEdicao = null; // id da despesa aberta no diálogo (null = nova)
 
-    if (filtrosAtivos()) {
-        limparFiltros();
-    }
+function abrirDialogoDespesa(id) {
 
-    obterMes().despesas.push({
-        id: uid(),
-        nome: "",
-        categoria: CATEGORIA_FIXA,
-        valor: 0,
-        pago: false
-    });
+    const despesa = id
+        ? obterMes().despesas.find((d) => d.id === id)
+        : null;
 
-    renderDespesas();
-    atualizarResumo();
+    if (id && !despesa) return;
 
-    const campos = ui.listaDespesas.querySelectorAll(".nome-despesa");
-    if (campos.length) campos[campos.length - 1].focus();
+    despesaEmEdicao = despesa ? despesa.id : null;
+
+    const categorias = despesa && !estado.categorias.includes(despesa.categoria)
+        ? [...estado.categorias, despesa.categoria]
+        : estado.categorias;
+
+    ui.despesaCategoria.replaceChildren(
+        ...categorias.map((c) => criarEl("option", { value: c, text: c }))
+    );
+
+    ui.tituloDialogoDespesa.textContent = despesa ? "Editar despesa" : "Adicionar despesa";
+
+    ui.despesaNome.value = despesa ? despesa.nome : "";
+    ui.despesaCategoria.value = despesa ? despesa.categoria : CATEGORIA_FIXA;
+    ui.despesaValor.value = despesa && despesa.valor ? String(despesa.valor) : "";
+    ui.despesaPago.checked = despesa ? despesa.pago : false;
+
+    ui.dialogoDespesa.showModal();
+    ui.despesaNome.focus();
 }
 
-ui.adicionarDespesa.addEventListener("click", adicionarDespesa);
+function salvarDespesa() {
 
-ui.listaDespesas.addEventListener("input", (evento) => {
+    const nome = ui.despesaNome.value.trim();
 
-    const alvo = evento.target;
-    const linha = alvo.closest(".despesa");
-    if (!linha) return;
-
-    const despesa = obterMes().despesas.find((d) => d.id === linha.dataset.id);
-    if (!despesa) return;
-
-    if (alvo.classList.contains("nome-despesa")) {
-        despesa.nome = alvo.value;
-    } else if (alvo.classList.contains("valor-despesa")) {
-        despesa.valor = Math.max(0, numero(alvo.value));
-    } else {
+    if (!nome) {
+        avisar("Digite o nome da despesa.");
+        ui.despesaNome.focus();
         return;
     }
 
+    const dados = {
+        nome,
+        categoria: ui.despesaCategoria.value || CATEGORIA_FIXA,
+        valor: Math.max(0, numero(ui.despesaValor.value)),
+        pago: ui.despesaPago.checked
+    };
+
+    if (despesaEmEdicao) {
+
+        const despesa = obterMes().despesas.find((d) => d.id === despesaEmEdicao);
+
+        if (despesa) Object.assign(despesa, dados);
+
+        avisar("Despesa atualizada.");
+
+    } else {
+
+        if (filtrosAtivos()) limparFiltros();
+
+        obterMes().despesas.push({ id: uid(), ...dados });
+
+        avisar("Despesa adicionada.");
+    }
+
+    ui.dialogoDespesa.close();
+
+    renderDespesas();
     atualizarResumo();
+}
+
+ui.adicionarDespesa.addEventListener("click", () => abrirDialogoDespesa(null));
+
+ui.formDespesa.addEventListener("submit", (evento) => {
+    evento.preventDefault();
+    salvarDespesa();
+});
+
+ui.fecharDespesa.addEventListener("click", () => ui.dialogoDespesa.close());
+ui.cancelarDespesa.addEventListener("click", () => ui.dialogoDespesa.close());
+
+ui.dialogoDespesa.addEventListener("click", (evento) => {
+    // clique no fundo escurecido fecha o diálogo
+    if (evento.target === ui.dialogoDespesa) ui.dialogoDespesa.close();
 });
 
 ui.listaDespesas.addEventListener("change", (evento) => {
 
     const alvo = evento.target;
-    const linha = alvo.closest(".despesa");
-    if (!linha) return;
 
+    if (!alvo.classList.contains("pago-despesa")) return;
+
+    const linha = alvo.closest(".despesa");
     const despesa = obterMes().despesas.find((d) => d.id === linha.dataset.id);
+
     if (!despesa) return;
 
-    if (alvo.classList.contains("categoria-despesa")) {
+    despesa.pago = alvo.checked;
 
-        despesa.categoria = alvo.value;
-
-        if (filtros.categoria) {
-            renderDespesas();
-        }
-
-    } else if (alvo.classList.contains("pago-despesa")) {
-
-        despesa.pago = alvo.checked;
-        linha.classList.toggle("paga", despesa.pago);
-
-        if (filtros.status) {
-            renderDespesas();
-        }
-
-    } else {
-        return;
-    }
-
+    renderDespesas();
     atualizarResumo();
+
+    // mantém o foco no mesmo item depois de redesenhar a lista
+    const novaLinha = ui.listaDespesas.querySelector('.despesa[data-id="' + despesa.id + '"] .pago-despesa');
+    if (novaLinha) novaLinha.focus();
 });
 
 ui.listaDespesas.addEventListener("click", (evento) => {
 
-    const botao = evento.target.closest(".remover-despesa");
-    if (!botao) return;
+    const editar = evento.target.closest(".editar-despesa");
 
-    const id = botao.closest(".despesa").dataset.id;
+    if (editar) {
+        abrirDialogoDespesa(editar.closest(".despesa").dataset.id);
+        return;
+    }
+
+    const remover = evento.target.closest(".remover-despesa");
+
+    if (!remover) return;
+
+    const id = remover.closest(".despesa").dataset.id;
     const mes = obterMes();
+    const despesa = mes.despesas.find((d) => d.id === id);
+
+    if (!despesa) return;
+
+    if (!confirm("Remover a despesa “" + (despesa.nome.trim() || "Sem nome") + "”?")) return;
 
     mes.despesas = mes.despesas.filter((d) => d.id !== id);
 
     renderDespesas();
     atualizarResumo();
+    avisar("Despesa removida.");
 });
 
 /* ---------- Filtros ---------- */

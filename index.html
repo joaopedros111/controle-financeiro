@@ -44,6 +44,48 @@
             <button id="hoje" class="btn btn-secundario" type="button">Mês atual</button>
         </nav>
 
+        <!-- Despesas -->
+        <section class="bloco despesas" aria-labelledby="titulo-despesas">
+            <div class="bloco-topo">
+                <h2 id="titulo-despesas">Despesas</h2>
+                <div class="acoes">
+                    <button id="gerenciar-categorias" class="btn btn-secundario" type="button">Categorias</button>
+                    <button id="adicionar-despesa" class="btn btn-primario" type="button">+ Adicionar despesa</button>
+                </div>
+            </div>
+
+            <div class="filtros">
+                <label class="sr-only" for="busca">Buscar despesa</label>
+                <input id="busca" type="search" placeholder="Buscar por nome">
+
+                <label class="sr-only" for="filtro-categoria">Filtrar por categoria</label>
+                <select id="filtro-categoria"></select>
+
+                <label class="sr-only" for="filtro-status">Filtrar por situação</label>
+                <select id="filtro-status">
+                    <option value="">Todas as situações</option>
+                    <option value="pendente">A pagar</option>
+                    <option value="pago">Pagas</option>
+                </select>
+            </div>
+
+            <div id="lista-despesas"></div>
+            <p class="vazio" id="vazio-despesas"></p>
+
+            <div class="total">
+                <span id="total-rotulo">Total</span>
+                <span id="total-valor">R$ 0,00</span>
+                <span id="total-percentual">0,0%</span>
+            </div>
+        </section>
+
+        <!-- Despesas por categoria -->
+        <section class="bloco" aria-labelledby="titulo-categorias">
+            <h2 id="titulo-categorias">Gastos por categoria</h2>
+            <div id="resumo-categorias"></div>
+            <p class="vazio" id="vazio-categorias">Os gastos aparecem aqui conforme você lança despesas com valor.</p>
+        </section>
+
         <!-- Resumo do mês -->
         <section class="resumo" aria-labelledby="titulo-resumo">
             <h2 id="titulo-resumo" class="sr-only">Resumo do mês</h2>
@@ -88,48 +130,6 @@
             <p class="vazio" id="vazio-receitas">Nenhuma receita neste mês. Adicione seu salário ou outras entradas.</p>
         </section>
 
-        <!-- Despesas -->
-        <section class="bloco despesas" aria-labelledby="titulo-despesas">
-            <div class="bloco-topo">
-                <h2 id="titulo-despesas">Despesas</h2>
-                <div class="acoes">
-                    <button id="gerenciar-categorias" class="btn btn-secundario" type="button">Categorias</button>
-                    <button id="adicionar-despesa" class="btn btn-primario" type="button">+ Adicionar despesa</button>
-                </div>
-            </div>
-
-            <div class="filtros">
-                <label class="sr-only" for="busca">Buscar despesa</label>
-                <input id="busca" type="search" placeholder="Buscar por nome">
-
-                <label class="sr-only" for="filtro-categoria">Filtrar por categoria</label>
-                <select id="filtro-categoria"></select>
-
-                <label class="sr-only" for="filtro-status">Filtrar por situação</label>
-                <select id="filtro-status">
-                    <option value="">Todas as situações</option>
-                    <option value="pendente">A pagar</option>
-                    <option value="pago">Pagas</option>
-                </select>
-            </div>
-
-            <div id="lista-despesas"></div>
-            <p class="vazio" id="vazio-despesas"></p>
-
-            <div class="total">
-                <span id="total-rotulo">Total</span>
-                <span id="total-valor">R$ 0,00</span>
-                <span id="total-percentual">0,0%</span>
-            </div>
-        </section>
-
-        <!-- Despesas por categoria -->
-        <section class="bloco" aria-labelledby="titulo-categorias">
-            <h2 id="titulo-categorias">Gastos por categoria</h2>
-            <div id="resumo-categorias"></div>
-            <p class="vazio" id="vazio-categorias">Os gastos aparecem aqui conforme você lança despesas com valor.</p>
-        </section>
-
         <!-- Ferramentas -->
         <section class="bloco" aria-labelledby="titulo-ferramentas">
             <h2 id="titulo-ferramentas">Ferramentas</h2>
@@ -145,6 +145,43 @@
         </section>
 
     </main>
+
+    <!-- Adicionar / editar despesa -->
+    <dialog id="dialogo-despesa" aria-labelledby="titulo-dialogo-despesa">
+        <form id="form-despesa" class="dialogo-corpo" novalidate>
+            <div class="bloco-topo">
+                <h2 id="titulo-dialogo-despesa">Adicionar despesa</h2>
+                <button id="fechar-despesa" class="btn btn-icone" type="button" aria-label="Fechar">×</button>
+            </div>
+
+            <div class="campos">
+                <label class="campo">
+                    <span>Nome</span>
+                    <input id="despesa-nome" type="text" maxlength="80" placeholder="Ex.: Aluguel" autocomplete="off">
+                </label>
+
+                <label class="campo">
+                    <span>Categoria</span>
+                    <select id="despesa-categoria"></select>
+                </label>
+
+                <label class="campo">
+                    <span>Valor (R$)</span>
+                    <input id="despesa-valor" type="number" min="0" step="0.01" inputmode="decimal" placeholder="0,00">
+                </label>
+
+                <label class="campo-check">
+                    <input id="despesa-pago" type="checkbox">
+                    <span>Já está paga</span>
+                </label>
+            </div>
+
+            <div class="acoes acoes-dialogo">
+                <button id="cancelar-despesa" class="btn btn-secundario" type="button">Cancelar</button>
+                <button class="btn btn-primario" type="submit">Salvar</button>
+            </div>
+        </form>
+    </dialog>
 
     <!-- Gerenciar categorias -->
     <dialog id="dialogo-categorias" aria-labelledby="titulo-dialogo">
