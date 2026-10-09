@@ -73,6 +73,19 @@ const ui = {
     despesaPago: $("despesa-pago"),
     fecharDespesa: $("fechar-despesa"),
     cancelarDespesa: $("cancelar-despesa"),
+    campoTipo: $("campo-tipo"),
+    despesaTipo: $("despesa-tipo"),
+    dicaTipo: $("dica-tipo"),
+    campoParcelas: $("campo-parcelas"),
+    despesaParcelas: $("despesa-parcelas"),
+    campoPropagar: $("campo-propagar"),
+    despesaPropagar: $("despesa-propagar"),
+    textoPropagar: $("texto-propagar"),
+    dialogoSerie: $("dialogo-serie"),
+    textoSerie: $("texto-serie"),
+    serieCancelar: $("serie-cancelar"),
+    serieSoEste: $("serie-so-este"),
+    serieProximos: $("serie-proximos"),
     totalRotulo: $("total-rotulo"),
     totalValor: $("total-valor"),
     totalPercentual: $("total-percentual"),
@@ -145,14 +158,29 @@ function criarEl(tag, props = {}, filhos = []) {
 
 let temporizadorAviso = null;
 
-function avisar(mensagem) {
-    ui.aviso.textContent = mensagem;
+function avisar(mensagem, acao) {
+
+    ui.aviso.replaceChildren(criarEl("span", { text: mensagem }));
+    ui.aviso.classList.toggle("com-acao", Boolean(acao));
+
+    if (acao) {
+        ui.aviso.append(criarEl("button", {
+            type: "button",
+            class: "aviso-acao",
+            text: acao.rotulo,
+            onclick: () => {
+                ui.aviso.classList.remove("visivel");
+                acao.executar();
+            }
+        }));
+    }
+
     ui.aviso.classList.add("visivel");
 
     clearTimeout(temporizadorAviso);
     temporizadorAviso = setTimeout(() => {
         ui.aviso.classList.remove("visivel");
-    }, 3000);
+    }, acao ? 7000 : 3000);
 }
 
 /* ---------- Estado e persistência ---------- */
@@ -202,13 +230,24 @@ function normalizarEstado(bruto) {
                     nome: String(r.nome || ""),
                     valor: Math.max(0, numero(r.valor))
                 })),
-                despesas: objetosValidos(mes.despesas).map((d) => ({
-                    id: String(d.id || uid()),
-                    nome: String(d.nome || ""),
-                    categoria: String(d.categoria || CATEGORIA_FIXA).trim() || CATEGORIA_FIXA,
-                    valor: Math.max(0, numero(d.valor)),
-                    pago: Boolean(d.pago)
-                }))
+                despesas: objetosValidos(mes.despesas).map((d) => {
+
+                    const atual = Number(d.parcela && d.parcela.atual);
+                    const total = Number(d.parcela && d.parcela.total);
+                    const parcelaValida = Number.isInteger(atual) && Number.isInteger(total)
+                        && atual >= 1 && total >= 2 && atual <= total;
+
+                    return {
+                        id: String(d.id || uid()),
+                        nome: String(d.nome || ""),
+                        categoria: String(d.categoria || CATEGORIA_FIXA).trim() || CATEGORIA_FIXA,
+                        valor: Math.max(0, numero(d.valor)),
+                        pago: Boolean(d.pago),
+                        fixa: Boolean(d.fixa),
+                        serie: d.serie ? String(d.serie) : null,
+                        parcela: parcelaValida ? { atual, total } : null
+                    };
+                })
             };
         });
     }
@@ -419,6 +458,27 @@ function renderReceitas() {
     ui.vazioReceitas.hidden = receitas.length > 0;
 }
 
+function marcaDaDespesa(despesa) {
+
+    if (despesa.parcela) {
+        return [criarEl("span", {
+            class: "marca",
+            title: "Parcela " + despesa.parcela.atual + " de " + despesa.parcela.total,
+            text: despesa.parcela.atual + "/" + despesa.parcela.total
+        })];
+    }
+
+    if (despesa.fixa) {
+        return [criarEl("span", {
+            class: "marca",
+            title: "Despesa fixa: se repete todo mês",
+            text: "Fixa"
+        })];
+    }
+
+    return [];
+}
+
 function criarLinhaDespesa(despesa) {
 
     const linha = criarEl("div", {
@@ -434,10 +494,13 @@ function criarLinhaDespesa(despesa) {
             title: despesa.pago ? "Marcar como a pagar" : "Marcar como paga",
             "aria-label": "Despesa paga"
         }),
-        criarEl("span", {
-            class: "nome-despesa",
-            text: despesa.nome.trim() || "Sem nome"
-        }),
+        criarEl("div", { class: "despesa-nome" }, [
+            criarEl("span", {
+                class: "nome-despesa",
+                text: despesa.nome.trim() || "Sem nome"
+            }),
+            ...marcaDaDespesa(despesa)
+        ]),
         criarEl("span", {
             class: despesa.pago ? "situacao situacao-paga" : "situacao situacao-pendente",
             title: despesa.pago ? "Despesa paga" : "Despesa a pagar",
@@ -593,6 +656,60 @@ function renderTudo() {
     atualizarResumo();
 }
 
+/* ---------- Remover com desfazer ---------- */
+
+let ultimaRemocao = null; // o que foi removido por último, para o botão "Desfazer"
+
+// selecao: lista de { chave, item } (chave = "AAAA-MM") de uma mesma lista
+// ("receitas" ou "despesas").
+function removerSelecao(lista, selecao, mensagem) {
+
+    ultimaRemocao = selecao.map(({ chave, item }) => ({
+        chave,
+        lista,
+        item,
+        indice: estado.meses[chave][lista].indexOf(item)
+    }));
+
+    selecao.forEach(({ chave }) => {
+        const mes = estado.meses[chave];
+        const apagar = new Set(selecao.filter((s) => s.chave === chave).map((s) => s.item));
+        mes[lista] = mes[lista].filter((x) => !apagar.has(x));
+    });
+
+    renderReceitas();
+    renderDespesas();
+    atualizarResumo();
+
+    avisar(mensagem, { rotulo: "Desfazer", executar: desfazerRemocao });
+}
+
+function desfazerRemocao() {
+
+    if (!ultimaRemocao) return;
+
+    // do menor índice para o maior, para cada item voltar à posição original
+    [...ultimaRemocao]
+        .sort((a, b) => a.indice - b.indice)
+        .forEach(({ chave, lista, item, indice }) => {
+
+            if (!estado.meses[chave]) {
+                estado.meses[chave] = { receitas: [], despesas: [] };
+            }
+
+            const destino = estado.meses[chave][lista];
+            destino.splice(Math.min(indice, destino.length), 0, item);
+        });
+
+    ultimaRemocao = null;
+
+    renderReceitas();
+    renderDespesas();
+    atualizarResumo();
+
+    avisar("Exclusão desfeita.");
+}
+
 /* ---------- Receitas ---------- */
 
 let receitaEmEdicao = null; // id da receita aberta no diálogo (null = nova)
@@ -681,23 +798,75 @@ ui.listaReceitas.addEventListener("click", (evento) => {
     if (!remover) return;
 
     const id = remover.closest(".receita").dataset.id;
-    const mes = obterMes();
-    const receita = mes.receitas.find((r) => r.id === id);
+    const receita = obterMes().receitas.find((r) => r.id === id);
 
     if (!receita) return;
 
-    if (!confirm("Remover a entrada “" + (receita.nome.trim() || "Sem nome") + "”?")) return;
-
-    mes.receitas = mes.receitas.filter((r) => r.id !== id);
-
-    renderReceitas();
-    atualizarResumo();
-    avisar("Entrada removida.");
+    removerSelecao(
+        "receitas",
+        [{ chave: chaveMes(periodo.ano, periodo.mes), item: receita }],
+        "Entrada removida."
+    );
 });
 
 /* ---------- Despesas ---------- */
 
+const MAX_PARCELAS = 60;
+const MESES_DA_FIXA = 12; // meses lançados de uma vez ao criar uma despesa fixa
+
 let despesaEmEdicao = null; // id da despesa aberta no diálogo (null = nova)
+let despesaParaRemover = null; // despesa fixa/parcelada aguardando a escolha do usuário
+
+// Devolve a chave "AAAA-MM" do período atual deslocado em n meses
+// (ou null se sair do intervalo de anos aceito).
+function chaveDepois(n) {
+
+    const indice = periodo.ano * 12 + (periodo.mes - 1) + n;
+    const ano = Math.floor(indice / 12);
+    const mes = (indice % 12) + 1;
+
+    return ano > 2100 ? null : chaveMes(ano, mes);
+}
+
+function chaveAtual() {
+    return chaveMes(periodo.ano, periodo.mes);
+}
+
+// Todas as despesas de uma série (fixa ou parcelada), em ordem de mês.
+function itensDaSerie(serie) {
+
+    const itens = [];
+
+    Object.entries(estado.meses).forEach(([chave, mes]) => {
+        mes.despesas.forEach((item) => {
+            if (item.serie === serie) itens.push({ chave, item });
+        });
+    });
+
+    return itens.sort((a, b) => (a.chave < b.chave ? -1 : a.chave > b.chave ? 1 : 0));
+}
+
+function proximosDaSerie(despesa) {
+    return itensDaSerie(despesa.serie).filter(({ chave }) => chave > chaveAtual());
+}
+
+function mesDaChave(chave) {
+    if (!estado.meses[chave]) {
+        estado.meses[chave] = { receitas: [], despesas: [] };
+    }
+    return estado.meses[chave];
+}
+
+function atualizarCamposDoTipo(novo) {
+
+    const tipo = ui.despesaTipo.value;
+
+    ui.campoParcelas.hidden = !(novo && tipo === "parcelada");
+
+    ui.dicaTipo.textContent = tipo === "fixa"
+        ? "Entra neste mês e nos " + (MESES_DA_FIXA - 1) + " seguintes."
+        : "";
+}
 
 function abrirDialogoDespesa(id) {
 
@@ -724,8 +893,50 @@ function abrirDialogoDespesa(id) {
     ui.despesaValor.value = despesa && despesa.valor ? String(despesa.valor) : "";
     ui.despesaPago.checked = despesa ? despesa.pago : false;
 
+    // Repetição só pode ser escolhida ao criar a despesa
+    ui.campoTipo.hidden = Boolean(despesa);
+    ui.despesaTipo.value = "unica";
+    ui.despesaParcelas.value = "2";
+    atualizarCamposDoTipo(!despesa);
+
+    // Ao editar fixa/parcelada, permite levar a mudança para os próximos meses
+    const futuros = despesa && despesa.serie ? proximosDaSerie(despesa).length : 0;
+
+    ui.campoPropagar.hidden = futuros === 0;
+    ui.despesaPropagar.checked = false;
+    ui.textoPropagar.textContent = futuros === 1
+        ? "Aplicar nome, categoria e valor também à próxima"
+        : "Aplicar nome, categoria e valor também às " + futuros + " próximas";
+
     ui.dialogoDespesa.showModal();
     ui.despesaNome.focus();
+}
+
+function criarSerieDeDespesas(base, tipo, totalParcelas) {
+
+    const serie = uid();
+    const quantidade = tipo === "fixa" ? MESES_DA_FIXA : totalParcelas;
+    let criadas = 0;
+
+    for (let i = 0; i < quantidade; i++) {
+
+        const chave = chaveDepois(i);
+
+        if (!chave) break;
+
+        mesDaChave(chave).despesas.push({
+            id: uid(),
+            ...base,
+            pago: i === 0 ? base.pago : false,
+            fixa: tipo === "fixa",
+            serie,
+            parcela: tipo === "parcelada" ? { atual: i + 1, total: totalParcelas } : null
+        });
+
+        criadas++;
+    }
+
+    return criadas;
 }
 
 function salvarDespesa() {
@@ -748,16 +959,65 @@ function salvarDespesa() {
     if (despesaEmEdicao) {
 
         const despesa = obterMes().despesas.find((d) => d.id === despesaEmEdicao);
+        let mensagem = "Despesa atualizada.";
 
-        if (despesa) Object.assign(despesa, dados);
+        if (despesa) {
 
-        avisar("Despesa atualizada.");
+            Object.assign(despesa, dados);
+
+            if (!ui.campoPropagar.hidden && ui.despesaPropagar.checked) {
+
+                const proximos = proximosDaSerie(despesa);
+
+                proximos.forEach(({ item }) => {
+                    item.nome = dados.nome;
+                    item.categoria = dados.categoria;
+                    item.valor = dados.valor;
+                });
+
+                mensagem = "Despesa atualizada, inclusive nas " + proximos.length + " seguintes.";
+            }
+        }
+
+        avisar(mensagem);
 
     } else {
 
-        obterMes().despesas.push({ id: uid(), ...dados });
+        const tipo = ui.despesaTipo.value;
 
-        avisar("Despesa adicionada.");
+        if (tipo === "unica") {
+
+            obterMes().despesas.push({
+                id: uid(),
+                ...dados,
+                fixa: false,
+                serie: null,
+                parcela: null
+            });
+
+            avisar("Despesa adicionada.");
+
+        } else {
+
+            let parcelas = 0;
+
+            if (tipo === "parcelada") {
+
+                parcelas = Math.round(numero(ui.despesaParcelas.value));
+
+                if (parcelas < 2 || parcelas > MAX_PARCELAS) {
+                    avisar("Informe de 2 a " + MAX_PARCELAS + " parcelas.");
+                    ui.despesaParcelas.focus();
+                    return;
+                }
+            }
+
+            const criadas = criarSerieDeDespesas(dados, tipo, parcelas);
+
+            avisar(tipo === "fixa"
+                ? "Despesa fixa lançada em " + criadas + " meses."
+                : "Parcelas lançadas: " + criadas + " de " + parcelas + ".");
+        }
     }
 
     ui.dialogoDespesa.close();
@@ -766,7 +1026,32 @@ function salvarDespesa() {
     atualizarResumo();
 }
 
+function nomeParaMensagem(despesa) {
+    return despesa.nome.trim() || "Sem nome";
+}
+
+function pedirEscolhaDaSerie(despesa, futuros) {
+
+    despesaParaRemover = despesa;
+
+    const nome = "“" + nomeParaMensagem(despesa) + "”";
+    const plural = futuros === 1 ? "" : "s";
+
+    if (despesa.parcela) {
+        ui.textoSerie.textContent = nome + " é a parcela " + despesa.parcela.atual + "/"
+            + despesa.parcela.total + ". Há mais " + futuros + " parcela" + plural
+            + " nos meses seguintes.";
+    } else {
+        ui.textoSerie.textContent = nome + " é uma despesa fixa e também está lançada em "
+            + futuros + (futuros === 1 ? " mês seguinte." : " meses seguintes.");
+    }
+
+    ui.dialogoSerie.showModal();
+}
+
 ui.adicionarDespesa.addEventListener("click", () => abrirDialogoDespesa(null));
+
+ui.despesaTipo.addEventListener("change", () => atualizarCamposDoTipo(true));
 
 ui.formDespesa.addEventListener("submit", (evento) => {
     evento.preventDefault();
@@ -816,18 +1101,52 @@ ui.listaDespesas.addEventListener("click", (evento) => {
     if (!remover) return;
 
     const id = remover.closest(".despesa").dataset.id;
-    const mes = obterMes();
-    const despesa = mes.despesas.find((d) => d.id === id);
+    const despesa = obterMes().despesas.find((d) => d.id === id);
 
     if (!despesa) return;
 
-    if (!confirm("Remover a despesa “" + (despesa.nome.trim() || "Sem nome") + "”?")) return;
+    const futuros = despesa.serie ? proximosDaSerie(despesa).length : 0;
 
-    mes.despesas = mes.despesas.filter((d) => d.id !== id);
+    if (futuros > 0) {
+        pedirEscolhaDaSerie(despesa, futuros);
+        return;
+    }
 
-    renderDespesas();
-    atualizarResumo();
-    avisar("Despesa removida.");
+    removerSelecao("despesas", [{ chave: chaveAtual(), item: despesa }], "Despesa removida.");
+});
+
+ui.serieCancelar.addEventListener("click", () => ui.dialogoSerie.close());
+
+ui.dialogoSerie.addEventListener("click", (evento) => {
+    if (evento.target === ui.dialogoSerie) ui.dialogoSerie.close();
+});
+
+ui.serieSoEste.addEventListener("click", () => {
+
+    const despesa = despesaParaRemover;
+
+    ui.dialogoSerie.close();
+
+    if (despesa) {
+        removerSelecao("despesas", [{ chave: chaveAtual(), item: despesa }], "Despesa removida.");
+    }
+});
+
+ui.serieProximos.addEventListener("click", () => {
+
+    const despesa = despesaParaRemover;
+
+    ui.dialogoSerie.close();
+
+    if (!despesa) return;
+
+    const selecao = itensDaSerie(despesa.serie).filter(({ chave }) => chave >= chaveAtual());
+
+    removerSelecao(
+        "despesas",
+        selecao,
+        selecao.length + " despesas removidas."
+    );
 });
 
 /* ---------- Categorias ---------- */
@@ -1039,7 +1358,14 @@ function copiarDoMesAnterior() {
     }
 
     origem.receitas.forEach((r) => destino.receitas.push({ ...r, id: uid() }));
-    origem.despesas.forEach((d) => destino.despesas.push({ ...d, id: uid(), pago: false }));
+    origem.despesas.forEach((d) => {
+
+        // parcelas já foram lançadas nos meses certos; fixas só entram se ainda não existirem aqui
+        if (d.parcela) return;
+        if (d.serie && destino.despesas.some((x) => x.serie === d.serie)) return;
+
+        destino.despesas.push({ ...d, id: uid(), pago: false });
+    });
 
     renderReceitas();
     renderDespesas();
@@ -1109,14 +1435,18 @@ function exportarCsv() {
         return;
     }
 
-    const linhas = [["Tipo", "Nome", "Categoria", "Valor", "Situação"]];
+    const linhas = [["Tipo", "Nome", "Categoria", "Valor", "Situação", "Observação"]];
 
     mes.receitas.forEach((r) => {
-        linhas.push(["Entrada", r.nome, "", numeroCsv(r.valor), ""]);
+        linhas.push(["Entrada", r.nome, "", numeroCsv(r.valor), "", ""]);
     });
 
     mes.despesas.forEach((d) => {
-        linhas.push(["Despesa", d.nome, d.categoria, numeroCsv(d.valor), d.pago ? "Paga" : "A pagar"]);
+        const observacao = d.parcela
+            ? "Parcela " + d.parcela.atual + "/" + d.parcela.total
+            : (d.fixa ? "Fixa" : "");
+
+        linhas.push(["Despesa", d.nome, d.categoria, numeroCsv(d.valor), d.pago ? "Paga" : "A pagar", observacao]);
     });
 
     const csv = linhas
@@ -1174,6 +1504,7 @@ function importarBackup(arquivo) {
 
         novo.tema = novo.tema || estado.tema;
         estado = novo;
+        ultimaRemocao = null;
 
         renderTudo();
         avisar("Backup restaurado.");

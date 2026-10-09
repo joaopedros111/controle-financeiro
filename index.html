@@ -161,9 +161,30 @@
                     <input id="despesa-valor" type="number" min="0" step="0.01" inputmode="decimal" placeholder="0,00">
                 </label>
 
+                <label class="campo" id="campo-tipo">
+                    <span>Repetição</span>
+                    <select id="despesa-tipo">
+                        <option value="unica">Não se repete</option>
+                        <option value="fixa">Fixa (todo mês)</option>
+                        <option value="parcelada">Parcelada</option>
+                    </select>
+                    <small class="dica" id="dica-tipo"></small>
+                </label>
+
+                <label class="campo" id="campo-parcelas" hidden>
+                    <span>Número de parcelas</span>
+                    <input id="despesa-parcelas" type="number" min="2" max="60" step="1" inputmode="numeric" value="2">
+                    <small class="dica">O valor acima é o de cada parcela. As demais entram nos meses seguintes.</small>
+                </label>
+
                 <label class="campo-check">
                     <input id="despesa-pago" type="checkbox">
                     <span>Já está paga</span>
+                </label>
+
+                <label class="campo-check" id="campo-propagar" hidden>
+                    <input id="despesa-propagar" type="checkbox">
+                    <span id="texto-propagar">Aplicar também às próximas</span>
                 </label>
             </div>
 
@@ -172,6 +193,20 @@
                 <button class="btn btn-primario" type="submit">Salvar</button>
             </div>
         </form>
+    </dialog>
+
+    <!-- Remover despesa fixa ou parcelada -->
+    <dialog id="dialogo-serie" aria-labelledby="titulo-dialogo-serie">
+        <div class="dialogo-corpo">
+            <h2 id="titulo-dialogo-serie">Remover despesa</h2>
+            <p id="texto-serie" class="texto-dialogo"></p>
+
+            <div class="acoes acoes-dialogo">
+                <button id="serie-cancelar" class="btn btn-secundario" type="button">Cancelar</button>
+                <button id="serie-so-este" class="btn btn-secundario" type="button">Só este mês</button>
+                <button id="serie-proximos" class="btn btn-perigo" type="button">Este e os próximos</button>
+            </div>
+        </div>
     </dialog>
 
     <!-- Adicionar / editar entrada -->

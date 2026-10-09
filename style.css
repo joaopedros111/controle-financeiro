@@ -367,6 +367,25 @@ input::placeholder {
     grid-template-columns: 1fr 130px 34px 34px;
 }
 
+.despesa-nome {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+}
+
+.marca {
+    flex: none;
+    padding: 0 7px;
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 18px;
+    color: var(--suave);
+    border: 1px solid var(--borda);
+    border-radius: 10px;
+    white-space: nowrap;
+}
+
 .nome-despesa,
 .nome-receita {
     min-width: 0;
@@ -431,7 +450,7 @@ input::placeholder {
 
 .total {
     display: grid;
-    grid-template-columns: 1fr auto 70px;
+    grid-template-columns: auto 1fr 70px;
     gap: 10px;
     align-items: center;
     padding: 10px 0;
@@ -441,7 +460,11 @@ input::placeholder {
 }
 
 .total-receitas {
-    grid-template-columns: 1fr auto;
+    grid-template-columns: auto 1fr;
+}
+
+.total span:first-child {
+    white-space: nowrap;
 }
 
 .total span:nth-child(2),
@@ -570,6 +593,24 @@ dialog::backdrop {
     font-size: 16px;
 }
 
+.campo[hidden],
+.campo-check[hidden] {
+    display: none;
+}
+
+.dica {
+    font-size: 12px;
+    color: var(--suave);
+}
+
+.dica:empty {
+    display: none;
+}
+
+.texto-dialogo {
+    margin: 12px 0 18px;
+}
+
 .campo-check {
     display: flex;
     align-items: center;
@@ -588,6 +629,7 @@ dialog::backdrop {
     left: 50%;
     bottom: 24px;
     transform: translate(-50%, 20px);
+    width: max-content;
     max-width: calc(100% - 32px);
     padding: 10px 16px;
     background: var(--texto);
@@ -598,6 +640,27 @@ dialog::backdrop {
     pointer-events: none;
     transition: opacity 0.2s ease, transform 0.2s ease;
     z-index: 10;
+}
+
+.aviso.com-acao {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+}
+
+.aviso.com-acao.visivel {
+    pointer-events: auto;
+}
+
+.aviso-acao {
+    padding: 4px 0;
+    font: inherit;
+    font-weight: 700;
+    color: inherit;
+    text-decoration: underline;
+    background: none;
+    border: none;
+    cursor: pointer;
 }
 
 .aviso.visivel {
@@ -632,6 +695,11 @@ dialog::backdrop {
     .editar-receita,
     .remover-receita {
         width: 28px;
+    }
+
+    .despesa-nome {
+        flex-wrap: wrap;
+        gap: 2px 8px;
     }
 
     .despesa .nome-despesa,
