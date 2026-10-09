@@ -15,6 +15,7 @@
     --perigo: #b91c1c;
     --trilho: #e2e8e4;
     --sombra-foco: 0 0 0 3px rgba(15, 118, 110, 0.35);
+    color-scheme: light;
 }
 
 :root[data-tema="escuro"] {
@@ -32,6 +33,7 @@
     --perigo: #f87171;
     --trilho: #25312c;
     --sombra-foco: 0 0 0 3px rgba(45, 212, 191, 0.4);
+    color-scheme: dark;
 }
 
 /* ---------- Base ---------- */
@@ -389,11 +391,6 @@ input::placeholder {
     font-size: 16px;
 }
 
-.grupo-total {
-    font-size: 16px;
-    font-weight: 700;
-}
-
 .despesa {
     display: grid;
     grid-template-columns: 24px 1fr auto 110px 34px 34px;
@@ -641,8 +638,24 @@ dialog::backdrop {
         gap: 6px;
     }
 
+    .despesa {
+        padding: 10px 0;
+    }
+
+    .despesa .nome-despesa {
+        white-space: normal;
+        overflow-wrap: anywhere;
+        line-height: 1.25;
+    }
+
+    /* texto continua para leitores de tela; visualmente vira um ponto */
     .despesa .situacao {
-        font-size: 12px;
+        font-size: 0;
+    }
+
+    .despesa .situacao::before {
+        content: "●";
+        font-size: 14px;
     }
 
     .receita {

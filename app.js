@@ -291,9 +291,23 @@ function carregarEstado() {
 
 let estado = carregarEstado();
 
+// Cópia do estado sem os meses vazios (navegar pelos meses os cria em memória).
+function estadoParaSalvar() {
+
+    const meses = {};
+
+    Object.entries(estado.meses).forEach(([chave, mes]) => {
+        if (mes.receitas.length || mes.despesas.length) {
+            meses[chave] = mes;
+        }
+    });
+
+    return { ...estado, meses };
+}
+
 function salvar() {
     try {
-        localStorage.setItem(CHAVE_ESTADO, JSON.stringify(estado));
+        localStorage.setItem(CHAVE_ESTADO, JSON.stringify(estadoParaSalvar()));
     } catch (erro) {
         avisar("Não foi possível salvar. O armazenamento do navegador pode estar bloqueado ou cheio.");
     }
@@ -421,6 +435,7 @@ function criarLinhaDespesa(despesa) {
         }),
         criarEl("span", {
             class: despesa.pago ? "situacao situacao-paga" : "situacao situacao-pendente",
+            title: despesa.pago ? "Despesa paga" : "Despesa a pagar",
             text: despesa.pago ? "Pago" : "A pagar"
         }),
         criarEl("span", {
@@ -431,14 +446,14 @@ function criarLinhaDespesa(despesa) {
             type: "button",
             class: "editar-despesa",
             title: "Editar despesa",
-            "aria-label": "Editar despesa " + despesa.nome,
+            "aria-label": "Editar despesa " + (despesa.nome.trim() || "sem nome"),
             text: "✎"
         }),
         criarEl("button", {
             type: "button",
             class: "remover-despesa",
             title: "Remover despesa",
-            "aria-label": "Remover despesa " + despesa.nome,
+            "aria-label": "Remover despesa " + (despesa.nome.trim() || "sem nome"),
             text: "×"
         })
     );
@@ -453,8 +468,7 @@ function criarGrupoDespesas(categoria, itens) {
 
     return criarEl("section", { class: "grupo-despesas" }, [
         criarEl("div", { class: "grupo-topo" }, [
-            criarEl("h3", { class: "cat-nome" }, [cor, categoria]),
-            criarEl("span", { class: "grupo-total", text: formatarMoeda(somar(itens)) })
+            criarEl("h3", { class: "cat-nome" }, [cor, categoria])
         ]),
         criarEl("div", {}, itens.map(criarLinhaDespesa))
     ]);
@@ -1099,7 +1113,7 @@ function exportarBackup() {
     const hoje = new Date().toISOString().slice(0, 10);
 
     baixarArquivo(
-        JSON.stringify(estado, null, 2),
+        JSON.stringify(estadoParaSalvar(), null, 2),
         "controle-financeiro-backup-" + hoje + ".json",
         "application/json"
     );
