@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="color-scheme" content="light dark">
+    <title>Controle Financeiro</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+
+    <main class="container">
+
+        <header class="topo">
+            <h1>Controle Financeiro</h1>
+            <button id="alternar-tema" class="btn btn-icone" type="button"
+                    aria-label="Alternar entre tema claro e escuro" title="Alternar tema">🌙</button>
+        </header>
+
+        <nav class="periodo" aria-label="Período">
+            <button id="mes-anterior" class="btn btn-icone" type="button" aria-label="Mês anterior">‹</button>
+
+            <label class="sr-only" for="mes">Mês</label>
+            <select id="mes">
+                <option value="1">Janeiro</option>
+                <option value="2">Fevereiro</option>
+                <option value="3">Março</option>
+                <option value="4">Abril</option>
+                <option value="5">Maio</option>
+                <option value="6">Junho</option>
+                <option value="7">Julho</option>
+                <option value="8">Agosto</option>
+                <option value="9">Setembro</option>
+                <option value="10">Outubro</option>
+                <option value="11">Novembro</option>
+                <option value="12">Dezembro</option>
+            </select>
+
+            <label class="sr-only" for="ano">Ano</label>
+            <input id="ano" type="number" min="2000" max="2100" step="1">
+
+            <button id="mes-proximo" class="btn btn-icone" type="button" aria-label="Próximo mês">›</button>
+            <button id="hoje" class="btn btn-secundario" type="button">Mês atual</button>
+        </nav>
+
+        <!-- Resumo do mês -->
+        <section class="resumo" aria-labelledby="titulo-resumo">
+            <h2 id="titulo-resumo" class="sr-only">Resumo do mês</h2>
+
+            <p class="saldo-rotulo" id="saldo-rotulo">Saldo do mês</p>
+            <p class="saldo-valor" id="saldo-valor">R$ 0,00</p>
+
+            <div class="barra" id="barra" role="img" aria-label="Parte da renda comprometida com despesas">
+                <div class="barra-pago" id="barra-pago"></div>
+                <div class="barra-pendente" id="barra-pendente"></div>
+            </div>
+            <p class="barra-texto" id="texto-comprometido">Informe suas receitas para ver quanto da renda está comprometido.</p>
+
+            <dl class="indicadores">
+                <div>
+                    <dt>Receitas</dt>
+                    <dd id="total-receitas">R$ 0,00</dd>
+                </div>
+                <div>
+                    <dt>Despesas</dt>
+                    <dd id="total-despesas">R$ 0,00</dd>
+                </div>
+                <div>
+                    <dt>Já pago</dt>
+                    <dd id="valor-pago">R$ 0,00</dd>
+                </div>
+                <div>
+                    <dt>A pagar</dt>
+                    <dd id="valor-pendente">R$ 0,00</dd>
+                </div>
+            </dl>
+        </section>
+
+        <!-- Receitas -->
+        <section class="bloco" aria-labelledby="titulo-receitas">
+            <div class="bloco-topo">
+                <h2 id="titulo-receitas">Receitas</h2>
+                <button id="adicionar-receita" class="btn btn-secundario" type="button">+ Adicionar receita</button>
+            </div>
+
+            <div id="lista-receitas"></div>
+            <p class="vazio" id="vazio-receitas">Nenhuma receita neste mês. Adicione seu salário ou outras entradas.</p>
+        </section>
+
+        <!-- Despesas -->
+        <section class="bloco despesas" aria-labelledby="titulo-despesas">
+            <div class="bloco-topo">
+                <h2 id="titulo-despesas">Despesas</h2>
+                <div class="acoes">
+                    <button id="gerenciar-categorias" class="btn btn-secundario" type="button">Categorias</button>
+                    <button id="adicionar-despesa" class="btn btn-primario" type="button">+ Adicionar despesa</button>
+                </div>
+            </div>
+
+            <div class="filtros">
+                <label class="sr-only" for="busca">Buscar despesa</label>
+                <input id="busca" type="search" placeholder="Buscar por nome">
+
+                <label class="sr-only" for="filtro-categoria">Filtrar por categoria</label>
+                <select id="filtro-categoria"></select>
+
+                <label class="sr-only" for="filtro-status">Filtrar por situação</label>
+                <select id="filtro-status">
+                    <option value="">Todas as situações</option>
+                    <option value="pendente">A pagar</option>
+                    <option value="pago">Pagas</option>
+                </select>
+            </div>
+
+            <div id="lista-despesas"></div>
+            <p class="vazio" id="vazio-despesas"></p>
+
+            <div class="total">
+                <span id="total-rotulo">Total</span>
+                <span id="total-valor">R$ 0,00</span>
+                <span id="total-percentual">0,0%</span>
+            </div>
+        </section>
+
+        <!-- Despesas por categoria -->
+        <section class="bloco" aria-labelledby="titulo-categorias">
+            <h2 id="titulo-categorias">Gastos por categoria</h2>
+            <div id="resumo-categorias"></div>
+            <p class="vazio" id="vazio-categorias">Os gastos aparecem aqui conforme você lança despesas com valor.</p>
+        </section>
+
+        <!-- Ferramentas -->
+        <section class="bloco" aria-labelledby="titulo-ferramentas">
+            <h2 id="titulo-ferramentas">Ferramentas</h2>
+            <div class="acoes acoes-ferramentas">
+                <button id="copiar-mes-anterior" class="btn btn-secundario" type="button">Copiar do mês anterior</button>
+                <button id="exportar-csv" class="btn btn-secundario" type="button">Exportar mês (CSV)</button>
+                <button id="exportar-backup" class="btn btn-secundario" type="button">Salvar backup</button>
+                <button id="importar-backup" class="btn btn-secundario" type="button">Restaurar backup</button>
+                <button id="limpar-mes" class="btn btn-perigo" type="button">Limpar este mês</button>
+            </div>
+            <input id="arquivo-backup" type="file" accept="application/json,.json" hidden>
+            <p class="nota">Os dados ficam salvos neste navegador. Salve um backup de vez em quando para não perder nada ao limpar os dados do navegador ou trocar de computador.</p>
+        </section>
+
+    </main>
+
+    <!-- Gerenciar categorias -->
+    <dialog id="dialogo-categorias" aria-labelledby="titulo-dialogo">
+        <div class="dialogo-corpo">
+            <div class="bloco-topo">
+                <h2 id="titulo-dialogo">Categorias</h2>
+                <button id="fechar-categorias" class="btn btn-icone" type="button" aria-label="Fechar">×</button>
+            </div>
+
+            <ul id="lista-categorias" class="lista-categorias"></ul>
+
+            <div class="nova-categoria">
+                <label class="sr-only" for="nova-categoria">Nome da nova categoria</label>
+                <input id="nova-categoria" type="text" placeholder="Nome da nova categoria" maxlength="40">
+                <button id="adicionar-categoria" class="btn btn-primario" type="button">Adicionar</button>
+            </div>
+        </div>
+    </dialog>
+
+    <div id="aviso" class="aviso" role="status" aria-live="polite"></div>
+
+    <script src="app.js"></script>
+
+</body>
+</html>
