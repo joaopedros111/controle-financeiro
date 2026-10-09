@@ -52,9 +52,6 @@ const ui = {
     vazioReceitas: $("vazio-receitas"),
     adicionarReceita: $("adicionar-receita"),
 
-    busca: $("busca"),
-    filtroCategoria: $("filtro-categoria"),
-    filtroStatus: $("filtro-status"),
     listaDespesas: $("lista-despesas"),
     vazioDespesas: $("vazio-despesas"),
     adicionarDespesa: $("adicionar-despesa"),
@@ -302,19 +299,13 @@ function salvar() {
     }
 }
 
-/* ---------- Período e filtros ---------- */
+/* ---------- Período ---------- */
 
 const agora = new Date();
 
 let periodo = {
     ano: agora.getFullYear(),
     mes: agora.getMonth() + 1
-};
-
-const filtros = {
-    busca: "",
-    categoria: "",
-    status: ""
 };
 
 function obterMes() {
@@ -325,31 +316,6 @@ function obterMes() {
     }
 
     return estado.meses[chave];
-}
-
-function despesasFiltradas() {
-
-    const busca = filtros.busca.trim().toLowerCase();
-
-    return obterMes().despesas.filter((d) => {
-        return (!busca || d.nome.toLowerCase().includes(busca))
-            && (!filtros.categoria || d.categoria === filtros.categoria)
-            && (!filtros.status || (filtros.status === "pago") === d.pago);
-    });
-}
-
-function filtrosAtivos() {
-    return Boolean(filtros.busca.trim() || filtros.categoria || filtros.status);
-}
-
-function limparFiltros() {
-    filtros.busca = "";
-    filtros.categoria = "";
-    filtros.status = "";
-
-    ui.busca.value = "";
-    ui.filtroCategoria.value = "";
-    ui.filtroStatus.value = "";
 }
 
 function mudarPeriodo(ano, mes) {
@@ -368,7 +334,6 @@ function mudarPeriodo(ano, mes) {
 
     periodo = { ano, mes };
 
-    limparFiltros();
     renderTudo();
 }
 
@@ -388,19 +353,6 @@ function renderTema() {
 
     document.documentElement.dataset.tema = tema;
     ui.tema.textContent = tema === "escuro" ? "☀️" : "🌙";
-}
-
-function renderFiltroCategorias() {
-
-    const atual = filtros.categoria;
-
-    ui.filtroCategoria.replaceChildren(
-        criarEl("option", { value: "", text: "Todas as categorias" }),
-        ...estado.categorias.map((c) => criarEl("option", { value: c, text: c }))
-    );
-
-    ui.filtroCategoria.value = estado.categorias.includes(atual) ? atual : "";
-    filtros.categoria = ui.filtroCategoria.value;
 }
 
 function criarLinhaReceita(receita) {
@@ -455,11 +407,6 @@ function criarLinhaDespesa(despesa) {
         dataset: { id: despesa.id }
     });
 
-    const situacao = criarEl("span", {
-        class: despesa.pago ? "situacao situacao-paga" : "situacao situacao-pendente",
-        text: despesa.pago ? "Pago" : "A pagar"
-    });
-
     linha.append(
         criarEl("input", {
             type: "checkbox",
@@ -468,16 +415,14 @@ function criarLinhaDespesa(despesa) {
             title: despesa.pago ? "Marcar como a pagar" : "Marcar como paga",
             "aria-label": "Despesa paga"
         }),
-        criarEl("div", { class: "despesa-info" }, [
-            criarEl("span", {
-                class: "nome-despesa",
-                text: despesa.nome.trim() || "Sem nome"
-            }),
-            criarEl("span", { class: "despesa-detalhe" }, [
-                despesa.categoria + " · ",
-                situacao
-            ])
-        ]),
+        criarEl("span", {
+            class: "nome-despesa",
+            text: despesa.nome.trim() || "Sem nome"
+        }),
+        criarEl("span", {
+            class: despesa.pago ? "situacao situacao-paga" : "situacao situacao-pendente",
+            text: despesa.pago ? "Pago" : "A pagar"
+        }),
         criarEl("span", {
             class: "valor-despesa",
             text: formatarMoeda(numero(despesa.valor))
@@ -518,7 +463,7 @@ function criarGrupoDespesas(categoria, itens) {
 function renderDespesas() {
 
     const todas = obterMes().despesas;
-    const lista = despesasFiltradas();
+    const lista = todas;
 
     // Agrupa por categoria, na ordem em que as categorias foram cadastradas
     const grupos = new Map();
@@ -542,9 +487,7 @@ function renderDespesas() {
         ui.vazioDespesas.hidden = true;
     } else {
         ui.vazioDespesas.hidden = false;
-        ui.vazioDespesas.textContent = todas.length
-            ? "Nenhuma despesa corresponde aos filtros."
-            : "Nenhuma despesa neste mês. Use “+ Adicionar despesa” para começar.";
+        ui.vazioDespesas.textContent = "Nenhuma despesa neste mês. Use “+ Adicionar despesa” para começar.";
     }
 }
 
@@ -646,16 +589,11 @@ function atualizarResumo() {
             formatarPercentual(pctDespesa) + " da renda comprometida com despesas.";
     }
 
-    // Linha de total (respeita os filtros)
-    const visiveis = despesasFiltradas();
-    const totalVisivel = somar(visiveis);
-
-    ui.totalRotulo.textContent = filtrosAtivos()
-        ? "Total filtrado (" + visiveis.length + ")"
-        : "Total";
-    ui.totalValor.textContent = formatarMoeda(totalVisivel);
+    // Linha de total
+    ui.totalRotulo.textContent = "Total";
+    ui.totalValor.textContent = formatarMoeda(despesa);
     ui.totalPercentual.textContent =
-        formatarPercentual(receita > 0 ? (totalVisivel / receita) * 100 : 0);
+        formatarPercentual(receita > 0 ? (despesa / receita) * 100 : 0);
 
     renderResumoCategorias(mes, receita);
 
@@ -666,7 +604,6 @@ function renderTudo() {
     renderTema();
     renderPeriodo();
     renderReceitas();
-    renderFiltroCategorias();
     renderDespesas();
     atualizarResumo();
 }
@@ -780,8 +717,6 @@ function salvarDespesa() {
 
     } else {
 
-        if (filtrosAtivos()) limparFiltros();
-
         obterMes().despesas.push({ id: uid(), ...dados });
 
         avisar("Despesa adicionada.");
@@ -857,26 +792,6 @@ ui.listaDespesas.addEventListener("click", (evento) => {
     avisar("Despesa removida.");
 });
 
-/* ---------- Filtros ---------- */
-
-ui.busca.addEventListener("input", () => {
-    filtros.busca = ui.busca.value;
-    renderDespesas();
-    atualizarResumo();
-});
-
-ui.filtroCategoria.addEventListener("change", () => {
-    filtros.categoria = ui.filtroCategoria.value;
-    renderDespesas();
-    atualizarResumo();
-});
-
-ui.filtroStatus.addEventListener("change", () => {
-    filtros.status = ui.filtroStatus.value;
-    renderDespesas();
-    atualizarResumo();
-});
-
 /* ---------- Categorias ---------- */
 
 function renderListaCategorias() {
@@ -913,7 +828,6 @@ function renderListaCategorias() {
 
 function aposMudarCategorias() {
     renderListaCategorias();
-    renderFiltroCategorias();
     renderDespesas();
     atualizarResumo();
 }
@@ -968,8 +882,6 @@ function renomearCategoria(antigo) {
         });
     });
 
-    if (filtros.categoria === antigo) filtros.categoria = novo;
-
     aposMudarCategorias();
     avisar("Categoria renomeada.");
 }
@@ -992,8 +904,6 @@ function removerCategoria(nome) {
             if (d.categoria === nome) d.categoria = CATEGORIA_FIXA;
         });
     });
-
-    if (filtros.categoria === nome) filtros.categoria = "";
 
     aposMudarCategorias();
     avisar("Categoria removida.");
@@ -1227,7 +1137,6 @@ function importarBackup(arquivo) {
         novo.tema = novo.tema || estado.tema;
         estado = novo;
 
-        limparFiltros();
         renderTudo();
         avisar("Backup restaurado.");
     };
