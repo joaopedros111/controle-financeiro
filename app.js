@@ -395,15 +395,15 @@ function criarLinhaReceita(receita) {
         criarEl("button", {
             type: "button",
             class: "editar-receita",
-            title: "Editar receita",
-            "aria-label": "Editar receita " + nome,
+            title: "Editar entrada",
+            "aria-label": "Editar entrada " + nome,
             text: "✎"
         }),
         criarEl("button", {
             type: "button",
             class: "remover-receita",
-            title: "Remover receita",
-            "aria-label": "Remover receita " + nome,
+            title: "Remover entrada",
+            "aria-label": "Remover entrada " + nome,
             text: "×"
         })
     );
@@ -563,11 +563,11 @@ function atualizarResumo() {
 
     if (receita <= 0) {
         ui.textoComprometido.textContent = despesa > 0
-            ? "Adicione suas receitas para ver quanto da renda está comprometido."
-            : "Adicione receitas e despesas para acompanhar o mês.";
+            ? "Adicione suas entradas para ver quanto da renda está comprometido."
+            : "Adicione entradas e despesas para acompanhar o mês.";
     } else if (despesa > receita) {
         ui.textoComprometido.textContent =
-            "Você gastou " + formatarPercentual(pctDespesa) + " da renda: as despesas passaram das receitas.";
+            "Você gastou " + formatarPercentual(pctDespesa) + " da renda: as despesas passaram das entradas.";
     } else {
         ui.textoComprometido.textContent =
             formatarPercentual(pctDespesa) + " da renda comprometida com despesas.";
@@ -575,10 +575,10 @@ function atualizarResumo() {
 
     // Linhas de total
     ui.totalReceitasLista.textContent = formatarMoeda(receita);
-    ui.totalRotulo.textContent = "Total";
-    ui.totalValor.textContent = formatarMoeda(despesa);
+    ui.totalRotulo.textContent = "Total a pagar";
+    ui.totalValor.textContent = formatarMoeda(pendente);
     ui.totalPercentual.textContent =
-        formatarPercentual(receita > 0 ? (despesa / receita) * 100 : 0);
+        formatarPercentual(receita > 0 ? (pendente / receita) * 100 : 0);
 
     renderResumoCategorias(mes, receita);
 
@@ -607,7 +607,7 @@ function abrirDialogoReceita(id) {
 
     receitaEmEdicao = receita ? receita.id : null;
 
-    ui.tituloDialogoReceita.textContent = receita ? "Editar receita" : "Adicionar receita";
+    ui.tituloDialogoReceita.textContent = receita ? "Editar entrada" : "Adicionar entrada";
 
     ui.receitaNome.value = receita ? receita.nome : "";
     ui.receitaValor.value = receita && receita.valor ? String(receita.valor) : "";
@@ -621,7 +621,7 @@ function salvarReceita() {
     const nome = ui.receitaNome.value.trim();
 
     if (!nome) {
-        avisar("Digite o nome da receita.");
+        avisar("Digite o nome da entrada.");
         ui.receitaNome.focus();
         return;
     }
@@ -637,13 +637,13 @@ function salvarReceita() {
 
         if (receita) Object.assign(receita, dados);
 
-        avisar("Receita atualizada.");
+        avisar("Entrada atualizada.");
 
     } else {
 
         obterMes().receitas.push({ id: uid(), ...dados });
 
-        avisar("Receita adicionada.");
+        avisar("Entrada adicionada.");
     }
 
     ui.dialogoReceita.close();
@@ -686,13 +686,13 @@ ui.listaReceitas.addEventListener("click", (evento) => {
 
     if (!receita) return;
 
-    if (!confirm("Remover a receita “" + (receita.nome.trim() || "Sem nome") + "”?")) return;
+    if (!confirm("Remover a entrada “" + (receita.nome.trim() || "Sem nome") + "”?")) return;
 
     mes.receitas = mes.receitas.filter((r) => r.id !== id);
 
     renderReceitas();
     atualizarResumo();
-    avisar("Receita removida.");
+    avisar("Entrada removida.");
 });
 
 /* ---------- Despesas ---------- */
@@ -1056,7 +1056,7 @@ function limparMes() {
         return;
     }
 
-    if (!confirm("Apagar todas as receitas e despesas de " + MESES[periodo.mes - 1] + " de " + periodo.ano + "? Essa ação não pode ser desfeita.")) {
+    if (!confirm("Apagar todas as entradas e despesas de " + MESES[periodo.mes - 1] + " de " + periodo.ano + "? Essa ação não pode ser desfeita.")) {
         return;
     }
 
@@ -1112,7 +1112,7 @@ function exportarCsv() {
     const linhas = [["Tipo", "Nome", "Categoria", "Valor", "Situação"]];
 
     mes.receitas.forEach((r) => {
-        linhas.push(["Receita", r.nome, "", numeroCsv(r.valor), ""]);
+        linhas.push(["Entrada", r.nome, "", numeroCsv(r.valor), ""]);
     });
 
     mes.despesas.forEach((d) => {

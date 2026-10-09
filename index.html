@@ -56,7 +56,7 @@
             <p class="vazio" id="vazio-despesas"></p>
 
             <div class="total">
-                <span id="total-rotulo">Total</span>
+                <span id="total-rotulo">Total a pagar</span>
                 <span id="total-valor">R$ 0,00</span>
                 <span id="total-percentual">0,0%</span>
             </div>
@@ -83,7 +83,7 @@
                 <div class="barra-pago" id="barra-pago"></div>
                 <div class="barra-pendente" id="barra-pendente"></div>
             </div>
-            <p class="barra-texto" id="texto-comprometido">Informe suas entradas para ver quanto da renda está comprometido.</p>
+            <p class="barra-texto" id="texto-comprometido">Informe suas receitas para ver quanto da renda está comprometido.</p>
 
             <dl class="indicadores">
                 <div>
@@ -105,7 +105,7 @@
             </dl>
         </section>
 
-        <!-- Receitas -->
+        <!-- Entradas -->
         <section class="bloco" aria-labelledby="titulo-receitas">
             <div class="bloco-topo">
                 <h2 id="titulo-receitas">Entradas</h2>
@@ -113,7 +113,7 @@
             </div>
 
             <div id="lista-receitas"></div>
-            <p class="vazio" id="vazio-receitas">Nenhuma entrada neste mês. Adicione seu salário ou outras entradas.</p>
+            <p class="vazio" id="vazio-receitas">Nenhuma entrada neste mês. Adicione seu salário ou outros valores que você recebe.</p>
 
             <div class="total total-receitas">
                 <span>Total</span>
@@ -174,11 +174,11 @@
         </form>
     </dialog>
 
-    <!-- Adicionar / editar receita -->
+    <!-- Adicionar / editar entrada -->
     <dialog id="dialogo-receita" aria-labelledby="titulo-dialogo-receita">
         <form id="form-receita" class="dialogo-corpo" novalidate>
             <div class="bloco-topo">
-                <h2 id="titulo-dialogo-receita">Adicionar receita</h2>
+                <h2 id="titulo-dialogo-receita">Adicionar entrada</h2>
                 <button id="fechar-receita" class="btn btn-icone" type="button" aria-label="Fechar">×</button>
             </div>
 
