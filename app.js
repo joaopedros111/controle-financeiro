@@ -1210,7 +1210,7 @@ function atualizarResumo() {
 
     ui.saldoValor.classList.toggle("negativo", saldo < 0);
 
-    ui.saldoRotulo.textContent = "Resumo do mês";
+    ui.saldoRotulo.textContent = "Saldo do mês";
 
 
 
@@ -1248,6 +1248,8 @@ function atualizarResumo() {
 
     ui.barra.classList.toggle("estourou", despesa > receita && despesa > 0);
 
+    ui.textoComprometido.classList.toggle("alerta", despesa > receita && receita > 0);
+
 
 
     if (receita <= 0) {
@@ -1268,7 +1270,7 @@ function atualizarResumo() {
 
         ui.textoComprometido.textContent =
 
-            formatarPercentual(pctDespesa) + " da renda comprometida com despesas.";
+            formatarPercentual(pctDespesa) + " da renda comprometida";
 
     }
 
