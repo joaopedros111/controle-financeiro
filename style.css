@@ -1027,3 +1027,149 @@
     }
 }
 }
+
+/* Acabamento visual: identidade mais atual, mantendo fluxos e componentes existentes. */
+@layer base {
+    :root {
+        --fundo: #f4f6fb;
+        --superficie: #ffffff;
+        --superficie-suave: #f7f8fc;
+        --texto: #172033;
+        --texto-secundario: #748097;
+        --borda: #e6eaf2;
+        --primaria: #5856d6;
+        --primaria-hover: #4745bd;
+        --primaria-suave: #f0efff;
+        --verde: #0f9f8f;
+        --verde-suave: #e8faf6;
+        --vermelho: #e45566;
+        --vermelho-suave: #fff0f2;
+        --ambar: #d88a25;
+        --ambar-suave: #fff7e9;
+        --sombra-card: 0 8px 28px -16px rgba(30, 41, 70, .22), 0 2px 8px rgba(30, 41, 70, .035);
+        --sombra-flutuante: 0 18px 44px -24px rgba(44, 49, 115, .3), 0 5px 16px rgba(30, 41, 70, .06);
+        --raio: 22px;
+        --raio-menor: 15px;
+        --foco: 0 0 0 4px rgba(88, 86, 214, .18);
+    }
+
+    :root[data-tema="escuro"] {
+        --fundo: #0c1020;
+        --superficie: #141a2b;
+        --superficie-suave: #1b2336;
+        --texto: #f1f4fc;
+        --texto-secundario: #a0abc1;
+        --borda: #293249;
+        --primaria: #9694ff;
+        --primaria-hover: #b1afff;
+        --primaria-suave: #252447;
+        --verde: #46c8b2;
+        --verde-suave: #153630;
+        --vermelho: #ff8290;
+        --vermelho-suave: #3a202c;
+        --ambar: #f4bd66;
+        --ambar-suave: #3a2d20;
+        --sombra-card: 0 10px 30px -16px rgba(0, 0, 0, .75);
+        --sombra-flutuante: 0 18px 44px -22px rgba(0, 0, 0, .85);
+        --foco: 0 0 0 4px rgba(150, 148, 255, .22);
+    }
+
+    body {
+        background:
+            radial-gradient(ellipse at 12% 0%, color-mix(in srgb, var(--primaria-suave) 70%, transparent), transparent 34rem),
+            radial-gradient(ellipse at 95% 16%, color-mix(in srgb, var(--verde-suave) 58%, transparent), transparent 30rem),
+            var(--fundo);
+    }
+}
+
+@layer components {
+    .topo {
+        padding: 17px 18px;
+        border-color: color-mix(in srgb, var(--primaria) 17%, var(--borda));
+        border-radius: 23px;
+        background: linear-gradient(120deg, var(--superficie) 20%, color-mix(in srgb, var(--primaria-suave) 58%, var(--superficie)) 100%);
+        box-shadow: 0 12px 34px -24px color-mix(in srgb, var(--primaria) 55%, transparent), var(--sombra-card);
+    }
+
+    .marca-icone {
+        color: #fff;
+        background: linear-gradient(145deg, #6967e8, #4543b8 72%, #33358a);
+        border: 1px solid rgba(255, 255, 255, .24);
+        border-radius: 16px;
+        box-shadow: 0 9px 20px -8px rgba(75, 73, 190, .72), inset 0 1px 0 rgba(255,255,255,.3);
+    }
+
+    .marca-icone svg { width: 26px; height: 26px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+    .marca-icone circle { fill: #b8f3e9; stroke: none; }
+    .marca-sobretitulo, .grafico-sobretitulo { letter-spacing: .16em; }
+    .topo .marca-texto h1 { letter-spacing: -.045em; }
+    .tema-botao { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--borda) 76%, transparent); }
+
+    .periodo {
+        border-radius: 18px;
+        border-color: var(--borda);
+        background: color-mix(in srgb, var(--superficie) 92%, var(--primaria-suave));
+        box-shadow: var(--sombra-card);
+    }
+    .periodo select { border-color: transparent; font-weight: 700; }
+    .periodo .btn-icone { border-radius: 14px; background: var(--superficie-suave); }
+
+    .resumo {
+        position: relative;
+        overflow: hidden;
+        border: 1px solid color-mix(in srgb, var(--primaria) 18%, var(--borda));
+        border-radius: 24px;
+        background: linear-gradient(145deg, var(--superficie) 35%, color-mix(in srgb, var(--primaria-suave) 58%, var(--superficie)) 100%);
+    }
+    .resumo::before {
+        position: absolute;
+        top: 0;
+        left: 14px;
+        width: 54px;
+        height: 3px;
+        content: "";
+        border-radius: 0 0 5px 5px;
+        background: linear-gradient(90deg, var(--primaria), #39b9ad);
+    }
+    .resumo-titulo { letter-spacing: .14em; }
+    .saldo-valor { letter-spacing: -.055em; }
+    .indicadores > div { border: 1px solid color-mix(in srgb, var(--borda) 76%, transparent); }
+
+    .bloco {
+        border-color: color-mix(in srgb, var(--borda) 90%, transparent);
+        border-radius: 22px;
+        box-shadow: var(--sombra-card);
+        transition: border-color .18s ease, box-shadow .18s ease, transform .18s ease;
+    }
+    .bloco-topo h2 { letter-spacing: -.035em; }
+    .grafico-bloco { background: linear-gradient(180deg, var(--superficie), color-mix(in srgb, var(--superficie-suave) 54%, var(--superficie))); }
+    .grafico-barra { box-shadow: 0 3px 9px -5px currentColor; }
+    .grafico-barra-entrada { background: linear-gradient(180deg, #8aa8ff, #5856d6); color: #5856d6; }
+    .grafico-barra-despesa { background: linear-gradient(180deg, #70dfca, #0f9f8f); color: #0f9f8f; }
+
+    .btn { transition: transform .16s ease, background-color .18s ease, box-shadow .18s ease, border-color .18s ease; }
+    .btn-primario { background: linear-gradient(135deg, var(--primaria), color-mix(in srgb, var(--primaria) 74%, #282783)); box-shadow: 0 7px 16px -9px color-mix(in srgb, var(--primaria) 80%, transparent); }
+    .btn-secundario { background: var(--superficie); }
+    .btn-icone { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--borda) 76%, transparent); }
+    .vazio { border-radius: 16px; background: color-mix(in srgb, var(--superficie-suave) 84%, transparent); }
+    .receita, .despesa { border-color: color-mix(in srgb, var(--borda) 78%, transparent); }
+    .receita button, .despesa button { border-radius: 12px; background: var(--superficie-suave); }
+    .cat-trilho { height: 7px; }
+
+    dialog { border-radius: 26px; }
+    dialog::backdrop { background: rgba(13, 18, 38, .58); }
+
+    @media (hover: hover) {
+        .bloco:hover { border-color: color-mix(in srgb, var(--primaria) 20%, var(--borda)); box-shadow: var(--sombra-flutuante); }
+        .btn-primario:hover { box-shadow: 0 10px 22px -10px color-mix(in srgb, var(--primaria) 90%, transparent); transform: translateY(-1px); }
+    }
+    @media (max-width: 380px) {
+        .topo { padding: 13px; }
+    }
+    @media (max-width: 600px) {
+        dialog { border-radius: 26px 26px 0 0; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+        .bloco, .btn { transition: none; }
+    }
+}
