@@ -518,7 +518,7 @@ select:focus-visible {
 }
 
 /* =========================================================
-   Diálogos
+   Diálogos — formulários compactos
    ========================================================= */
 
 dialog {
@@ -539,23 +539,23 @@ dialog::backdrop {
 }
 
 .dialogo-corpo {
-    padding: 24px;
+    padding: 20px;
 }
 
 .dialogo-corpo > .bloco-topo {
-    margin-bottom: 22px;
+    margin-bottom: 14px;
 }
 
 .campos {
     display: grid;
-    gap: 16px;
+    gap: 12px;
 }
 
 .campo {
     display: grid;
-    gap: 7px;
+    gap: 5px;
     color: var(--texto);
-    font-size: .9rem;
+    font-size: .88rem;
     font-weight: 700;
 }
 
@@ -563,8 +563,8 @@ dialog::backdrop {
 .campo select,
 .nova-categoria input {
     width: 100%;
-    min-height: 45px;
-    padding: 10px 12px;
+    min-height: 44px;
+    padding: 9px 12px;
     border: 1px solid var(--borda);
     border-radius: 10px;
     color: var(--texto);
@@ -583,8 +583,9 @@ dialog::backdrop {
     display: flex;
     align-items: center;
     gap: 10px;
+    min-height: 44px;
     color: var(--texto);
-    font-size: .91rem;
+    font-size: .9rem;
 }
 
 .campo-check input {
@@ -595,55 +596,23 @@ dialog::backdrop {
 
 .dica {
     color: var(--texto-secundario);
-    font-size: .82rem;
+    font-size: .78rem;
     font-weight: 450;
+    line-height: 1.35;
 }
 
 .acoes-dialogo {
+    display: flex;
     justify-content: flex-end;
-    margin-top: 24px;
+    gap: 8px;
+    margin-top: 14px;
+    padding-top: 14px;
+    border-top: 1px solid var(--borda);
 }
 
 .texto-dialogo {
     color: var(--texto-secundario);
-}
-
-.lista-categorias {
-    display: grid;
-    gap: 8px;
-    padding: 0;
-    margin: 0 0 18px;
-    list-style: none;
-}
-
-.lista-categorias li {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    padding: 10px 12px;
-    border: 1px solid var(--borda);
-    border-radius: 10px;
-}
-
-.lista-categorias button {
-    min-height: 40px;
-    border: 0;
-    border-radius: 8px;
-    padding: 7px 12px;
-    background: var(--vermelho-suave);
-    color: var(--vermelho);
-    font-weight: 700;
-}
-
-.nova-categoria {
-    display: flex;
-    gap: 9px;
-}
-
-.nova-categoria input {
-    min-width: 0;
-    flex: 1;
+    margin: 0 0 16px;
 }
 
 /* =========================================================
@@ -923,6 +892,37 @@ dialog::backdrop {
     body {
         font-size: 15px;
     }
+    .dialogo-corpo {
+        padding: 16px 14px;
+    }
+
+    .dialogo-corpo > .bloco-topo {
+        margin-bottom: 12px;
+    }
+
+    .campos {
+        gap: 10px;
+    }
+
+    .campo {
+        gap: 4px;
+    }
+
+    .campo input,
+    .campo select {
+        min-height: 44px;
+        padding: 8px 11px;
+    }
+
+    .acoes-dialogo {
+        margin-top: 12px;
+        padding-top: 12px;
+    }
+
+    .acoes-dialogo .btn {
+        flex: 1;
+        min-height: 44px;
+    }
 
     .container {
         width: calc(100% - 20px);
@@ -1147,10 +1147,6 @@ dialog::backdrop {
         font-weight: 700;
     }
 
-    .acoes-dialogo .btn {
-        flex: 1;
-    }
-
     .nova-categoria {
         flex-direction: column;
     }
@@ -1160,6 +1156,7 @@ dialog::backdrop {
         justify-content: space-between;
     }
 }
+
 
 /* =========================================================
    Celular pequeno — até 480px
