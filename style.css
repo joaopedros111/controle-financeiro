@@ -164,11 +164,12 @@
     /* Período */
     .periodo {
         display: grid;
-        grid-template-columns: 44px minmax(0, 1fr) 76px 44px;
+        grid-template-columns: 44px 1fr 88px 44px;
         align-items: center;
         gap: 8px;
-        padding: 12px;
-        margin-bottom: 16px;
+        padding: 10px;
+        margin-bottom: 14px;
+        border-radius: 12px;
         border: 1px solid var(--borda);
         border-radius: var(--raio);
         background: var(--superficie);
@@ -185,14 +186,16 @@
         }
 
         & #mes {
-            grid-column: 2;
             width: 100%;
             min-width: 0;
+            height: 44px;
+            padding: 0 10px;
         }
 
-        & #ano {
-            grid-column: 3;
-            width: 100%;
+                & #ano {
+            width: 88px;
+            height: 44px;
+            padding: 0 8px;
             text-align: center;
         }
 
