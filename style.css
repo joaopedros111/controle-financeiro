@@ -208,6 +208,15 @@
     justify-self: stretch;
     align-self: center;
 }
+
+.periodo select {
+    border: 1px solid var(--borda);
+    border-radius: 12px;
+    background: var(--superficie-suave);
+    color: var(--texto);
+}
+
+
     /* Botões Modernos */
     .btn {
         min-height: 44px;

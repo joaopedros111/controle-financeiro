@@ -218,7 +218,13 @@ const ui = {
 
 };
 
-
+/* Preencher seletor de anos */
+for (let ano = 2000; ano <= 2100; ano++) {
+    const option = document.createElement("option");
+    option.value = ano;
+    option.textContent = ano;
+    ui.ano.appendChild(option);
+}
 
 /* ---------- Utilidades ---------- */
 
