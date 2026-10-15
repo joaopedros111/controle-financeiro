@@ -164,8 +164,10 @@
 .periodo {
     display: grid;
     grid-template-columns: 44px minmax(0, 1fr) 88px 44px;
-    gap: 8px;
+    grid-template-rows: auto auto;
+
     align-items: center;
+    gap: 8px;
 
     padding: 12px;
     margin-bottom: 16px;
@@ -175,53 +177,37 @@
     background: var(--superficie);
 }
 
-.periodo > * {
-    margin: 0;
-}
-
-#mes-anterior {
+.periodo #mes-anterior {
     grid-column: 1;
+    grid-row: 1;
 }
 
-#mes {
+.periodo #mes {
     grid-column: 2;
-
-    width: 100%;
-    min-width: 0;
-    height: 44px;
+    grid-row: 1;
 }
 
-#ano {
+.periodo #ano {
     grid-column: 3;
-
-    width: 100%;
-    min-width: 0;
-    height: 44px;
-
-    text-align: center;
+    grid-row: 1;
 }
 
-#mes-proximo {
+.periodo #mes-proximo {
     grid-column: 4;
+    grid-row: 1;
 }
 
-#hoje {
+.periodo #hoje {
     grid-column: 1 / -1;
-
+    grid-row: 2;
     width: 100%;
-    margin-top: 2px;
+    margin-top: 4px;
 }
 
-.periodo select,
-.periodo input {
-    border: 1px solid var(--borda);
-    border-radius: 12px;
-    background: var(--superficie-suave);
-    color: var(--texto);
-
-    padding: 0 12px;
+.periodo > * {
+    justify-self: stretch;
+    align-self: center;
 }
-
     /* Botões Modernos */
     .btn {
         min-height: 44px;
