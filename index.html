@@ -1,0 +1,525 @@
+<!DOCTYPE html>
+
+<html lang="pt-BR">
+
+<head>
+
+    <meta charset="UTF-8">
+
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <meta name="color-scheme" content="light dark">
+    <meta name="theme-color" content="#101827">
+    <meta name="description" content="Controle suas entradas e despesas por mês, categorias, pagamentos e parcelas.">
+
+    <title>Controle Financeiro</title>
+
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http\://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%92%B0%3C/text%3E%3C/svg%3E">
+
+    <link rel="stylesheet" href="style.css">
+
+</head>
+
+
+
+<body>
+
+
+
+    <main class="container">
+
+
+
+        <header class="topo">
+
+            <h1>Controle Financeiro</h1>
+
+            <button id="alternar-tema" class="btn btn-icone" type="button"
+
+                    aria-label="Alternar entre tema claro e escuro" title="Alternar tema">🌙</button>
+
+        </header>
+
+
+
+        <nav class="periodo" aria-label="Período">
+
+            <button id="mes-anterior" class="btn btn-icone" type="button" aria-label="Mês anterior">‹</button>
+
+
+
+            <label class="sr-only" for="mes">Mês</label>
+
+            <select id="mes">
+
+                <option value="1">Janeiro</option>
+
+                <option value="2">Fevereiro</option>
+
+                <option value="3">Março</option>
+
+                <option value="4">Abril</option>
+
+                <option value="5">Maio</option>
+
+                <option value="6">Junho</option>
+
+                <option value="7">Julho</option>
+
+                <option value="8">Agosto</option>
+
+                <option value="9">Setembro</option>
+
+                <option value="10">Outubro</option>
+
+                <option value="11">Novembro</option>
+
+                <option value="12">Dezembro</option>
+
+            </select>
+
+
+
+            <label class="sr-only" for="ano">Ano</label>
+
+            <input id="ano" type="number" min="2000" max="2100" step="1">
+
+
+
+            <button id="mes-proximo" class="btn btn-icone" type="button" aria-label="Próximo mês">›</button>
+
+            <button id="hoje" class="btn btn-secundario" type="button">Mês atual</button>
+
+        </nav>
+
+
+
+        <!-- Resumo do mês -->
+
+        <section class="resumo" aria-labelledby="titulo-resumo">
+
+            <h2 id="titulo-resumo" class="sr-only">Resumo do mês</h2>
+
+
+
+            <p class="saldo-rotulo" id="saldo-rotulo">Saldo do mês</p>
+
+            <p class="saldo-valor" id="saldo-valor">R$ 0,00</p>
+
+
+
+            <div class="barra" id="barra" role="img" aria-label="Parte da renda comprometida com despesas">
+
+                <div class="barra-pago" id="barra-pago"></div>
+
+                <div class="barra-pendente" id="barra-pendente"></div>
+
+            </div>
+
+            <p class="barra-texto" id="texto-comprometido">Informe suas receitas para ver quanto da renda está comprometido.</p>
+
+
+
+            <dl class="indicadores">
+
+                <div>
+
+                    <dt>Entradas</dt>
+
+                    <dd id="total-receitas">R$ 0,00</dd>
+
+                </div>
+
+                <div>
+
+                    <dt>Despesas</dt>
+
+                    <dd id="total-despesas">R$ 0,00</dd>
+
+                </div>
+
+                <div>
+
+                    <dt>Já pago</dt>
+
+                    <dd id="valor-pago">R$ 0,00</dd>
+
+                </div>
+
+                <div>
+
+                    <dt>A pagar</dt>
+
+                    <dd id="valor-pendente">R$ 0,00</dd>
+
+                </div>
+
+            </dl>
+
+        </section>
+
+
+
+        <!-- Despesas -->
+
+        <section class="bloco despesas" aria-labelledby="titulo-despesas">
+
+            <div class="bloco-topo">
+
+                <h2 id="titulo-despesas">Despesas</h2>
+
+                <button id="adicionar-despesa" class="btn btn-primario" type="button">+ Adicionar despesa</button>
+
+            </div>
+
+
+
+            <div id="lista-despesas"></div>
+
+            <p class="vazio" id="vazio-despesas"></p>
+
+
+
+            <div class="total">
+
+                <span id="total-rotulo">Total a pagar</span>
+
+                <span id="total-valor">R$ 0,00</span>
+
+                <span id="total-percentual">0,0%</span>
+
+            </div>
+
+        </section>
+
+
+
+        <!-- Despesas por categoria -->
+
+        <section class="bloco" aria-labelledby="titulo-categorias">
+
+            <div class="bloco-topo">
+
+                <h2 id="titulo-categorias">Gastos por categoria</h2>
+
+                <button id="gerenciar-categorias" class="btn btn-secundario" type="button">Categorias</button>
+
+            </div>
+
+            <div id="resumo-categorias"></div>
+
+            <p class="vazio" id="vazio-categorias">Os gastos aparecem aqui conforme você lança despesas com valor.</p>
+
+        </section>
+
+
+
+        <!-- Entradas -->
+
+        <section class="bloco" aria-labelledby="titulo-receitas">
+
+            <div class="bloco-topo">
+
+                <h2 id="titulo-receitas">Entradas</h2>
+
+                <button id="adicionar-receita" class="btn btn-primario" type="button">+ Adicionar entrada</button>
+
+            </div>
+
+
+
+            <div id="lista-receitas"></div>
+
+            <p class="vazio" id="vazio-receitas">Nenhuma entrada neste mês. Adicione seu salário ou outros valores que você recebe.</p>
+
+
+
+            <div class="total total-receitas">
+
+                <span>Total</span>
+
+                <span id="total-receitas-lista">R$ 0,00</span>
+
+            </div>
+
+        </section>
+
+
+
+        <!-- Ferramentas -->
+
+        <section class="bloco" aria-labelledby="titulo-ferramentas">
+
+            <h2 id="titulo-ferramentas">Ferramentas</h2>
+
+            <div class="acoes acoes-ferramentas">
+
+                <button id="copiar-mes-anterior" class="btn btn-secundario" type="button">Copiar do mês anterior</button>
+
+                <button id="exportar-csv" class="btn btn-secundario" type="button">Exportar mês (CSV)</button>
+
+                <button id="exportar-backup" class="btn btn-secundario" type="button">Salvar backup</button>
+
+                <button id="importar-backup" class="btn btn-secundario" type="button">Restaurar backup</button>
+
+                <button id="limpar-mes" class="btn btn-perigo" type="button">Limpar este mês</button>
+
+            </div>
+
+            <input id="arquivo-backup" type="file" accept="application/json,.json" hidden>
+
+            <p class="nota">Os dados ficam salvos neste navegador. Salve um backup de vez em quando para não perder nada ao limpar os dados do navegador ou trocar de computador.</p>
+
+        </section>
+
+
+
+    </main>
+
+
+
+    <!-- Adicionar / editar despesa -->
+
+    <dialog id="dialogo-despesa" aria-labelledby="titulo-dialogo-despesa">
+
+        <form id="form-despesa" class="dialogo-corpo" novalidate>
+
+            <div class="bloco-topo">
+
+                <h2 id="titulo-dialogo-despesa">Adicionar despesa</h2>
+
+                <button id="fechar-despesa" class="btn btn-icone" type="button" aria-label="Fechar">×</button>
+
+            </div>
+
+
+
+            <div class="campos">
+
+                <label class="campo">
+
+                    <span>Nome</span>
+
+                    <input id="despesa-nome" type="text" maxlength="80" placeholder="Ex.: Aluguel" autocomplete="off">
+
+                </label>
+
+
+
+                <label class="campo">
+
+                    <span>Categoria</span>
+
+                    <select id="despesa-categoria"></select>
+
+                </label>
+
+
+
+                <label class="campo">
+
+                    <span>Valor (R$)</span>
+
+                    <input id="despesa-valor" type="number" min="0" step="0.01" inputmode="decimal" placeholder="0,00">
+
+                </label>
+
+
+
+                <label class="campo" id="campo-tipo">
+
+                    <span>Repetição</span>
+
+                    <select id="despesa-tipo">
+
+                        <option value="unica">Não se repete</option>
+
+                        <option value="fixa">Fixa (todo mês)</option>
+
+                        <option value="parcelada">Parcelada</option>
+
+                    </select>
+
+                    <small class="dica" id="dica-tipo"></small>
+
+                </label>
+
+
+
+                <label class="campo" id="campo-parcelas" hidden>
+
+                    <span>Número de parcelas</span>
+
+                    <input id="despesa-parcelas" type="number" min="2" max="60" step="1" inputmode="numeric" value="2">
+
+                    <small class="dica">O valor acima é o de cada parcela. As demais entram nos meses seguintes.</small>
+
+                </label>
+
+
+
+                <label class="campo-check">
+
+                    <input id="despesa-pago" type="checkbox">
+
+                    <span>Já está paga</span>
+
+                </label>
+
+
+
+                <label class="campo-check" id="campo-propagar" hidden>
+
+                    <input id="despesa-propagar" type="checkbox">
+
+                    <span id="texto-propagar">Aplicar também às próximas</span>
+
+                </label>
+
+            </div>
+
+
+
+            <div class="acoes acoes-dialogo">
+
+                <button id="cancelar-despesa" class="btn btn-secundario" type="button">Cancelar</button>
+
+                <button class="btn btn-primario" type="submit">Salvar</button>
+
+            </div>
+
+        </form>
+
+    </dialog>
+
+
+
+    <!-- Remover despesa fixa ou parcelada -->
+
+    <dialog id="dialogo-serie" aria-labelledby="titulo-dialogo-serie">
+
+        <div class="dialogo-corpo">
+
+            <h2 id="titulo-dialogo-serie">Remover despesa</h2>
+
+            <p id="texto-serie" class="texto-dialogo"></p>
+
+
+
+            <div class="acoes acoes-dialogo">
+
+                <button id="serie-cancelar" class="btn btn-secundario" type="button">Cancelar</button>
+
+                <button id="serie-so-este" class="btn btn-secundario" type="button">Só este mês</button>
+
+                <button id="serie-proximos" class="btn btn-perigo" type="button">Este e os próximos</button>
+
+            </div>
+
+        </div>
+
+    </dialog>
+
+
+
+    <!-- Adicionar / editar entrada -->
+
+    <dialog id="dialogo-receita" aria-labelledby="titulo-dialogo-receita">
+
+        <form id="form-receita" class="dialogo-corpo" novalidate>
+
+            <div class="bloco-topo">
+
+                <h2 id="titulo-dialogo-receita">Adicionar entrada</h2>
+
+                <button id="fechar-receita" class="btn btn-icone" type="button" aria-label="Fechar">×</button>
+
+            </div>
+
+
+
+            <div class="campos">
+
+                <label class="campo">
+
+                    <span>Nome</span>
+
+                    <input id="receita-nome" type="text" maxlength="80" placeholder="Ex.: Salário" autocomplete="off">
+
+                </label>
+
+
+
+                <label class="campo">
+
+                    <span>Valor (R$)</span>
+
+                    <input id="receita-valor" type="number" min="0" step="0.01" inputmode="decimal" placeholder="0,00">
+
+                </label>
+
+            </div>
+
+
+
+            <div class="acoes acoes-dialogo">
+
+                <button id="cancelar-receita" class="btn btn-secundario" type="button">Cancelar</button>
+
+                <button class="btn btn-primario" type="submit">Salvar</button>
+
+            </div>
+
+        </form>
+
+    </dialog>
+
+
+
+    <!-- Gerenciar categorias -->
+
+    <dialog id="dialogo-categorias" aria-labelledby="titulo-dialogo">
+
+        <div class="dialogo-corpo">
+
+            <div class="bloco-topo">
+
+                <h2 id="titulo-dialogo">Categorias</h2>
+
+                <button id="fechar-categorias" class="btn btn-icone" type="button" aria-label="Fechar">×</button>
+
+            </div>
+
+
+
+            <ul id="lista-categorias" class="lista-categorias"></ul>
+
+
+
+            <div class="nova-categoria">
+
+                <label class="sr-only" for="nova-categoria">Nome da nova categoria</label>
+
+                <input id="nova-categoria" type="text" placeholder="Nome da nova categoria" maxlength="40">
+
+                <button id="adicionar-categoria" class="btn btn-primario" type="button">Adicionar</button>
+
+            </div>
+
+        </div>
+
+    </dialog>
+
+
+
+    <div id="aviso" class="aviso" role="status" aria-live="polite"></div>
+
+
+
+    <script src="app.js"></script>
+
+
+
+</body>
+
+</html>
