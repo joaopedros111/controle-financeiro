@@ -162,57 +162,66 @@
 
 @layer components {
     /* Período */
-    .periodo {
-        display: grid;
-        grid-template-columns: 44px 1fr 88px 44px;
-        align-items: center;
-        gap: 8px;
-        padding: 10px;
-        margin-bottom: 14px;
-        border-radius: 12px;
-        border: 1px solid var(--borda);
-        border-radius: var(--raio);
-        background: var(--superficie);
-        box-shadow: var(--sombra-card);
+.periodo {
+    display: grid;
+    grid-template-columns: 44px 1fr 88px 44px;
+    align-items: center;
+    gap: 8px;
+    padding: 10px;
+    margin-bottom: 14px;
+    border-radius: 12px;
+}
 
-        & select, & input {
-            height: 44px;
-            border: 1px solid var(--borda);
-            border-radius: 12px;
-            background: var(--superficie-suave);
-            color: var(--texto);
-            padding: 0 10px;
-            font-size: 16px; /* Impede zoom no iOS */
-        }
+.periodo #mes-anterior {
+    grid-column: 1;
+    grid-row: 1;
 
-        & #mes {
-            width: 100%;
-            min-width: 0;
-            height: 44px;
-            padding: 0 10px;
-        }
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    font-size: 1.2rem;
+}
 
-                & #ano {
-            width: 88px;
-            height: 44px;
-            padding: 0 8px;
-            text-align: center;
-        }
+.periodo #mes {
+    grid-column: 2;
+    grid-row: 1;
 
-        & #mes-anterior {
-            grid-column: 1;
-        }
+    width: 100%;
+    min-width: 0;
+    height: 44px;
+    padding: 0 10px;
+    font-size: 16px;
+}
 
-        & #mes-proximo {
-            grid-column: 4;
-        }
+.periodo #ano {
+    grid-column: 3;
+    grid-row: 1;
 
-        & #hoje {
-            grid-column: 1 / -1;
-            width: 100%;
-            margin-top: 4px;
-        }
-    }
+    width: 100%;
+    height: 44px;
+    padding: 0 8px;
+    text-align: center;
+    font-size: 16px;
+}
+
+.periodo #mes-proximo {
+    grid-column: 4;
+    grid-row: 1;
+
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    font-size: 1.2rem;
+}
+
+.periodo #hoje {
+    grid-column: 1 / -1;
+    grid-row: 2;
+
+    width: 100%;
+    min-height: 44px;
+    margin: 0;
+}
 
     /* Botões Modernos */
     .btn {
@@ -317,9 +326,9 @@
 
     /* Resumo financeiro moderno */
     .resumo {
-        padding: 20px 18px;
-        margin-bottom: 16px;
-        border: 1px solid var(--borda);
+    padding: 16px 14px 12px;
+    margin-bottom: 14px;
+    border-radius: 16px;
         border-radius: calc(var(--raio) + 4px);
         background: var(--superficie);
         box-shadow: var(--sombra-flutuante);
