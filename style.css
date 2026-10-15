@@ -725,3 +725,224 @@
         }
     }
 }
+
+
+/* =========================================================
+   MODAIS — RECEITAS, DESPESAS E GERENCIAMENTO DE CATEGORIAS
+   ========================================================= */
+
+@layer components {
+
+    /* Janela */
+    dialog {
+        width: min(calc(100% - 32px), 460px);
+        max-height: min(88dvh, 760px);
+        overflow-x: hidden;
+        overflow-y: auto;
+        border-radius: 20px;
+    }
+
+    /* Área interna */
+    .dialogo-corpo {
+        display: block;
+        width: 100%;
+        min-width: 0;
+        padding: 24px;
+    }
+
+    /* Cabeçalho: título e botão fechar */
+    .dialogo-corpo > .bloco-topo {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin: 0 0 24px;
+    }
+
+    .dialogo-corpo > .bloco-topo h2,
+    #titulo-dialogo-serie {
+        min-width: 0;
+        margin: 0;
+        font-size: 1.15rem;
+        line-height: 1.35;
+        overflow-wrap: anywhere;
+    }
+
+    .dialogo-corpo > .bloco-topo .btn-icone {
+        flex: 0 0 44px;
+    }
+
+    /* Formulários */
+    .campos {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        gap: 18px;
+        width: 100%;
+    }
+
+    .campo {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        gap: 7px;
+        min-width: 0;
+        font-size: 0.9rem;
+        line-height: 1.4;
+    }
+
+    .campo > span {
+        overflow-wrap: anywhere;
+    }
+
+    .campo input,
+    .campo select {
+        display: block;
+        width: 100%;
+        min-width: 0;
+        min-height: 46px;
+        margin: 0;
+    }
+
+    .dica {
+        display: block;
+        line-height: 1.45;
+        overflow-wrap: anywhere;
+    }
+
+    /* Opções com checkbox */
+    .campo-check {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        min-height: 36px;
+        padding: 2px 0;
+        font-size: 0.9rem;
+        font-weight: 500;
+    }
+
+    .campo-check input {
+        flex: 0 0 20px;
+        width: 20px;
+        height: 20px;
+        margin: 0;
+    }
+
+    /* Rodapé dos modais
+       Sobrescreve a largura de 100% herdada de .acoes .btn */
+    .acoes-dialogo {
+        display: flex;
+        align-items: stretch;
+        gap: 10px;
+        margin: 26px 0 0;
+        padding: 18px 0 0;
+        border-top: 1px solid var(--borda);
+    }
+
+    .acoes-dialogo .btn {
+        flex: 1 1 0;
+        width: auto;
+        min-width: 0;
+        min-height: 46px;
+        padding: 10px 12px;
+        white-space: normal;
+        overflow-wrap: anywhere;
+    }
+
+    /* Mensagens de confirmação ou remoção */
+    .texto-dialogo {
+        margin: 14px 0 20px;
+        line-height: 1.6;
+        overflow-wrap: anywhere;
+    }
+
+    /* Gerenciar categorias */
+    .lista-categorias {
+        display: grid;
+        gap: 10px;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+    }
+
+    .lista-categorias > li {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        min-width: 0;
+        padding: 12px;
+        border: 1px solid var(--borda);
+        border-radius: 12px;
+        background: var(--superficie-suave);
+        overflow-wrap: anywhere;
+    }
+
+    .lista-categorias > li button {
+        flex-shrink: 0;
+    }
+
+    .nova-categoria {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 10px;
+        margin-top: 20px;
+        padding-top: 18px;
+        border-top: 1px solid var(--borda);
+    }
+
+    .nova-categoria input {
+        width: 100%;
+        min-width: 0;
+        min-height: 46px;
+        padding: 10px 12px;
+        border: 1px solid var(--borda);
+        border-radius: 12px;
+        background: var(--superficie-suave);
+        color: var(--texto);
+        font: inherit;
+        font-size: 16px;
+    }
+
+    .nova-categoria .btn {
+        min-height: 46px;
+    }
+
+    /* Telas estreitas */
+    @media (max-width: 420px) {
+        dialog {
+            width: calc(100% - 24px);
+            max-height: 86dvh;
+            border-radius: 18px;
+        }
+
+        .dialogo-corpo {
+            padding: 20px 16px;
+        }
+
+        .dialogo-corpo > .bloco-topo {
+            margin-bottom: 20px;
+        }
+
+        .campos {
+            gap: 16px;
+        }
+
+        .acoes-dialogo {
+            gap: 8px;
+            margin-top: 22px;
+        }
+
+        .acoes-dialogo .btn {
+            padding: 10px 8px;
+            font-size: 0.85rem;
+        }
+
+        .nova-categoria {
+            grid-template-columns: minmax(0, 1fr);
+        }
+
+        .nova-categoria .btn {
+            width: 100%;
+        }
+    }
+}
