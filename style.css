@@ -672,6 +672,84 @@
 
 @layer components {
 
+    /* Diálogos de edição: cartões claros, com ações sempre fáceis de alcançar. */
+    dialog {
+        width: min(100% - 32px, 440px);
+        max-width: none;
+        max-height: min(88dvh, 760px);
+        margin: auto;
+        padding: 0;
+        overflow: auto;
+        color: var(--texto);
+        background: var(--superficie);
+        border: 1px solid var(--borda);
+        border-radius: 24px;
+        box-shadow: 0 24px 80px rgba(15, 23, 42, .24);
+    }
+
+    dialog::backdrop {
+        background: rgba(15, 23, 42, .56);
+        backdrop-filter: blur(3px);
+    }
+
+    dialog .dialogo-corpo {
+        padding: 24px;
+    }
+
+    dialog .dialogo-corpo > .bloco-topo {
+        margin-bottom: 22px;
+    }
+
+    dialog .dialogo-corpo > .bloco-topo h2,
+    dialog #titulo-dialogo-serie {
+        font-size: 1.25rem;
+        font-weight: 750;
+        letter-spacing: -.025em;
+    }
+
+    dialog .campos { gap: 16px; }
+    dialog .campo { gap: 7px; color: var(--texto-secundario); font-weight: 600; }
+    dialog .campo input,
+    dialog .campo select { color: var(--texto); background: var(--fundo); }
+    dialog .acoes-dialogo { margin-top: 24px; padding-top: 18px; gap: 12px; }
+    dialog .acoes-dialogo .btn { min-height: 48px; border-radius: 14px; }
+    dialog .campo-check { min-height: 48px; padding: 8px 12px; border: 1px solid var(--borda); border-radius: 14px; background: var(--fundo); }
+    dialog .lista-categorias { max-height: min(48dvh, 420px); overflow: auto; padding: 2px; }
+    dialog .lista-categorias > li { border-radius: 14px; }
+    dialog .nova-categoria { position: sticky; bottom: -24px; padding: 16px 0 0; background: var(--superficie); }
+
+    @media (max-width: 600px) {
+        dialog {
+            position: fixed;
+            inset: auto 0 0;
+            width: 100%;
+            max-width: none;
+            max-height: min(92dvh, 820px);
+            margin: 0;
+            border: 0;
+            border-radius: 24px 24px 0 0;
+            padding-bottom: env(safe-area-inset-bottom, 0px);
+            animation: subir-dialogo .2s ease-out;
+        }
+
+        dialog .dialogo-corpo { padding: 24px 20px 20px; }
+        dialog .dialogo-corpo > .bloco-topo { margin-bottom: 20px; }
+        dialog .acoes-dialogo { position: sticky; bottom: -20px; padding: 14px 0 4px; margin-top: 20px; background: var(--superficie); }
+        dialog#dialogo-categorias .lista-categorias > li {
+            grid-template-columns: minmax(0, 1fr) auto auto;
+            gap: 6px;
+            padding: 10px;
+        }
+        dialog#dialogo-categorias .lista-categorias > li button { width: auto; min-width: 40px; }
+        dialog#dialogo-categorias .nova-categoria { grid-template-columns: 1fr; bottom: -20px; }
+        dialog#dialogo-categorias .nova-categoria .btn { width: 100%; }
+    }
+
+    @keyframes subir-dialogo {
+        from { opacity: .6; transform: translateY(24px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+
     /* Área interna */
 .dialogo-corpo {
     display: block;
@@ -845,21 +923,8 @@
 
     /* Telas estreitas */
 @media (max-width: 420px) {
-    dialog {
-        width: calc(100% - 16px);
-        border-radius: 18px;
-    }
-
-    .dialogo-corpo {
-        padding: 14px;
-    }
-
-    .lista-categorias > li {
-        grid-template-columns: 1fr;
-    }
-
-    .lista-categorias > li button {
-        width: 100%;
+    dialog#dialogo-categorias .lista-categorias > li {
+        grid-template-columns: minmax(0, 1fr) auto auto;
     }
 }
 }
