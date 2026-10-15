@@ -2995,7 +2995,7 @@ function importarBackup(arquivo) {
             }
 
             const mesesValidos = Object.entries(bruto.meses).every(([chave, mes]) =>
-                /^\\d{4}-(0[1-9]|1[0-2])$/.test(chave) &&
+                /^\d{4}-(0[1-9]|1[0-2])$/.test(chave) &&
                 mes &&
                 typeof mes === "object" &&
                 !Array.isArray(mes) &&

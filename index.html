@@ -1,25 +1,28 @@
 <!DOCTYPE html>
-
 <html lang="pt-BR">
-
 <head>
+    <meta charset="UTF-8">
 
-    <meta charset="UTF-8">
+    <!-- Mobile: escala correta + respeito às áreas seguras do iPhone/Android -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
-    <meta name="color-scheme" content="light dark">
-    <meta name="theme-color" content="#101827">
+    <meta name="color-scheme" content="light dark">
+    <meta name="theme-color" content="#2563eb">
     <meta name="description" content="Controle suas entradas e despesas por mês, categorias, pagamentos e parcelas.">
+    <title>Controle Financeiro</title>
 
-    <title>Controle Financeiro</title>
+    <link rel="manifest" href="manifest.json">
 
-    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http\://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%92%B0%3C/text%3E%3C/svg%3E">
+    <link rel="icon" href="icons/icon-192.png">
+    <link rel="apple-touch-icon" href="icons/icon-192.png">
 
-    <link rel="stylesheet" href="style.css">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="Finanças">
 
+    <link rel="stylesheet" href="style.css">
 </head>
-
 
 
 <body>
@@ -111,6 +114,7 @@
 
     <div class="barra" id="barra">
         <div class="barra-pago" id="barra-pago"></div>
+        <div class="barra-pendente" id="barra-pendente"></div>
     </div>
 
     <p class="barra-texto" id="texto-comprometido">
@@ -496,14 +500,15 @@
 
 
 
-    <div id="aviso" class="aviso" role="status" aria-live="polite"></div>
+<div id="aviso" class="aviso" role="status" aria-live="polite"></div>
 
-
-
-    <script src="app.js"></script>
-
-
-
+<script src="app.js"></script>
+<script>
+    if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+            navigator.serviceWorker.register('sw.js').catch(console.error);
+        });
+    }
+</script>
 </body>
-
 </html>
