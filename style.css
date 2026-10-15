@@ -169,3 +169,56 @@ dialog::backdrop { background: rgba(10,18,32,.55); backdrop-filter: blur(3px); }
     .despesa .remover-despesa { grid-column: 5; grid-row: 1; }
     .despesa .marca { grid-column: 2; grid-row: 3; }
 }
+
+/* Ajuste fino para celular: recuperar densidade e proximidade dos controles */
+@media (max-width: 600px) {
+    .container { width: calc(100% - 20px); padding: 12px 0 24px; }
+    .topo { gap: 8px; margin-bottom: 12px; }
+    .topo h1 { font-size: 1.28rem; letter-spacing: -.035em; }
+    .topo h1::before { width: 5px; height: 21px; margin-right: 7px; vertical-align: -3px; }
+    .periodo { gap: 6px; padding: 8px; margin-bottom: 12px; border-radius: 12px; box-shadow: none; }
+    .periodo select, .periodo input { height: 36px; font-size: .88rem; }
+    .periodo select { min-width: 0; } .periodo input { width: 66px; }
+    .periodo #hoje { flex: 0 0 auto; margin-left: auto; }
+    .btn { min-height: 36px; gap: 5px; padding: 7px 10px; border-radius: 9px; font-size: .84rem; }
+    .btn-icone { width: 36px; min-width: 36px; min-height: 36px; }
+    .resumo { padding: 15px 13px; margin-bottom: 12px; border-radius: 14px; box-shadow: none; }
+    .saldo-rotulo { font-size: .82rem; margin-bottom: 2px; }
+    .saldo-valor { font-size: 1.8rem; margin-bottom: 11px; }
+    .barra { height: 8px; margin-bottom: 7px; } .barra-texto { font-size: .78rem; margin-bottom: 12px; }
+    .indicadores { gap: 7px; }
+    .indicadores > div { padding: 9px 10px; border-radius: 9px; }
+    .indicadores dt { font-size: .74rem; margin-bottom: 2px; } .indicadores dd { font-size: .94rem; }
+    .bloco { padding: 13px 11px; margin-bottom: 12px; border-radius: 13px; box-shadow: none; }
+    .bloco-topo { align-items: center; gap: 7px; margin-bottom: 10px; }
+    .bloco h2, .dialogo-corpo h2 { font-size: 1rem; }
+    .bloco-topo h2 { width: auto; flex: 1 1 auto; } .bloco-topo .btn { width: auto; flex: 0 0 auto; }
+    .receita, .despesa { gap: 6px; padding: 9px 0; }
+    .receita button, .despesa button { width: 32px; height: 32px; font-size: .95rem; border-radius: 8px; }
+    .nome-receita, .despesa-nome, .nome-despesa { font-size: .88rem; }
+    .valor-receita, .despesa-valor, .valor-despesa { font-size: .86rem; }
+    .marca { font-size: .68rem; padding: 2px 6px; } .situacao, .status-despesa { font-size: .74rem; }
+    .total { gap: 8px; margin-top: 8px; padding-top: 10px; font-size: .84rem; }
+    .total > span:nth-child(2) { font-size: .95rem; }
+    .cat-linha { margin: 11px 0 13px; }
+    .cat-cabecalho { flex-direction: row; align-items: center; gap: 8px; }
+    .cat-detalhe { text-align: right; font-size: .76rem; }
+    .acoes { gap: 6px; }
+    .acoes-ferramentas { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; margin-top: 10px; }
+    .acoes-ferramentas .btn { width: 100%; min-width: 0; flex: initial; padding: 7px 6px; font-size: .78rem; }
+    .nota { margin-top: 10px; font-size: .78rem; }
+    .dialogo-corpo { padding: 16px; } .campos { gap: 12px; }
+    .campo { gap: 5px; font-size: .84rem; }
+    .campo input, .campo select, .nova-categoria input { min-height: 40px; }
+    .acoes-dialogo { margin-top: 16px; gap: 7px; } .acoes-dialogo .btn { flex: 0 1 auto; }
+}
+@media (max-width: 380px) {
+    .container { width: calc(100% - 14px); }
+    .topo h1 { font-size: 1.15rem; }
+    .periodo { padding: 6px; gap: 4px; }
+    .periodo select, .periodo input { font-size: .8rem; padding: 0 5px; }
+    .periodo input { width: 58px; } .periodo .btn-icone { width: 32px; min-width: 32px; }
+    .resumo { padding: 13px 11px; } .indicadores > div { padding: 8px; }
+    .indicadores dt { font-size: .69rem; } .indicadores dd { font-size: .86rem; }
+    .bloco { padding: 11px 8px; } .receita button, .despesa button { width: 29px; height: 29px; }
+}
