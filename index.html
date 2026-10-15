@@ -150,115 +150,100 @@
 
         <!-- Despesas -->
 
-        <section class="bloco despesas" aria-labelledby="titulo-despesas">
+<section class="bloco despesas" aria-labelledby="titulo-despesas">
+    <div class="bloco-topo">
+        <h2 id="titulo-despesas">Despesas do mês</h2>
+        <button id="adicionar-despesa" class="btn btn-primario" type="button">
+            + Despesa
+        </button>
+    </div>
 
-            <div class="bloco-topo">
+    <div id="lista-despesas"></div>
+    <p class="vazio" id="vazio-despesas"></p>
 
-                <h2 id="titulo-despesas">Despesas</h2>
-
-                <button id="adicionar-despesa" class="btn btn-primario" type="button">+ Adicionar despesa</button>
-
-            </div>
-
-
-
-            <div id="lista-despesas"></div>
-
-            <p class="vazio" id="vazio-despesas"></p>
-
-
-
-            <div class="total">
-
-                <span id="total-rotulo">Total a pagar</span>
-
-                <span id="total-valor">R$ 0,00</span>
-
-                <span id="total-percentual">0,0%</span>
-
-            </div>
-
-        </section>
+    <div class="total">
+        <span id="total-rotulo">Total a pagar</span>
+        <span id="total-valor">R$ 0,00</span>
+        <span id="total-percentual">0,0%</span>
+    </div>
+</section>
 
 
 
         <!-- Despesas por categoria -->
 
-        <section class="bloco" aria-labelledby="titulo-categorias">
+<section class="bloco" aria-labelledby="titulo-categorias">
+    <div class="bloco-topo">
+        <h2 id="titulo-categorias">Para onde foi</h2>
+        <button id="gerenciar-categorias" class="btn btn-secundario" type="button">
+            Gerenciar
+        </button>
+    </div>
 
-            <div class="bloco-topo">
-
-                <h2 id="titulo-categorias">Gastos por categoria</h2>
-
-                <button id="gerenciar-categorias" class="btn btn-secundario" type="button">Categorias</button>
-
-            </div>
-
-            <div id="resumo-categorias"></div>
-
-            <p class="vazio" id="vazio-categorias">Os gastos aparecem aqui conforme você lança despesas com valor.</p>
-
-        </section>
+    <div id="resumo-categorias"></div>
+    <p class="vazio" id="vazio-categorias">
+        Adicione despesas com valor para ver a distribuição por categoria.
+    </p>
+</section>
 
 
 
-        <!-- Entradas -->
+<!-- Entradas -->
 
-        <section class="bloco" aria-labelledby="titulo-receitas">
+<section class="bloco" aria-labelledby="titulo-receitas">
+    <div class="bloco-topo">
+        <h2 id="titulo-receitas">Receitas</h2>
+        <button id="adicionar-receita" class="btn btn-primario" type="button">
+            + Receita
+        </button>
+    </div>
 
-            <div class="bloco-topo">
+    <div id="lista-receitas"></div>
+    <p class="vazio" id="vazio-receitas">
+        Nenhuma receita neste mês. Adicione salário, renda extra ou outros valores recebidos.
+    </p>
 
-                <h2 id="titulo-receitas">Entradas</h2>
-
-                <button id="adicionar-receita" class="btn btn-primario" type="button">+ Adicionar entrada</button>
-
-            </div>
-
-
-
-            <div id="lista-receitas"></div>
-
-            <p class="vazio" id="vazio-receitas">Nenhuma entrada neste mês. Adicione seu salário ou outros valores que você recebe.</p>
-
-
-
-            <div class="total total-receitas">
-
-                <span>Total</span>
-
-                <span id="total-receitas-lista">R$ 0,00</span>
-
-            </div>
-
-        </section>
+    <div class="total total-receitas">
+        <span>Total</span>
+        <span id="total-receitas-lista">R$ 0,00</span>
+    </div>
+</section>
 
 
 
-        <!-- Ferramentas -->
+<!-- Ferramentas -->
 
-        <section class="bloco" aria-labelledby="titulo-ferramentas">
+<section class="bloco" aria-labelledby="titulo-ferramentas">
+    <h2 id="titulo-ferramentas">Backup e exportação</h2>
 
-            <h2 id="titulo-ferramentas">Ferramentas</h2>
+    <div class="acoes acoes-ferramentas">
+        <button id="copiar-mes-anterior" class="btn btn-secundario" type="button">
+            Copiar mês anterior
+        </button>
 
-            <div class="acoes acoes-ferramentas">
+        <button id="exportar-csv" class="btn btn-secundario" type="button">
+            Exportar CSV
+        </button>
 
-                <button id="copiar-mes-anterior" class="btn btn-secundario" type="button">Copiar do mês anterior</button>
+        <button id="exportar-backup" class="btn btn-secundario" type="button">
+            Salvar backup
+        </button>
 
-                <button id="exportar-csv" class="btn btn-secundario" type="button">Exportar mês (CSV)</button>
+        <button id="importar-backup" class="btn btn-secundario" type="button">
+            Restaurar backup
+        </button>
 
-                <button id="exportar-backup" class="btn btn-secundario" type="button">Salvar backup</button>
+        <button id="limpar-mes" class="btn btn-perigo" type="button">
+            Limpar mês
+        </button>
+    </div>
 
-                <button id="importar-backup" class="btn btn-secundario" type="button">Restaurar backup</button>
+    <input id="arquivo-backup" type="file" accept="application/json,.json" hidden>
 
-                <button id="limpar-mes" class="btn btn-perigo" type="button">Limpar este mês</button>
-
-            </div>
-
-            <input id="arquivo-backup" type="file" accept="application/json,.json" hidden>
-
-            <p class="nota">Os dados ficam salvos neste navegador. Salve um backup de vez em quando para não perder nada ao limpar os dados do navegador ou trocar de computador.</p>
-
-        </section>
+    <p class="nota">
+        Seus dados ficam salvos neste dispositivo. Faça backup periodicamente para não perder os lançamentos.
+    </p>
+</section>
 
 
 

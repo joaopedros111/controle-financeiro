@@ -1072,8 +1072,8 @@ function renderDespesas() {
 
     ui.vazioDespesas.hidden = despesas.length > 0;
 
-    ui.vazioDespesas.textContent = "Nenhuma despesa neste mês. Use “+ Adicionar despesa” para começar.";
-
+    ui.vazioDespesas.textContent =
+    "Nenhuma despesa neste mês. Toque em “+ Despesa” para começar.";
 }
 
 
