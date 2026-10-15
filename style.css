@@ -436,7 +436,7 @@
     }
 
     .despesa {
-        grid-template-columns: 24px minmax(0,1fr) auto auto;
+        grid-template-columns: 24px minmax(0, 1fr) auto auto 38px 38px;
 
         & > input.pago-despesa {
             width: 22px;
@@ -452,6 +452,18 @@
             & .nome-despesa {
                 text-decoration: line-through;
             }
+        }
+    }
+
+    @media (max-width: 600px) {
+        .despesa {
+            grid-template-columns: 22px minmax(0, 1fr) auto auto 36px 36px;
+            gap: 7px;
+        }
+
+        .despesa button {
+            width: 36px;
+            height: 36px;
         }
     }
 
