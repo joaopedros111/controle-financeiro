@@ -74,26 +74,25 @@
     .legenda-despesa { background: #14b8a6; }
     .grafico-mensal {
         display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 18px;
-        height: 190px;
+        grid-template-columns: repeat(6, minmax(0, 1fr));
+        gap: 8px;
+        height: 152px;
         padding: 4px 2px 0;
         border-bottom: 1px solid var(--borda);
         background: repeating-linear-gradient(to bottom, transparent 0, transparent 36px, color-mix(in srgb, var(--borda) 65%, transparent) 37px, transparent 38px);
     }
-    .grafico-grupo { display: grid; grid-template-rows: minmax(0, 1fr) auto auto; min-width: 0; text-align: center; }
-    .grafico-barras { display: flex; align-items: flex-end; justify-content: center; min-height: 0; }
-    .grafico-barra { display: block; width: min(42%, 54px); min-height: 0; border-radius: 9px 9px 3px 3px; transition: height .28s ease; }
+    .grafico-grupo { display: grid; grid-template-rows: minmax(0, 1fr) 24px; min-width: 0; text-align: center; }
+    .grafico-barras { display: flex; align-items: flex-end; justify-content: center; gap: 4px; min-height: 0; }
+    .grafico-barra { display: block; width: min(34%, 18px); min-height: 0; border-radius: 5px 5px 2px 2px; transition: height .28s ease; }
     .grafico-barra-entrada { background: linear-gradient(180deg, #60a5fa, #2563eb); }
     .grafico-barra-despesa { background: linear-gradient(180deg, #5eead4, #0f9f91); }
-    .grafico-rotulo { padding-top: 7px; color: var(--texto-secundario); font-size: .78rem; font-weight: 700; }
-    .grafico-valor { padding: 2px 0 8px; color: var(--texto); font-size: .9rem; font-variant-numeric: tabular-nums; }
+    .grafico-mes { align-self: end; color: var(--texto-secundario); font-size: .7rem; font-weight: 700; text-transform: capitalize; }
 
     @media (max-width: 380px) {
         .topo { padding: 13px; }
         .marca-icone { flex-basis: 40px; width: 40px; height: 40px; border-radius: 13px; }
         .grafico-bloco { padding: 18px 14px; }
-        .grafico-mensal { gap: 12px; }
+        .grafico-mensal { gap: 4px; }
         .grafico-periodo { font-size: .66rem; }
     }
     @media (prefers-reduced-motion: reduce) {
@@ -257,7 +256,7 @@
     align-items: center;
     gap: 8px;
 
-    padding: 12px;
+    padding: 12px 12px 4px;
     margin-bottom: 16px;
 
     border: 1px solid var(--borda);

@@ -1312,28 +1312,42 @@ function renderGraficoMensal() {
     const destino = $("grafico-mensal");
     if (!destino) return;
 
-    const dados = obterMes();
-    const receitas = somar(dados.receitas);
-    const despesas = somar(dados.despesas);
-    const escala = Math.max(receitas, despesas);
-    const mesAtual = MESES[periodo.mes - 1] + " de " + periodo.ano;
-    $("periodo-grafico").textContent = mesAtual;
+    const pontos = [];
+    let ano = periodo.ano;
+    let mes = periodo.mes;
+    for (let i = 0; i < 6; i += 1) {
+        const chave = chaveMes(ano, mes);
+        const dados = estado.meses[chave] || { receitas: [], despesas: [] };
+        pontos.unshift({
+            nome: MESES[mes - 1].slice(0, 3).toLocaleLowerCase("pt-BR"),
+            chave,
+            receitas: somar(dados.receitas),
+            despesas: somar(dados.despesas)
+        });
+        mes -= 1;
+        if (mes === 0) { mes = 12; ano -= 1; }
+    }
 
-    destino.replaceChildren(...[
-        ["entrada", receitas, "Entradas"],
-        ["despesa", despesas, "Despesas"]
-    ].map(([tipo, valor, rotulo]) => {
+    const escala = Math.max(0, ...pontos.flatMap((p) => [p.receitas, p.despesas]));
+    $("periodo-grafico").textContent = "Últimos 6 meses";
+    destino.replaceChildren(...pontos.map((p) => {
         const grupo = criarEl("div", { class: "grafico-grupo" });
         const barras = criarEl("div", { class: "grafico-barras" });
-        const barra = criarEl("span", { class: "grafico-barra grafico-barra-" + tipo, "aria-hidden": "true" });
-        barra.style.height = escala > 0 ? Math.max(valor > 0 ? 4 : 0, (valor / escala) * 100) + "%" : "0%";
-        barras.append(barra);
-        grupo.append(barras,
-            criarEl("span", { class: "grafico-rotulo", text: rotulo }),
-            criarEl("strong", { class: "grafico-valor", text: formatarMoeda(valor) }));
+        [["entrada", p.receitas, "Entradas"], ["despesa", p.despesas, "Despesas"]].forEach(([tipo, valor, rotulo]) => {
+            const barra = criarEl("span", {
+                class: "grafico-barra grafico-barra-" + tipo,
+                title: rotulo + " em " + p.nome + "/" + p.chave.slice(0, 4) + ": " + formatarMoeda(valor),
+                "aria-hidden": "true"
+            });
+            barra.style.height = escala > 0 ? Math.max(valor > 0 ? 4 : 0, (valor / escala) * 100) + "%" : "0%";
+            barras.append(barra);
+        });
+        grupo.append(barras, criarEl("span", { class: "grafico-mes", text: p.nome }));
         return grupo;
     }));
-    destino.setAttribute("aria-label", "Entradas em " + mesAtual + ": " + formatarMoeda(receitas) + ". Despesas: " + formatarMoeda(despesas));
+    destino.setAttribute("aria-label", "Entradas e despesas nos últimos seis meses: " + pontos.map((p) =>
+        p.nome + " de " + p.chave.slice(0, 4) + ", entradas " + formatarMoeda(p.receitas) + ", despesas " + formatarMoeda(p.despesas)
+    ).join("; "));
 }
 function renderTudo() {
 
