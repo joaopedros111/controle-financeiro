@@ -436,7 +436,7 @@
     }
 
     .despesa {
-        grid-template-columns: auto minmax(0, 1fr) auto auto;
+        grid-template-columns: 24px minmax(0,1fr) auto auto;
 
         & > input.pago-despesa {
             width: 22px;
@@ -461,6 +461,22 @@
         font-weight: 700;
         font-size: .92rem;
     }
+
+    .despesa-nome {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    align-items: center;
+}
+
+    .nome-despesa,
+.nome-receita,
+.lista-categorias span,
+.texto-dialogo,
+.campo > span {
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
 
     .valor-receita, .despesa-valor, .valor-despesa {
         font-weight: 800;
@@ -585,88 +601,6 @@
         }
     }
 
-    /* Diálogos / Modais Mobile-First */
-    dialog {
-        width: min(100% - 20px, 440px);
-        max-height: min(90dvh, 750px);
-        margin: auto;
-        padding: 0;
-        overflow: auto;
-        color: var(--texto);
-        background: var(--superficie);
-        border: 1px solid var(--borda);
-        border-radius: 24px;
-        box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.35);
-
-        &::backdrop {
-            background: rgba(9, 13, 22, 0.6);
-            backdrop-filter: blur(4px);
-        }
-    }
-
-    .dialogo-corpo {
-        padding: 20px 16px;
-    }
-
-    .campos {
-        display: grid;
-        gap: 12px;
-    }
-
-    .campo {
-        display: grid;
-        gap: 4px;
-        font-size: .85rem;
-        font-weight: 700;
-
-        & input, & select {
-            width: 100%;
-            min-height: 44px;
-            padding: 8px 12px;
-            border: 1px solid var(--borda);
-            border-radius: 12px;
-            background: var(--superficie-suave);
-            font-size: 16px;
-        }
-    }
-
-    .campo-check {
-        display: flex;
-        align-items: center;
-        gap: 12px;
-        min-height: 44px;
-        font-size: .88rem;
-
-        & input {
-            width: 22px;
-            height: 22px;
-            accent-color: var(--primaria);
-        }
-    }
-
-    .dica {
-        color: var(--texto-secundario);
-        font-size: .75rem;
-        font-weight: 400;
-    }
-
-    .acoes-dialogo {
-        display: flex;
-        gap: 8px;
-        margin-top: 16px;
-        padding-top: 12px;
-        border-top: 1px solid var(--borda);
-
-        & .btn {
-            flex: 1;
-        }
-    }
-
-    .texto-dialogo {
-        color: var(--texto-secundario);
-        margin: 0 0 16px;
-        font-size: .88rem;
-    }
 
     /* Aviso Flutuante (Toast) */
     .aviso {
@@ -738,74 +672,78 @@
 
 @layer components {
 
-    /* Janela */
-    dialog {
-        width: min(calc(100% - 32px), 460px);
-        max-height: min(88dvh, 760px);
-        overflow-x: hidden;
-        overflow-y: auto;
-        border-radius: 20px;
-    }
-
     /* Área interna */
-    .dialogo-corpo {
-        display: block;
-        width: 100%;
-        min-width: 0;
-        padding: 24px;
-    }
+.dialogo-corpo {
+    display: block;
+    width: 100%;
+    min-width: 0;
+    padding: 16px;
+}
 
     /* Cabeçalho: título e botão fechar */
-    .dialogo-corpo > .bloco-topo {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 12px;
-        margin: 0 0 24px;
-    }
+.dialogo-corpo > .bloco-topo {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin: 0 0 16px;
+}
 
-    .dialogo-corpo > .bloco-topo h2,
-    #titulo-dialogo-serie {
-        min-width: 0;
-        margin: 0;
-        font-size: 1.15rem;
-        line-height: 1.35;
-        overflow-wrap: anywhere;
-    }
+.dialogo-corpo > .bloco-topo h2,
+#titulo-dialogo-serie {
+    margin: 0;
+    font-size: 1rem;
+    line-height: 1.2;
+    overflow-wrap: anywhere;
+}
+
+.dialogo-corpo > .bloco-topo h2 {
+    min-width: 0;
+    flex: 1;
+}
+
 
     .dialogo-corpo > .bloco-topo .btn-icone {
         flex: 0 0 44px;
     }
 
     /* Formulários */
-    .campos {
-        display: grid;
-        grid-template-columns: minmax(0, 1fr);
-        gap: 18px;
-        width: 100%;
-    }
+.campos {
+    display: grid;
+    gap: 10px;
+    width: 100%;
+}
 
-    .campo {
-        display: grid;
-        grid-template-columns: minmax(0, 1fr);
-        gap: 7px;
-        min-width: 0;
-        font-size: 0.9rem;
-        line-height: 1.4;
-    }
+.campo {
+    display: grid;
+    gap: 4px;
+    min-width: 0;
+    font-size: .85rem;
+}
 
     .campo > span {
         overflow-wrap: anywhere;
     }
 
-    .campo input,
-    .campo select {
-        display: block;
-        width: 100%;
-        min-width: 0;
-        min-height: 46px;
-        margin: 0;
-    }
+.campo input,
+.campo select,
+.nova-categoria input {
+    box-sizing: border-box;
+    width: 100%;
+    min-width: 0;
+    min-height: 44px;
+    padding: 8px 12px;
+
+    font: inherit;
+    font-size: 16px;
+
+    border: 1px solid var(--borda);
+    border-radius: 12px;
+
+    background: var(--superficie-suave);
+    color: var(--texto);
+}
+
 
     .dica {
         display: block;
@@ -833,24 +771,18 @@
 
     /* Rodapé dos modais
        Sobrescreve a largura de 100% herdada de .acoes .btn */
-    .acoes-dialogo {
-        display: flex;
-        align-items: stretch;
-        gap: 10px;
-        margin: 26px 0 0;
-        padding: 18px 0 0;
-        border-top: 1px solid var(--borda);
-    }
+.acoes-dialogo {
+    display: flex;
+    gap: 8px;
+    margin-top: 16px;
+    padding-top: 12px;
+    border-top: 1px solid var(--borda);
+}
 
-    .acoes-dialogo .btn {
-        flex: 1 1 0;
-        width: auto;
-        min-width: 0;
-        min-height: 46px;
-        padding: 10px 12px;
-        white-space: normal;
-        overflow-wrap: anywhere;
-    }
+.acoes-dialogo .btn {
+    flex: 1;
+    min-width: 0;
+}
 
     /* Mensagens de confirmação ou remoção */
     .texto-dialogo {
@@ -868,18 +800,17 @@
         list-style: none;
     }
 
-    .lista-categorias > li {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 12px;
-        min-width: 0;
-        padding: 12px;
-        border: 1px solid var(--borda);
-        border-radius: 12px;
-        background: var(--superficie-suave);
-        overflow-wrap: anywhere;
-    }
+.lista-categorias > li {
+    display: grid;
+    grid-template-columns: 1fr auto auto;
+    align-items: center;
+    gap: 8px;
+
+    padding: 12px;
+    border: 1px solid var(--borda);
+    border-radius: 12px;
+    background: var(--superficie-suave);
+}
 
     .lista-categorias > li button {
         flex-shrink: 0;
@@ -913,41 +844,22 @@
     }
 
     /* Telas estreitas */
-    @media (max-width: 420px) {
-        dialog {
-            width: calc(100% - 24px);
-            max-height: 86dvh;
-            border-radius: 18px;
-        }
-
-        .dialogo-corpo {
-            padding: 20px 16px;
-        }
-
-        .dialogo-corpo > .bloco-topo {
-            margin-bottom: 20px;
-        }
-
-        .campos {
-            gap: 16px;
-        }
-
-        .acoes-dialogo {
-            gap: 8px;
-            margin-top: 22px;
-        }
-
-        .acoes-dialogo .btn {
-            padding: 10px 8px;
-            font-size: 0.85rem;
-        }
-
-        .nova-categoria {
-            grid-template-columns: minmax(0, 1fr);
-        }
-
-        .nova-categoria .btn {
-            width: 100%;
-        }
+@media (max-width: 420px) {
+    dialog {
+        width: calc(100% - 16px);
+        border-radius: 18px;
     }
+
+    .dialogo-corpo {
+        padding: 14px;
+    }
+
+    .lista-categorias > li {
+        grid-template-columns: 1fr;
+    }
+
+    .lista-categorias > li button {
+        width: 100%;
+    }
+}
 }
