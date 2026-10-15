@@ -604,7 +604,7 @@ function atualizarResumo() {
     // Cabeçalho
     ui.saldoValor.textContent = formatarMoeda(saldo);
     ui.saldoValor.classList.toggle("negativo", saldo < 0);
-    ui.saldoRotulo.textContent = saldo < 0 ? "Faltam neste mês" : "Sobra neste mês";
+    ui.saldoRotulo.textContent = "Resumo do mês";
 
     ui.totalReceitas.textContent = formatarMoeda(receita);
     ui.totalDespesas.textContent = formatarMoeda(despesa);

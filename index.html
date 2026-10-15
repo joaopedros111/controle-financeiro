@@ -45,33 +45,6 @@
             <button id="hoje" class="btn btn-secundario" type="button">Mês atual</button>
         </nav>
 
-        <!-- Despesas -->
-        <section class="bloco despesas" aria-labelledby="titulo-despesas">
-            <div class="bloco-topo">
-                <h2 id="titulo-despesas">Despesas</h2>
-                <button id="adicionar-despesa" class="btn btn-primario" type="button">+ Adicionar despesa</button>
-            </div>
-
-            <div id="lista-despesas"></div>
-            <p class="vazio" id="vazio-despesas"></p>
-
-            <div class="total">
-                <span id="total-rotulo">Total a pagar</span>
-                <span id="total-valor">R$ 0,00</span>
-                <span id="total-percentual">0,0%</span>
-            </div>
-        </section>
-
-        <!-- Despesas por categoria -->
-        <section class="bloco" aria-labelledby="titulo-categorias">
-            <div class="bloco-topo">
-                <h2 id="titulo-categorias">Gastos por categoria</h2>
-                <button id="gerenciar-categorias" class="btn btn-secundario" type="button">Categorias</button>
-            </div>
-            <div id="resumo-categorias"></div>
-            <p class="vazio" id="vazio-categorias">Os gastos aparecem aqui conforme você lança despesas com valor.</p>
-        </section>
-
         <!-- Resumo do mês -->
         <section class="resumo" aria-labelledby="titulo-resumo">
             <h2 id="titulo-resumo" class="sr-only">Resumo do mês</h2>
@@ -103,6 +76,33 @@
                     <dd id="valor-pendente">R$ 0,00</dd>
                 </div>
             </dl>
+        </section>
+
+        <!-- Despesas -->
+        <section class="bloco despesas" aria-labelledby="titulo-despesas">
+            <div class="bloco-topo">
+                <h2 id="titulo-despesas">Despesas</h2>
+                <button id="adicionar-despesa" class="btn btn-primario" type="button">+ Adicionar despesa</button>
+            </div>
+
+            <div id="lista-despesas"></div>
+            <p class="vazio" id="vazio-despesas"></p>
+
+            <div class="total">
+                <span id="total-rotulo">Total a pagar</span>
+                <span id="total-valor">R$ 0,00</span>
+                <span id="total-percentual">0,0%</span>
+            </div>
+        </section>
+
+        <!-- Despesas por categoria -->
+        <section class="bloco" aria-labelledby="titulo-categorias">
+            <div class="bloco-topo">
+                <h2 id="titulo-categorias">Gastos por categoria</h2>
+                <button id="gerenciar-categorias" class="btn btn-secundario" type="button">Categorias</button>
+            </div>
+            <div id="resumo-categorias"></div>
+            <p class="vazio" id="vazio-categorias">Os gastos aparecem aqui conforme você lança despesas com valor.</p>
         </section>
 
         <!-- Entradas -->
