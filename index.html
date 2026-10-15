@@ -94,70 +94,54 @@
 
 
 
-        <!-- Resumo do mês -->
+<!-- Resumo do mês -->
+<section class="resumo" aria-labelledby="titulo-resumo">
 
-        <section class="resumo" aria-labelledby="titulo-resumo">
+    <h2 id="titulo-resumo" class="resumo-titulo">
+        RESUMO DO MÊS
+    </h2>
 
-            <h2 id="titulo-resumo" class="resumo-titulo">Resumo do mês</h2>
+    <p class="saldo-rotulo" id="saldo-rotulo">
+        Saldo do mês
+    </p>
 
+    <p class="saldo-valor" id="saldo-valor">
+        R$ 0,00
+    </p>
 
+    <div class="barra" id="barra">
+        <div class="barra-pago" id="barra-pago"></div>
+    </div>
 
-            <p class="saldo-rotulo" id="saldo-rotulo">Saldo do mês</p>
+    <p class="barra-texto" id="texto-comprometido">
+        Informe suas receitas para ver quanto da renda está comprometido.
+    </p>
 
-            <p class="saldo-valor" id="saldo-valor">R$ 0,00</p>
+    <dl class="indicadores">
 
+        <div>
+            <dt>Entradas</dt>
+            <dd id="total-receitas">R$ 0,00</dd>
+        </div>
 
+        <div>
+            <dt>Despesas</dt>
+            <dd id="total-despesas">R$ 0,00</dd>
+        </div>
 
-            <div class="barra" id="barra" role="img" aria-label="Parte da renda comprometida com despesas">
+        <div>
+            <dt>Já pago</dt>
+            <dd id="valor-pago">R$ 0,00</dd>
+        </div>
 
-                <div class="barra-pago" id="barra-pago"></div>
+        <div>
+            <dt>A pagar</dt>
+            <dd id="valor-pendente">R$ 0,00</dd>
+        </div>
 
-                <div class="barra-pendente" id="barra-pendente"></div>
+    </dl>
 
-            </div>
-
-            <p class="barra-texto" id="texto-comprometido">Informe suas receitas para ver quanto da renda está comprometido.</p>
-
-
-
-            <dl class="indicadores">
-
-                <div>
-
-                    <dt>Entradas</dt>
-
-                    <dd id="total-receitas">R$ 0,00</dd>
-
-                </div>
-
-                <div>
-
-                    <dt>Despesas</dt>
-
-                    <dd id="total-despesas">R$ 0,00</dd>
-
-                </div>
-
-                <div>
-
-                    <dt>Já pago</dt>
-
-                    <dd id="valor-pago">R$ 0,00</dd>
-
-                </div>
-
-                <div>
-
-                    <dt>A pagar</dt>
-
-                    <dd id="valor-pendente">R$ 0,00</dd>
-
-                </div>
-
-            </dl>
-
-        </section>
-
+</section>
 
 
         <!-- Despesas -->

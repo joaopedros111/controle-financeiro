@@ -235,37 +235,163 @@ dialog::backdrop { background: rgba(10,18,32,.55); backdrop-filter: blur(3px); }
   .periodo #ano { width: 60px; }
 }
 
-/* =========================================================
-   Resumo do mês — um único cartão, sem caixas internas
-   ========================================================= */
-.resumo { position: relative; overflow: hidden; padding: 24px 26px 8px; margin-bottom: 22px; border: 1px solid var(--borda); border-radius: 22px; background: var(--superficie); box-shadow: var(--sombra); }
-.resumo::before { content: ""; position: absolute; top: 0; left: 0; width: 5px; height: 100%; background: var(--primaria); }
-.resumo-titulo { margin: 0 0 14px; color: var(--texto-secundario); font-size: .78rem; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; }
-.saldo-rotulo { margin: 0 0 2px; color: var(--texto-secundario); font-size: .92rem; font-weight: 650; }
-.saldo-valor { margin: 0 0 16px; font-size: clamp(2rem,5vw,2.8rem); font-weight: 800; line-height: 1.1; letter-spacing: -.05em; font-variant-numeric: tabular-nums; }
-#saldo-valor.negativo { color: var(--vermelho); }
-.barra { display: flex; overflow: hidden; width: 100%; height: 10px; margin: 0 0 8px; border-radius: 99px; background: var(--superficie-suave); box-shadow: inset 0 0 0 1px var(--borda); }
-.barra-pago, .barra-pendente { height: 100%; transition: width .25s ease; }
-.barra-pago { background: var(--verde); }
-.barra-pendente { background: var(--ambar); }
-.barra.atencao { box-shadow: inset 0 0 0 1px var(--ambar); }
-.barra.estourou { background: var(--vermelho-suave); box-shadow: inset 0 0 0 1px var(--vermelho); }
-.barra-texto { margin: 0 0 18px; color: var(--texto-secundario); font-size: .9rem; }
-.barra-texto.alerta { color: var(--vermelho); font-weight: 650; }
 
-/* Quatro indicadores em grade 2x2, separados so por linhas finas */
-.indicadores { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); margin: 0; border-top: 1px solid var(--borda); }
-.indicadores > div { min-width: 0; padding: 14px 0; border: 0; border-radius: 0; background: none; }
-.indicadores > div:nth-child(odd) { padding-right: 20px; }
-.indicadores > div:nth-child(even) { padding-left: 20px; border-left: 1px solid var(--borda); }
-.indicadores > div:nth-child(n+3) { border-top: 1px solid var(--borda); }
-.indicadores dt { display: flex; align-items: center; gap: 7px; margin: 0 0 3px; color: var(--texto-secundario); font-size: .82rem; font-weight: 650; }
-.indicadores dd { margin: 0; font-size: clamp(1.05rem,2.4vw,1.4rem); font-weight: 800; letter-spacing: -.025em; line-height: 1.2; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
-.indicadores > div:nth-child(1) dd { color: var(--verde); }
-.indicadores > div:nth-child(4) dd { color: var(--ambar); }
-.indicadores > div:nth-child(3) dt::before, .indicadores > div:nth-child(4) dt::before { content: ""; width: 8px; height: 8px; border-radius: 50%; flex: none; }
-.indicadores > div:nth-child(3) dt::before { background: var(--verde); }
-.indicadores > div:nth-child(4) dt::before { background: var(--ambar); }
+/* =========================================================
+   RESUMO DO MÊS
+   ========================================================= */
+
+.resumo{
+    padding:24px;
+    margin-bottom:22px;
+    border:1px solid var(--borda);
+    border-radius:20px;
+    background:var(--superficie);
+    box-shadow:var(--sombra);
+}
+
+.resumo-titulo{
+    margin:0 0 14px;
+    font-size:.78rem;
+    font-weight:700;
+    text-transform:uppercase;
+    letter-spacing:.06em;
+    color:var(--texto-secundario);
+}
+
+.saldo-rotulo{
+    margin:0;
+    font-size:.95rem;
+    color:var(--texto-secundario);
+}
+
+.saldo-valor{
+    margin:10px 0 18px;
+    font-size:clamp(2rem,5vw,2.8rem);
+    font-weight:800;
+    letter-spacing:-.04em;
+    line-height:1;
+    font-variant-numeric:tabular-nums;
+}
+
+#saldo-valor.negativo{
+    color:var(--vermelho);
+}
+
+/* Barra */
+
+.barra{
+    width:100%;
+    height:6px;
+    overflow:hidden;
+    border-radius:999px;
+    background:var(--borda);
+}
+
+.barra-pago,
+.barra-pendente{
+    height:100%;
+}
+
+.barra-pago{
+    background:var(--verde);
+}
+
+.barra-pendente{
+    background:var(--ambar);
+}
+
+.barra-texto{
+    margin:10px 0 24px;
+    font-size:.88rem;
+    color:var(--texto-secundario);
+}
+
+.barra-texto.alerta{
+    color:var(--vermelho);
+    font-weight:700;
+}
+
+/* =========================================================
+   INDICADORES
+   ========================================================= */
+
+.indicadores{
+    display:grid;
+    grid-template-columns:repeat(2, minmax(0,1fr));
+    gap:28px 48px;
+    margin:0;
+    padding:0;
+}
+
+.indicadores > div{
+    min-width:0;
+}
+
+.indicadores dt{
+    margin:0 0 6px;
+    font-size:.9rem;
+    font-weight:600;
+    color:var(--texto-secundario);
+}
+
+.indicadores dd{
+    margin:0;
+    font-size:1.55rem;
+    font-weight:800;
+    line-height:1.2;
+    font-variant-numeric:tabular-nums;
+}
+
+.indicadores > div:nth-child(1) dd{
+    color:var(--verde);
+}
+
+.indicadores > div:nth-child(2) dd{
+    color:var(--texto);
+}
+
+.indicadores > div:nth-child(3) dd{
+    color:var(--verde);
+}
+
+.indicadores > div:nth-child(4) dd{
+    color:var(--ambar);
+}
+
+/* =========================================================
+   MOBILE
+   ========================================================= */
+
+@media (max-width:600px){
+
+    .resumo{
+        padding:18px 16px;
+        border-radius:16px;
+    }
+
+    .saldo-valor{
+        font-size:1.9rem;
+        margin-bottom:14px;
+    }
+
+    .barra-texto{
+        margin-bottom:18px;
+        font-size:.82rem;
+    }
+
+    .indicadores{
+        gap:18px 20px;
+    }
+
+    .indicadores dt{
+        font-size:.8rem;
+    }
+
+    .indicadores dd{
+        font-size:1.15rem;
+    }
+}
+
 
 @media (max-width: 600px) {
   .resumo { padding: 16px 14px 4px; margin-bottom: 14px; border-radius: 16px; }
