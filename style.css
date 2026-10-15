@@ -161,65 +161,60 @@
 }
 
 @layer components {
-    /* Período */
+/* Período */
 .periodo {
     display: grid;
     grid-template-columns: 44px 1fr 88px 44px;
     align-items: center;
     gap: 8px;
-    padding: 10px;
-    margin-bottom: 14px;
-    border-radius: 12px;
+    padding: 12px;
+    margin-bottom: 16px;
+
+    background: var(--superficie);
+    border: 1px solid var(--borda);
+    border-radius: 16px;
 }
 
-.periodo #mes-anterior {
-    grid-column: 1;
-    grid-row: 1;
-
+.periodo #mes-anterior,
+.periodo #mes-proximo {
     width: 44px;
     height: 44px;
     padding: 0;
-    font-size: 1.2rem;
 }
 
 .periodo #mes {
-    grid-column: 2;
-    grid-row: 1;
-
     width: 100%;
     min-width: 0;
     height: 44px;
-    padding: 0 10px;
-    font-size: 16px;
+
+    padding: 0 12px;
+    border: 1px solid var(--borda);
+    border-radius: 12px;
+
+    background: var(--superficie-suave);
+    color: var(--texto);
 }
 
 .periodo #ano {
-    grid-column: 3;
-    grid-row: 1;
-
     width: 100%;
     height: 44px;
-    padding: 0 8px;
+
+    padding: 0 10px;
     text-align: center;
-    font-size: 16px;
-}
 
-.periodo #mes-proximo {
-    grid-column: 4;
-    grid-row: 1;
+    border: 1px solid var(--borda);
+    border-radius: 12px;
 
-    width: 44px;
-    height: 44px;
-    padding: 0;
-    font-size: 1.2rem;
+    background: var(--superficie-suave);
+    color: var(--texto);
 }
 
 .periodo #hoje {
     grid-column: 1 / -1;
-    grid-row: 2;
 
     width: 100%;
     min-height: 44px;
+
     margin: 0;
 }
 
@@ -325,14 +320,13 @@
     }
 
     /* Resumo financeiro moderno */
-    .resumo {
+.resumo {
     padding: 16px 14px 12px;
     margin-bottom: 14px;
     border-radius: 16px;
-        border-radius: calc(var(--raio) + 4px);
-        background: var(--superficie);
-        box-shadow: var(--sombra-flutuante);
-    }
+    background: var(--superficie);
+    box-shadow: var(--sombra-flutuante);
+}
 
     .resumo-titulo {
         margin: 0 0 10px;
