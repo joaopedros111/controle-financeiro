@@ -34,14 +34,15 @@
 
 
         <header class="topo">
-
-            <h1>Controle Financeiro</h1>
-
-            <button id="alternar-tema" class="btn btn-icone" type="button"
-
-                    aria-label="Alternar entre tema claro e escuro" title="Alternar tema">🌙</button>
-
-        </header>
+            <div class="marca-app" aria-label="Controle Financeiro">
+                <span class="marca-icone" aria-hidden="true">⌁</span>
+                <div class="marca-texto">
+                    <span class="marca-sobretitulo">FINANCEIRO · PESSOAL</span>
+                    <h1>Controle Financeiro</h1>
+                </div>
+            </div>
+            <button id="alternar-tema" class="btn btn-icone tema-botao" type="button" aria-label="Alternar entre tema claro e escuro" title="Alternar tema">🌙</button>
+        </header>
 
 
 
@@ -145,6 +146,21 @@
 
     </dl>
 
+</section>
+
+<section class="bloco grafico-bloco" aria-labelledby="titulo-grafico">
+    <div class="bloco-topo grafico-topo">
+        <div>
+            <span class="grafico-sobretitulo">PANORAMA</span>
+            <h2 id="titulo-grafico">Entradas e despesas</h2>
+        </div>
+        <span class="grafico-periodo">Últimos 6 meses</span>
+    </div>
+    <div class="grafico-legenda" aria-hidden="true">
+        <span><i class="legenda-entrada"></i>Entradas</span>
+        <span><i class="legenda-despesa"></i>Despesas</span>
+    </div>
+    <div id="grafico-mensal" class="grafico-mensal" role="img" aria-label="Gráfico comparando entradas e despesas dos últimos seis meses"></div>
 </section>
 
 
