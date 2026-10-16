@@ -2998,6 +2998,10 @@ document.querySelectorAll("[data-calculadora]").forEach((tecla) => {
     });
 });
 $("limpar-calculadora").addEventListener("click", () => { ui.visorCalculadora.value = ""; });
+$("apagar-calculadora").addEventListener("click", () => {
+    ui.visorCalculadora.value = ui.visorCalculadora.value.slice(0, -1);
+    ui.visorCalculadora.focus();
+});
 $("calcular-resultado").addEventListener("click", () => {
     try {
         const resultado = calcularExpressao(ui.visorCalculadora.value);
@@ -3007,6 +3011,11 @@ $("calcular-resultado").addEventListener("click", () => {
         ui.visorCalculadora.reportValidity();
         ui.visorCalculadora.setCustomValidity("");
     }
+});
+ui.visorCalculadora.addEventListener("keydown", (evento) => {
+    if (evento.key !== "Enter") return;
+    evento.preventDefault();
+    $("calcular-resultado").click();
 });
 ui.alternarVisibilidadeResumo.addEventListener("click", () => {
     valoresOcultos = !valoresOcultos;

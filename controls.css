@@ -43,10 +43,12 @@
     .ajuste-controle output { color: var(--texto-secundario); }
     .resumo-calculadora { width: 34px; min-width: 34px; height: 34px; min-height: 34px; padding: 6px; margin: -5px 0 4px auto; }
     .resumo-calculadora svg { width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
-    .dialogo-calculadora { width: min(calc(100% - 28px), 340px); height: fit-content; max-height: 90dvh; border: 1px solid var(--borda); border-radius: 22px; padding: 0; }
+    .dialogo-calculadora { position: fixed; inset: max(8vh, env(safe-area-inset-top, 0px)) auto auto 50%; width: min(calc(100% - 28px), 380px); height: fit-content; max-height: 90dvh; margin: 0; border: 1px solid var(--borda); border-radius: 22px; padding: 0; transform: translateX(-50%); }
+    .dialogo-calculadora[open] { animation: none; }
     .dialogo-calculadora .calculadora-corpo { height: auto; min-height: 0; }
     .visor-calculadora { width: 100%; min-height: 52px; margin-bottom: 12px; padding: 8px 12px; border: 1px solid var(--borda); border-radius: 12px; color: var(--texto); background: var(--superficie-suave); text-align: right; font-size: 1.35rem; }
     .teclas-calculadora { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
     .teclas-calculadora button { min-height: 46px; border: 1px solid var(--borda); border-radius: 12px; color: var(--texto); background: var(--superficie-suave); font-size: 1rem; font-weight: 700; cursor: pointer; }
     .teclas-calculadora .tecla-resultado { grid-column: 1 / -1; color: #fff; border-color: var(--primaria); background: var(--primaria); }
+    .teclas-calculadora button:focus-visible { outline: 3px solid color-mix(in srgb, var(--primaria) 45%, transparent); outline-offset: 2px; }
 }

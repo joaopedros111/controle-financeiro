@@ -192,7 +192,7 @@ export function gerarCsv(estado, { ano, mes, escopo = "mes" } = {}) {
 export function calcularExpressao(expressao) {
     const texto = String(expressao).replace(/,/g, ".").replace(/\s+/g, "");
     if (!texto) throw new Error("Expressão vazia");
-    const tokens = texto.match(/(?:\d+(?:\.\d*)?|\.\d+)|[()+*/-]/g) || [];
+    const tokens = texto.match(/(?:\d+(?:\.\d*)?|\.\d+)|[()+*/%-]/g) || [];
     if (tokens.join("") !== texto) throw new Error("Expressão inválida");
     let posicao = 0;
     const primario = () => {
@@ -206,7 +206,12 @@ export function calcularExpressao(expressao) {
         }
         const valor = Number(token);
         if (token === undefined || !Number.isFinite(valor)) throw new Error("Número inválido");
-        return valor;
+        let resultado = valor;
+        while (tokens[posicao] === "%") {
+            posicao += 1;
+            resultado /= 100;
+        }
+        return resultado;
     };
     const expressaoProduto = () => {
         let valor = primario();

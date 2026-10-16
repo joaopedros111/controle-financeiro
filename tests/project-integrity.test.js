@@ -104,3 +104,17 @@ test("temas pangolim e floresta têm cores, alternância e persistência reconhe
     assert.match(app, /"claro", "escuro", "rosa", "pangolim", "floresta"/);
     assert.match(html, /pangolim ou floresta/);
 });
+
+test("calculadora fica centralizada no topo e oferece operações adicionais", async () => {
+    const [html, app, css] = await Promise.all([
+        read("index.html"), read("app.js"), read("controls.css")
+    ]);
+    for (const id of ["limpar-calculadora", "apagar-calculadora", "calcular-resultado"]) {
+        assert.match(html, new RegExp(`id="${id}"`));
+    }
+    for (const operador of ["(", ")", "%"]) assert.match(html, new RegExp(`data-calculadora="${operador.replace(/[()]/g, "\\$&")}"`));
+    assert.match(css, /\.dialogo-calculadora \{[^}]*position: fixed;[^}]*50%/);
+    assert.match(css, /\.dialogo-calculadora\[open\] \{ animation: none; \}/);
+    assert.match(app, /apagar-calculadora/);
+    assert.match(app, /evento\.key !== "Enter"/);
+});

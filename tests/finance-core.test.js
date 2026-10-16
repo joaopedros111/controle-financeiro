@@ -79,6 +79,8 @@ test("CSV exporta o mês escolhido ou todos os meses com período, UTF-8 e prote
 test("calculadora respeita precedência, parênteses e decimal brasileiro", () => {
     assert.equal(calcularExpressao("(1,5 + 2,5) * 3"), 12);
     assert.equal(calcularExpressao("-4 + 10 / 2"), 1);
+    assert.equal(calcularExpressao("(200 + 50) * 10%"), 25);
+    assert.equal(calcularExpressao("50% + 0,25"), 0.75);
 });
 
 test("calculadora rejeita código, sintaxe incompleta e divisão por zero", () => {
