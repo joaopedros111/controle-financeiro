@@ -1419,6 +1419,8 @@ dialog#dialogo-receita .acoes-dialogo { position: static; margin-top: 12px; padd
     }
     body[data-posicao-menu="direita"] .ajustes-botao { left: auto; right: max(20px, env(safe-area-inset-right)); transform: none; }
     body[data-posicao-menu="esquerda"] .ajustes-botao { left: max(20px, env(safe-area-inset-left)); transform: none; }
+    body[data-posicao-menu="centro"] .ajustes-botao:active,
+    body[data-posicao-menu="arrastavel"] .ajustes-botao:not([style*="left"]):active { transform: translateX(-50%); }
     body[data-posicao-menu="arrastavel"] .ajustes-botao { touch-action: none; cursor: grab; }
     body[data-posicao-menu="arrastavel"] .ajustes-botao:active { cursor: grabbing; }
     body[data-posicao-menu="arrastavel"] .ajustes-botao[style*="left"] { transform: none; }
