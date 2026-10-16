@@ -47,7 +47,7 @@
                     <h1>Controle Financeiro</h1>
                 </div>
             </div>
-            <button id="alternar-tema" class="btn btn-icone tema-botao" type="button" aria-label="Alternar entre tema claro e escuro" title="Alternar tema">🌙</button>
+            <button id="abrir-ajustes" class="btn btn-icone ajustes-botao" type="button" aria-label="Abrir ajustes" title="Ajustes"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="3"/><path d="m19.4 15 .1.1a1.7 1.7 0 0 1-2.4 2.4l-.1-.1a1.7 1.7 0 0 0-2.9 1.2v.2a1.7 1.7 0 0 1-3.4 0v-.2a1.7 1.7 0 0 0-2.9-1.2l-.1.1a1.7 1.7 0 1 1-2.4-2.4l.1-.1a1.7 1.7 0 0 0-1.2-2.9H4a1.7 1.7 0 0 1 0-3.4h.2a1.7 1.7 0 0 0 1.2-2.9l-.1-.1a1.7 1.7 0 1 1 2.4-2.4l.1.1a1.7 1.7 0 0 0 2.9-1.2V2a1.7 1.7 0 0 1 3.4 0v.2a1.7 1.7 0 0 0 2.9 1.2l.1-.1a1.7 1.7 0 1 1 2.4 2.4l-.1.1a1.7 1.7 0 0 0 1.2 2.9h.2a1.7 1.7 0 0 1 0 3.4h-.2a1.7 1.7 0 0 0-1.2 2.9Z"/></svg></button>
         </header>
 
 
@@ -98,7 +98,7 @@
 
             <button id="mes-proximo" class="btn btn-icone" type="button" aria-label="Próximo mês">›</button>
 
-            <button id="hoje" class="btn btn-secundario" type="button">Mês atual</button>
+            <button id="hoje" class="btn btn-secundario" type="button">Hoje</button>
 
         </nav>
 
@@ -233,43 +233,39 @@
 
 
 
-<!-- Ferramentas -->
 
-<section class="bloco" aria-labelledby="titulo-ferramentas">
-    <h2 id="titulo-ferramentas">Backup e exportação</h2>
-
-    <div class="acoes acoes-ferramentas">
-        <button id="copiar-mes-anterior" class="btn btn-secundario" type="button">
-            Copiar mês anterior
-        </button>
-
-        <button id="exportar-csv" class="btn btn-secundario" type="button">
-            Exportar CSV
-        </button>
-
-        <button id="exportar-backup" class="btn btn-secundario" type="button">
-            Salvar backup
-        </button>
-
-        <button id="importar-backup" class="btn btn-secundario" type="button">
-            Restaurar backup
-        </button>
-
-        <button id="limpar-mes" class="btn btn-perigo" type="button">
-            Limpar mês
-        </button>
-    </div>
-
-    <input id="arquivo-backup" type="file" accept="application/json,.json" hidden>
-
-    <p class="nota">
-        Seus dados ficam salvos neste dispositivo. Faça backup periodicamente para não perder os lançamentos.
-    </p>
-</section>
 
 
 
     </main>
+
+<dialog id="dialogo-ajustes" aria-labelledby="titulo-ajustes">
+    <div class="dialogo-corpo ajustes-corpo">
+        <div class="bloco-topo">
+            <h2 id="titulo-ajustes">Ajustes</h2>
+            <button id="fechar-ajustes" class="btn btn-icone" type="button" aria-label="Fechar ajustes">×</button>
+        </div>
+        <section class="ajustes-secao" aria-labelledby="titulo-aparencia">
+            <h3 id="titulo-aparencia">Aparência</h3>
+            <div class="ajuste-linha">
+                <div><strong>Tema</strong><span>Claro ou escuro</span></div>
+                <button id="alternar-tema" class="btn btn-secundario tema-botao" type="button" aria-label="Alternar entre tema claro e escuro" title="Alternar tema">🌙 <span>Alterar</span></button>
+            </div>
+        </section>
+        <section class="ajustes-secao" aria-labelledby="titulo-ferramentas">
+            <h3 id="titulo-ferramentas">Dados e backup</h3>
+            <div class="acoes acoes-ferramentas">
+                <button id="copiar-mes-anterior" class="btn btn-secundario" type="button">Copiar mês anterior</button>
+                <button id="exportar-csv" class="btn btn-secundario" type="button">Exportar CSV</button>
+                <button id="exportar-backup" class="btn btn-secundario" type="button">Salvar backup</button>
+                <button id="importar-backup" class="btn btn-secundario" type="button">Restaurar backup</button>
+                <button id="limpar-mes" class="btn btn-perigo" type="button">Limpar mês</button>
+            </div>
+            <input id="arquivo-backup" type="file" accept="application/json,.json" hidden>
+            <p class="nota">Seus dados ficam salvos neste dispositivo. Faça backup periodicamente para não perder os lançamentos.</p>
+        </section>
+    </div>
+</dialog>
 
 
 

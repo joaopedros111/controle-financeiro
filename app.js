@@ -73,6 +73,9 @@ const ui = {
     hoje: $("hoje"),
 
     tema: $("alternar-tema"),
+    abrirAjustes: $("abrir-ajustes"),
+    dialogoAjustes: $("dialogo-ajustes"),
+    fecharAjustes: $("fechar-ajustes"),
 
 
 
@@ -834,7 +837,10 @@ function renderTema() {
 
     document.documentElement.dataset.tema = tema;
 
-    ui.tema.textContent = tema === "escuro" ? "☀️" : "🌙";
+    ui.tema.replaceChildren(
+        criarEl("span", { text: tema === "escuro" ? "☀️" : "🌙" }),
+        criarEl("span", { text: "Alterar" })
+    );
 
 }
 
@@ -2656,6 +2662,30 @@ ui.listaCategorias.addEventListener("click", (evento) => {
 
 /* ---------- Navegação entre meses ---------- */
 
+/* Gesto horizontal: esquerda avança um mês; direita volta um mês. */
+const areaDeConteudo = document.querySelector("main.container");
+let toqueInicial = null;
+
+areaDeConteudo.addEventListener("touchstart", (evento) => {
+    if (document.querySelector("dialog[open]")) { toqueInicial = null; return; }
+    if (evento.touches.length !== 1) { toqueInicial = null; return; }
+    if (evento.target.closest("button, select, input, textarea, a, [contenteditable=\"true\"]")) {
+        toqueInicial = null;
+        return;
+    }
+    toqueInicial = { x: evento.touches[0].clientX, y: evento.touches[0].clientY };
+}, { passive: true });
+
+areaDeConteudo.addEventListener("touchend", (evento) => {
+    if (!toqueInicial || evento.changedTouches.length !== 1) return;
+    if (document.querySelector("dialog[open]")) { toqueInicial = null; return; }
+    const dx = evento.changedTouches[0].clientX - toqueInicial.x;
+    const dy = evento.changedTouches[0].clientY - toqueInicial.y;
+    toqueInicial = null;
+    if (Math.abs(dx) < 55 || Math.abs(dx) < Math.abs(dy) * 1.25) return;
+    mudarPeriodo(periodo.ano, periodo.mes + (dx < 0 ? 1 : -1));
+}, { passive: true });
+
 
 
 ui.mes.addEventListener("change", () => {
@@ -3127,6 +3157,12 @@ ui.arquivoBackup.addEventListener("change", () => {
 
 
 /* ---------- Tema ---------- */
+
+ui.abrirAjustes.addEventListener("click", () => ui.dialogoAjustes.showModal());
+ui.fecharAjustes.addEventListener("click", () => ui.dialogoAjustes.close());
+ui.dialogoAjustes.addEventListener("click", (evento) => {
+    if (evento.target === ui.dialogoAjustes) ui.dialogoAjustes.close();
+});
 
 
 
