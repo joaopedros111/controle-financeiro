@@ -183,7 +183,6 @@ const ui = {
 
     totalValor: $("total-valor"),
 
-    totalPercentual: $("total-percentual"),
 
 
 
@@ -1213,12 +1212,6 @@ function atualizarResumo() {
     ui.totalRotulo.textContent = "Total a pagar";
 
     ui.totalValor.textContent = formatarMoeda(pendente);
-
-    ui.totalPercentual.textContent =
-
-        formatarPercentual(receita > 0 ? (pendente / receita) * 100 : 0);
-
-
 
     renderGraficoMensal();
 
