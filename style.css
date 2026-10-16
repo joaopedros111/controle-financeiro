@@ -13,6 +13,40 @@
     }
 }
 
+/* Formulários de lançamento: tamanho e espaçamento compactos. */
+dialog#dialogo-despesa,
+dialog#dialogo-receita {
+    height: fit-content;
+    min-height: 0;
+    max-height: min(86dvh, 600px);
+}
+dialog#dialogo-despesa .dialogo-corpo,
+dialog#dialogo-receita .dialogo-corpo { height: auto; min-height: 0; padding: 14px; }
+dialog#dialogo-despesa .dialogo-corpo > .bloco-topo,
+dialog#dialogo-receita .dialogo-corpo > .bloco-topo { margin-bottom: 10px; }
+dialog#dialogo-despesa .campos,
+dialog#dialogo-receita .campos { align-content: start; gap: 8px 10px; }
+dialog#dialogo-despesa .campo,
+dialog#dialogo-receita .campo { gap: 2px; font-size: .75rem; }
+dialog#dialogo-despesa .campo input,
+dialog#dialogo-despesa .campo select,
+dialog#dialogo-receita .campo input { min-height: 40px; }
+dialog#dialogo-despesa .acoes-dialogo,
+dialog#dialogo-receita .acoes-dialogo { position: static; margin-top: 12px; padding-top: 10px; }
+
+@media (max-width: 600px) {
+    dialog#dialogo-despesa,
+    dialog#dialogo-receita {
+        inset: 50% auto auto 50%;
+        width: min(calc(100% - 28px), 400px);
+        margin: 0;
+        border: 1px solid var(--borda);
+        border-radius: 22px;
+        padding: 0;
+        transform: translate(-50%, -50%);
+    }
+}
+
 .bloco-retrair {
     display: inline-flex;
     align-items: center;
@@ -116,6 +150,87 @@
     }
     @media (prefers-reduced-motion: reduce) {
         .grafico-barra { transition: none; }
+    }
+}
+
+@layer components {
+    /* Final compact layout for the two launch forms. */
+    dialog#dialogo-despesa,
+    dialog#dialogo-receita {
+        height: fit-content;
+        min-height: 0;
+        max-height: min(88dvh, 600px);
+        overflow-y: auto;
+    }
+
+    dialog#dialogo-despesa .dialogo-corpo,
+    dialog#dialogo-receita .dialogo-corpo {
+        display: block;
+        height: auto;
+        min-height: 0;
+        padding: 14px 16px;
+    }
+
+    dialog#dialogo-despesa .dialogo-corpo > .bloco-topo,
+    dialog#dialogo-receita .dialogo-corpo > .bloco-topo {
+        margin: 0 0 12px;
+    }
+
+    dialog#dialogo-despesa .dialogo-corpo > .bloco-topo h2,
+    dialog#dialogo-receita .dialogo-corpo > .bloco-topo h2 {
+        font-size: 1.08rem;
+        line-height: 1.2;
+    }
+
+    dialog#dialogo-despesa .campos,
+    dialog#dialogo-receita .campos {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        align-content: start;
+        gap: 8px 10px;
+        height: auto;
+    }
+
+    dialog#dialogo-despesa #form-despesa > .campos > .campo:first-child { grid-column: 1 / -1; }
+    dialog#dialogo-despesa #campo-tipo,
+    dialog#dialogo-despesa #campo-parcelas,
+    dialog#dialogo-despesa #campo-propagar { grid-column: 1 / -1; }
+
+    dialog#dialogo-despesa .campo,
+    dialog#dialogo-receita .campo { display: grid; align-content: start; gap: 3px; font-size: .75rem; }
+
+    dialog#dialogo-despesa .campo input,
+    dialog#dialogo-despesa .campo select,
+    dialog#dialogo-receita .campo input { min-height: 40px; }
+
+    dialog#dialogo-despesa .campo-check { min-height: 36px; padding: 4px 8px; }
+
+    dialog#dialogo-despesa .acoes-dialogo,
+    dialog#dialogo-receita .acoes-dialogo {
+        position: static;
+        margin-top: 12px;
+        padding: 10px 0 0;
+        gap: 8px;
+    }
+
+    dialog#dialogo-despesa .acoes-dialogo .btn,
+    dialog#dialogo-receita .acoes-dialogo .btn { min-height: 42px; }
+
+    @media (max-width: 600px) {
+        dialog#dialogo-despesa,
+        dialog#dialogo-receita {
+            inset: 50% auto auto 50%;
+            width: min(calc(100% - 28px), 400px);
+            max-height: min(86dvh, 600px);
+            margin: 0;
+            border: 1px solid var(--borda);
+            border-radius: 22px;
+            padding: 0;
+            transform: translate(-50%, -50%);
+        }
+
+        dialog#dialogo-despesa .dialogo-corpo,
+        dialog#dialogo-receita .dialogo-corpo { padding: 14px; }
     }
 }
 
