@@ -70,7 +70,11 @@ const ui = {
     gerenciarOrcamentos: $("gerenciar-orcamentos"),
     dialogoOrcamentos: $("dialogo-orcamentos"),
     fecharOrcamentos: $("fechar-orcamentos"),
-    periodoOrcamentos: $("periodo-orcamentos"),
+    opcoesOrcamentos: $("opcoes-orcamento"),
+    abrirCategoriasOrcamento: $("abrir-categorias-orcamento"),
+    abrirLimitesOrcamento: $("abrir-limites-orcamento"),
+    painelCategoriasOrcamento: $("painel-categorias-orcamento"),
+    painelLimitesOrcamento: $("painel-limites-orcamento"),
     listaOrcamentos: $("lista-orcamentos"),
     abrirCalculadora: $("abrir-calculadora"),
     dialogoCalculadora: $("dialogo-calculadora"),
@@ -893,8 +897,7 @@ function renderOrcamentoPorCategoria() {
     const itens = ordenarOrcamentosComGastos(calcularOrcamentosPorCategoria(
         estado.categorias,
         mes.despesas,
-        estado.orcamentos,
-        chave
+        estado.orcamentos
     ));
     ui.listaResumoOrcamentos.replaceChildren(...itens.map((item) => {
         const linha = criarEl("li", {
@@ -939,68 +942,38 @@ function renderOrcamentoPorCategoria() {
 }
 
 function renderListaOrcamentos() {
-    const chave = chaveMes(periodo.ano, periodo.mes);
-    ui.periodoOrcamentos.textContent = `${MESES[periodo.mes - 1]} de ${periodo.ano}`;
     const categorias = [...new Set([
         ...estado.categorias,
-        ...Object.keys(estado.orcamentos.padrao),
-        ...Object.keys(estado.orcamentos.meses[chave] || {})
+        ...Object.keys(estado.orcamentos.padrao)
     ])].sort((a, b) => a.localeCompare(b, "pt-BR"));
     ui.listaOrcamentos.replaceChildren(...categorias.map((categoria) => {
         const padraoConfigurado = Object.prototype.hasOwnProperty.call(estado.orcamentos.padrao, categoria);
-        const mensal = estado.orcamentos.meses[chave] || {};
-        const mensalConfigurado = Object.prototype.hasOwnProperty.call(mensal, categoria);
         const limitePadrao = padraoConfigurado ? String(estado.orcamentos.padrao[categoria]) : "";
-        const limiteMensal = mensalConfigurado ? String(mensal[categoria]) : "";
         const linha = criarEl("fieldset", { class: "orcamento-edicao", dataset: { categoria } }, [
             criarEl("legend", { text: categoria }),
             criarEl("label", { class: "orcamento-campo" }, [
-                criarEl("span", { text: "Limite padrão mensal (R$)" }),
+                criarEl("span", { text: "Limite mensal padrão (R$)" }),
                 criarEl("input", {
                     type: valoresOcultos ? "password" : "number", min: "0", step: "0.01", inputMode: "decimal",
                     value: limitePadrao, placeholder: "Sem limite",
                     dataset: { orcamentoCampo: "padrao" },
-                    "aria-label": `Limite padrão mensal para ${categoria}`
+                    "aria-label": `Limite mensal padrão para ${categoria}`
                 })
             ]),
             criarEl("div", { class: "orcamento-acoes" }, [
                 criarEl("button", {
                     type: "button", class: "btn btn-secundario",
-                    dataset: { orcamentoAcao: "salvar-padrao" }, text: "Salvar padrão"
+                    dataset: { orcamentoAcao: "salvar-padrao" }, text: "Salvar limite"
                 }),
                 criarEl("button", {
                     type: "button", class: "btn btn-secundario",
-                    dataset: { orcamentoAcao: "remover-padrao" }, text: "Remover padrão",
+                    dataset: { orcamentoAcao: "remover-padrao" }, text: "Remover limite",
                     disabled: !padraoConfigurado
-                })
-            ]),
-            criarEl("label", { class: "orcamento-campo" }, [
-                criarEl("span", { text: "Limite somente para este mês (R$)" }),
-                criarEl("input", {
-                    type: valoresOcultos ? "password" : "number", min: "0", step: "0.01", inputMode: "decimal",
-                    value: limiteMensal,
-                    placeholder: padraoConfigurado
-                        ? (valoresOcultos ? "Usa o orçamento padrão" : `Usa padrão: R$ ${Number(estado.orcamentos.padrao[categoria]).toFixed(2)}`)
-                        : "Sem limite padrão",
-                    dataset: { orcamentoCampo: "mes" },
-                    "aria-label": `Limite de ${categoria} para ${MESES[periodo.mes - 1]}`
-                })
-            ]),
-            criarEl("div", { class: "orcamento-acoes" }, [
-                criarEl("button", {
-                    type: "button", class: "btn btn-secundario",
-                    dataset: { orcamentoAcao: "salvar-mes" }, text: "Salvar para este mês"
-                }),
-                criarEl("button", {
-                    type: "button", class: "btn btn-secundario",
-                    dataset: { orcamentoAcao: "usar-padrao" }, text: "Usar padrão",
-                    disabled: !mensalConfigurado
                 })
             ])
         ]);
         return linha;
     }));
-    renderListaCategorias();
     aplicarPrivacidade();
 }
 
@@ -2327,11 +2300,9 @@ function renderListaCategorias() {
 
 function aposMudarCategorias() {
     renderDespesas();
-
     atualizarResumo();
-
-    renderListaOrcamentos();
-
+    if (!ui.painelCategoriasOrcamento.hidden) renderListaCategorias();
+    if (!ui.painelLimitesOrcamento.hidden) renderListaOrcamentos();
 }
 
 
@@ -2492,14 +2463,34 @@ function removerCategoria(nome) {
 
 
 
+function mostrarPainelOrcamentos(painel) {
+    ui.opcoesOrcamentos.hidden = painel !== "opcoes";
+    ui.painelCategoriasOrcamento.hidden = painel !== "categorias";
+    ui.painelLimitesOrcamento.hidden = painel !== "limites";
+}
+
 ui.gerenciarOrcamentos.addEventListener("click", () => {
-    renderListaOrcamentos();
+    mostrarPainelOrcamentos("opcoes");
     ui.dialogoOrcamentos.showModal();
+    ui.abrirCategoriasOrcamento.focus();
+});
+ui.abrirCategoriasOrcamento.addEventListener("click", () => {
+    renderListaCategorias();
+    mostrarPainelOrcamentos("categorias");
     ui.novaCategoria.focus();
+});
+ui.abrirLimitesOrcamento.addEventListener("click", () => {
+    renderListaOrcamentos();
+    mostrarPainelOrcamentos("limites");
+    ui.listaOrcamentos.querySelector("[data-orcamento-campo]")?.focus();
 });
 ui.fecharOrcamentos.addEventListener("click", () => ui.dialogoOrcamentos.close());
 ui.dialogoOrcamentos.addEventListener("click", (evento) => {
     if (evento.target === ui.dialogoOrcamentos) ui.dialogoOrcamentos.close();
+    if (evento.target.closest("[data-orcamento-voltar]")) {
+        mostrarPainelOrcamentos("opcoes");
+        ui.abrirCategoriasOrcamento.focus();
+    }
 });
 ui.listaOrcamentos.addEventListener("click", (evento) => {
     const botao = evento.target.closest("[data-orcamento-acao]");
@@ -2507,38 +2498,20 @@ ui.listaOrcamentos.addEventListener("click", (evento) => {
     const linha = botao.closest(".orcamento-edicao");
     const categoria = linha.dataset.categoria;
     const acao = botao.dataset.orcamentoAcao;
-    const chave = chaveMes(periodo.ano, periodo.mes);
 
-    if (acao === "salvar-padrao" || acao === "salvar-mes") {
-        const tipo = acao === "salvar-padrao" ? "padrao" : "mes";
-        const limite = lerLimiteOrcamento(linha.querySelector(`[data-orcamento-campo="${tipo}"]`));
+    if (acao === "salvar-padrao") {
+        const limite = lerLimiteOrcamento(linha.querySelector('[data-orcamento-campo="padrao"]'));
         if (limite === null) return;
-        if (tipo === "padrao") {
-            definirLimiteOrcamento(estado.orcamentos.padrao, categoria, limite);
-        } else {
-            estado.orcamentos.meses[chave] ||= {};
-            definirLimiteOrcamento(estado.orcamentos.meses[chave], categoria, limite);
-        }
+        definirLimiteOrcamento(estado.orcamentos.padrao, categoria, limite);
         atualizarOrcamentos();
-        avisar(tipo === "padrao" ? "Orçamento padrão salvo." : "Orçamento deste mês salvo.");
+        avisar("Limite mensal salvo.");
         return;
     }
 
     if (acao === "remover-padrao") {
         delete estado.orcamentos.padrao[categoria];
         atualizarOrcamentos();
-        avisar("Orçamento padrão removido.");
-        return;
-    }
-
-    if (acao === "usar-padrao") {
-        const limites = estado.orcamentos.meses[chave];
-        if (limites) {
-            delete limites[categoria];
-            if (!Object.keys(limites).length) delete estado.orcamentos.meses[chave];
-        }
-        atualizarOrcamentos();
-        avisar("Este mês voltou a usar o orçamento padrão.");
+        avisar("Limite mensal removido.");
     }
 });
 

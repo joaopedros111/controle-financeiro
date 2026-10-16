@@ -558,15 +558,15 @@
     <dialog id="dialogo-orcamentos" aria-labelledby="titulo-dialogo-orcamentos">
         <div class="dialogo-corpo orcamentos-dialogo-corpo">
             <div class="bloco-topo">
-                <div>
-                    <h2 id="titulo-dialogo-orcamentos">Orçamento por categoria</h2>
-                    <p id="periodo-orcamentos" class="nota"></p>
-                </div>
+                <h2 id="titulo-dialogo-orcamentos">Configurar orçamento e categorias</h2>
                 <button id="fechar-orcamentos" class="btn btn-icone" type="button" aria-label="Fechar orçamentos">×</button>
             </div>
-            <p class="nota">Defina um limite padrão mensal e, se necessário, um valor diferente apenas para o mês selecionado. Limites não configurados permanecem sem orçamento.</p>
-            <div id="lista-orcamentos" class="lista-orcamentos"></div>
-            <section class="orcamento-categorias" aria-labelledby="titulo-gerenciar-categorias">
+            <div id="opcoes-orcamento" class="opcoes-orcamento">
+                <button id="abrir-categorias-orcamento" class="btn btn-secundario" type="button">Adicionar categorias</button>
+                <button id="abrir-limites-orcamento" class="btn btn-primario" type="button">Configurar limites de orçamento</button>
+            </div>
+            <section id="painel-categorias-orcamento" class="painel-orcamento" aria-labelledby="titulo-gerenciar-categorias" hidden>
+                <button class="btn btn-secundario orcamento-voltar" type="button" data-orcamento-voltar>Voltar</button>
                 <h3 id="titulo-gerenciar-categorias">Categorias</h3>
                 <p class="nota">Adicione, renomeie ou remova categorias usadas nos lançamentos e orçamentos.</p>
                 <ul id="lista-categorias" class="lista-categorias"></ul>
@@ -575,6 +575,12 @@
                     <input id="nova-categoria" type="text" placeholder="Nome da nova categoria" maxlength="40">
                     <button id="adicionar-categoria" class="btn btn-primario" type="button">Adicionar categoria</button>
                 </div>
+            </section>
+            <section id="painel-limites-orcamento" class="painel-orcamento" aria-labelledby="titulo-limites-orcamento" hidden>
+                <button class="btn btn-secundario orcamento-voltar" type="button" data-orcamento-voltar>Voltar</button>
+                <h3 id="titulo-limites-orcamento">Limites mensais por categoria</h3>
+                <p class="nota">Cada limite é padrão e será aplicado automaticamente em todos os meses. Categorias sem limite continuam sem orçamento configurado.</p>
+                <div id="lista-orcamentos" class="lista-orcamentos"></div>
             </section>
         </div>
     </dialog>

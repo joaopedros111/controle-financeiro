@@ -67,18 +67,7 @@ function normalizarMapaOrcamentos(mapa) {
 
 function normalizarOrcamentos(bruto) {
     const padrao = normalizarMapaOrcamentos(bruto?.padrao);
-    const meses = {};
-    if (bruto?.meses && typeof bruto.meses === "object" && !Array.isArray(bruto.meses)) {
-        Object.entries(bruto.meses).forEach(([chave, mapa]) => {
-            const ano = Number(chave.slice(0, 4));
-            if (/^\d{4}-(0[1-9]|1[0-2])$/.test(chave)
-                && ano >= ANO_MINIMO && ano <= ANO_MAXIMO) {
-                const limites = normalizarMapaOrcamentos(mapa);
-                if (Object.keys(limites).length) meses[chave] = limites;
-            }
-        });
-    }
-    return { padrao, meses };
+    return { padrao, meses: {} };
 }
 
 function definirLimiteOrcamento(mapa, categoria, limite) {
@@ -184,10 +173,9 @@ export function normalizarEstado(bruto, criarId = gerarId) {
 
     if (!estado.categorias.length) estado.categorias = [...CATEGORIAS_PADRAO];
     if (!estado.categorias.includes(CATEGORIA_FIXA)) estado.categorias.push(CATEGORIA_FIXA);
-    [...Object.keys(estado.orcamentos.padrao), ...Object.values(estado.orcamentos.meses).flatMap(Object.keys)]
-        .forEach((categoria) => {
-            if (!estado.categorias.includes(categoria)) estado.categorias.push(categoria);
-        });
+    Object.keys(estado.orcamentos.padrao).forEach((categoria) => {
+        if (!estado.categorias.includes(categoria)) estado.categorias.push(categoria);
+    });
     Object.values(estado.meses).forEach((mes) => mes.despesas.forEach((despesa) => {
         if (!estado.categorias.includes(despesa.categoria)) estado.categorias.push(despesa.categoria);
     }));
@@ -197,36 +185,25 @@ export function normalizarEstado(bruto, criarId = gerarId) {
 export function renomearCategoriaOrcamentos(orcamentos, antiga, nova) {
     const resultado = {
         padrao: { ...(orcamentos?.padrao || {}) },
-        meses: Object.fromEntries(Object.entries(orcamentos?.meses || {})
-            .map(([chave, limites]) => [chave, { ...limites }]))
+        meses: {}
     };
     if (Object.prototype.hasOwnProperty.call(resultado.padrao, antiga)) {
         definirLimiteOrcamento(resultado.padrao, nova, resultado.padrao[antiga]);
         delete resultado.padrao[antiga];
     }
-    Object.values(resultado.meses).forEach((limites) => {
-        if (!Object.prototype.hasOwnProperty.call(limites, antiga)) return;
-        definirLimiteOrcamento(limites, nova, limites[antiga]);
-        delete limites[antiga];
-    });
     return resultado;
 }
 
 export function removerCategoriaOrcamentos(orcamentos, categoria) {
     const resultado = {
         padrao: { ...(orcamentos?.padrao || {}) },
-        meses: Object.fromEntries(Object.entries(orcamentos?.meses || {})
-            .map(([chave, limites]) => [chave, { ...limites }]))
+        meses: {}
     };
     delete resultado.padrao[categoria];
-    Object.entries(resultado.meses).forEach(([chave, limites]) => {
-        delete limites[categoria];
-        if (!Object.keys(limites).length) delete resultado.meses[chave];
-    });
     return resultado;
 }
 
-export function calcularOrcamentosPorCategoria(categorias, despesas, orcamentos, chaveMes) {
+export function calcularOrcamentosPorCategoria(categorias, despesas, orcamentos) {
     const gastos = new Map();
     (Array.isArray(despesas) ? despesas : []).forEach((despesa) => {
         if (!despesa || typeof despesa.categoria !== "string") return;
@@ -237,19 +214,16 @@ export function calcularOrcamentosPorCategoria(categorias, despesas, orcamentos,
     });
 
     const padrao = orcamentos?.padrao || {};
-    const mensal = orcamentos?.meses?.[chaveMes] || {};
     const nomes = new Set([
         ...(Array.isArray(categorias) ? categorias.filter((categoria) => typeof categoria === "string" && categoria.trim()) : []),
         ...gastos.keys(),
-        ...Object.keys(padrao),
-        ...Object.keys(mensal)
+        ...Object.keys(padrao)
     ]);
 
     return [...nomes].map((categoria) => {
         const gastoCentavos = gastos.get(categoria) || 0;
-        const temLimiteMensal = Object.prototype.hasOwnProperty.call(mensal, categoria);
         const temLimitePadrao = Object.prototype.hasOwnProperty.call(padrao, categoria);
-        const valorLimite = temLimiteMensal ? mensal[categoria] : temLimitePadrao ? padrao[categoria] : null;
+        const valorLimite = temLimitePadrao ? padrao[categoria] : null;
         const limiteCentavos = valorLimite !== null && valorLimite !== undefined
             && Number.isFinite(Number(valorLimite)) && Number(valorLimite) >= 0
             ? Math.round(Number(valorLimite) * 100)

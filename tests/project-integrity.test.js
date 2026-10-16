@@ -135,7 +135,7 @@ test("calculadora fica centralizada no topo e oferece operações adicionais", a
     assert.match(app, /evento\.key !== "Enter"/);
 });
 
-test("orçamento fica no resumo, usa valores formatados e controles separados por mês e padrão", async () => {
+test("orçamento fica no resumo e separa opções para categorias e limites padrão", async () => {
     const [html, app, core, controls, serviceWorker] = await Promise.all([
         read("index.html"), read("app.js"), read("finance-core.js"), read("controls.css"), read("sw.js")
     ]);
@@ -143,16 +143,25 @@ test("orçamento fica no resumo, usa valores formatados e controles separados po
     assert.match(resumo, /Orçamento por categoria/);
     assert.ok(resumo.includes('id="lista-resumo-orcamentos"'));
     assert.match(html, /id="dialogo-orcamentos"/);
-    for (const id of ["gerenciar-orcamentos", "dialogo-orcamentos", "lista-orcamentos", "periodo-orcamentos"]) {
+    for (const id of [
+        "gerenciar-orcamentos", "dialogo-orcamentos", "lista-orcamentos",
+        "opcoes-orcamento", "abrir-categorias-orcamento", "abrir-limites-orcamento",
+        "painel-categorias-orcamento", "painel-limites-orcamento"
+    ]) {
         assert.ok(app.includes(`$("${id}")`), `${id} não conectado`);
     }
+    assert.match(html, /Adicionar categorias/);
+    assert.match(html, /Configurar limites de orçamento/);
+    assert.match(html, /Limites mensais por categoria/);
+    assert.doesNotMatch(html, /Limite somente para este mês/);
+    assert.doesNotMatch(app, /orcamentoAcao: "salvar-mes"|orcamentoAcao: "usar-padrao"/);
     assert.match(app, /calcularOrcamentosPorCategoria/);
     assert.match(app, /ordenarOrcamentosComGastos\(calcularOrcamentosPorCategoria/);
     assert.match(app, /formatarMoeda\(gasto\)/);
     assert.match(app, /formatarMoeda\(item\.limiteCentavos \/ 100\)/);
     assert.match(app, /formatarMoeda\(item\.restanteCentavos \/ 100\)/);
     assert.match(app, /estado\.orcamentos\.padrao/);
-    assert.match(app, /estado\.orcamentos\.meses\[chave\]/);
+    assert.match(core, /return \{ padrao, meses: \{\} \}/);
     assert.match(app, /campo\.type = valoresOcultos \? "password" : "number"/);
     assert.match(core, /export function calcularOrcamentosPorCategoria/);
     assert.match(core, /export function ordenarOrcamentosComGastos/);
@@ -185,11 +194,14 @@ test("gerenciamento de categorias fica dentro do diálogo de orçamento e sai do
     assert.match(orcamentos, /id="lista-categorias"/);
     assert.match(orcamentos, /id="nova-categoria"/);
     assert.match(orcamentos, /id="adicionar-categoria"/);
+    assert.match(orcamentos, /id="abrir-categorias-orcamento"/);
+    assert.match(orcamentos, /id="abrir-limites-orcamento"/);
     assert.ok(!html.includes('id="dialogo-categorias"'));
     assert.ok(!html.includes('id="gerenciar-categorias"'));
     assert.ok(!ajustes.includes("Gerenciar categorias"));
-    assert.match(app, /renderListaCategorias\(\);\s*aplicarPrivacidade\(\);/);
-    assert.match(app, /ui\.gerenciarOrcamentos\.addEventListener\("click"[\s\S]*ui\.novaCategoria\.focus\(\)/);
+    assert.match(app, /ui\.abrirCategoriasOrcamento\.addEventListener\("click"[\s\S]*renderListaCategorias\(\)[\s\S]*ui\.novaCategoria\.focus\(\)/);
+    assert.match(app, /ui\.abrirLimitesOrcamento\.addEventListener\("click"[\s\S]*renderListaOrcamentos\(\)/);
+    assert.match(app, /ui\.gerenciarOrcamentos\.addEventListener\("click"[\s\S]*mostrarPainelOrcamentos\("opcoes"\)/);
 });
 
 test("seções de despesas e entradas usam botões Adicionar e ícones recolhíveis modernos", async () => {
