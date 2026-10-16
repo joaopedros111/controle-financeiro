@@ -76,6 +76,13 @@ const ui = {
     abrirAjustes: $("abrir-ajustes"),
     dialogoAjustes: $("dialogo-ajustes"),
     fecharAjustes: $("fechar-ajustes"),
+    posicaoBotaoMenu: $("posicao-botao-menu"),
+    transparenciaBotaoMenu: $("transparencia-botao-menu"),
+    valorTransparenciaBotao: $("valor-transparencia-botao"),
+    abrirCalculadora: $("abrir-calculadora"),
+    dialogoCalculadora: $("dialogo-calculadora"),
+    fecharCalculadora: $("fechar-calculadora"),
+    visorCalculadora: $("visor-calculadora"),
     atualizarApp: $("atualizar-app"),
 
 
@@ -3128,10 +3135,50 @@ ui.arquivoBackup.addEventListener("change", () => {
 
 /* ---------- Tema ---------- */
 
+const CHAVE_PREFERENCIAS_MENU = "controleFinanceiro:preferencias-menu";
+let preferenciasMenu = { posicao: "centro", transparencia: 45, x: null, y: null };
+try {
+    const salvas = JSON.parse(localStorage.getItem(CHAVE_PREFERENCIAS_MENU) || "null");
+    if (salvas && typeof salvas === "object") preferenciasMenu = { ...preferenciasMenu, ...salvas };
+} catch (_) { /* usa os padrões */ }
+function salvarPreferenciasMenu() {
+    localStorage.setItem(CHAVE_PREFERENCIAS_MENU, JSON.stringify(preferenciasMenu));
+}
+function aplicarPreferenciasMenu() {
+    document.body.dataset.posicaoMenu = preferenciasMenu.posicao;
+    document.documentElement.style.setProperty("--menu-transparencia", (100 - preferenciasMenu.transparencia) + "%");
+    ui.posicaoBotaoMenu.value = preferenciasMenu.posicao;
+    ui.transparenciaBotaoMenu.value = String(preferenciasMenu.transparencia);
+    ui.valorTransparenciaBotao.value = preferenciasMenu.transparencia + "%";
+    if (preferenciasMenu.posicao === "arrastavel" && Number.isFinite(preferenciasMenu.x) && Number.isFinite(preferenciasMenu.y)) {
+        ui.abrirAjustes.style.left = preferenciasMenu.x + "px";
+        ui.abrirAjustes.style.top = preferenciasMenu.y + "px";
+        ui.abrirAjustes.style.right = "auto";
+        ui.abrirAjustes.style.bottom = "auto";
+    } else {
+        ui.abrirAjustes.style.left = "";
+        ui.abrirAjustes.style.top = "";
+        ui.abrirAjustes.style.right = "";
+        ui.abrirAjustes.style.bottom = "";
+    }
+}
+aplicarPreferenciasMenu();
+ui.posicaoBotaoMenu.addEventListener("change", () => {
+    preferenciasMenu.posicao = ui.posicaoBotaoMenu.value;
+    preferenciasMenu.x = null;
+    preferenciasMenu.y = null;
+    aplicarPreferenciasMenu();
+    salvarPreferenciasMenu();
+});
+ui.transparenciaBotaoMenu.addEventListener("input", () => {
+    preferenciasMenu.transparencia = Number(ui.transparenciaBotaoMenu.value);
+    aplicarPreferenciasMenu();
+    salvarPreferenciasMenu();
+});
 let arrastoMenuEmCurso = false;
 let menuFoiArrastado = false;
 ui.abrirAjustes.addEventListener("pointerdown", (evento) => {
-    if (evento.button !== undefined && evento.button !== 0) return;
+    if (preferenciasMenu.posicao !== "arrastavel" || (evento.button !== undefined && evento.button !== 0)) return;
     const botao = ui.abrirAjustes;
     const caixa = botao.getBoundingClientRect();
     arrastoMenuEmCurso = true;
@@ -3159,8 +3206,13 @@ ui.abrirAjustes.addEventListener("pointermove", (evento) => {
     botao.style.top = y + "px";
     botao.style.right = "auto";
     botao.style.bottom = "auto";
+    preferenciasMenu.x = x;
+    preferenciasMenu.y = y;
 });
-const encerrarArrastoMenu = () => { arrastoMenuEmCurso = false; };
+const encerrarArrastoMenu = () => {
+    arrastoMenuEmCurso = false;
+    if (menuFoiArrastado) salvarPreferenciasMenu();
+};
 ui.abrirAjustes.addEventListener("pointerup", encerrarArrastoMenu);
 ui.abrirAjustes.addEventListener("pointercancel", encerrarArrastoMenu);
 ui.abrirAjustes.addEventListener("click", (evento) => {
@@ -3172,6 +3224,28 @@ ui.abrirAjustes.addEventListener("click", (evento) => {
     ui.dialogoAjustes.showModal();
 });
 ui.fecharAjustes.addEventListener("click", () => ui.dialogoAjustes.close());
+ui.abrirCalculadora.addEventListener("click", () => ui.dialogoCalculadora.showModal());
+ui.fecharCalculadora.addEventListener("click", () => ui.dialogoCalculadora.close());
+document.querySelectorAll("[data-calculadora]").forEach((tecla) => {
+    tecla.addEventListener("click", () => {
+        ui.visorCalculadora.value += tecla.dataset.calculadora;
+        ui.visorCalculadora.focus();
+    });
+});
+$("limpar-calculadora").addEventListener("click", () => { ui.visorCalculadora.value = ""; });
+$("calcular-resultado").addEventListener("click", () => {
+    const expressao = ui.visorCalculadora.value.replace(/,/g, ".").replace(/[^\d.+*/()\-\s]/g, "");
+    if (!expressao.trim()) return;
+    try {
+        const resultado = Function("return (" + expressao + ")")();
+        if (!Number.isFinite(resultado)) throw new Error("resultado inválido");
+        ui.visorCalculadora.value = String(Number(resultado.toFixed(10))).replace(".", ",");
+    } catch (_) {
+        ui.visorCalculadora.setCustomValidity("Expressão inválida");
+        ui.visorCalculadora.reportValidity();
+        ui.visorCalculadora.setCustomValidity("");
+    }
+});
 ui.alternarVisibilidadeResumo.addEventListener("click", () => {
     const ocultos = ui.alternarVisibilidadeResumo.getAttribute("aria-pressed") !== "true";
     document.querySelector(".resumo").classList.toggle("valores-ocultos", ocultos);
