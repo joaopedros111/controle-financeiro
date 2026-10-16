@@ -838,7 +838,7 @@ function renderTema() {
     document.querySelector('meta[name="theme-color"]').content = corDaBarraDoNavegador;
 
     ui.tema.replaceChildren(
-        criarEl("span", { text: tema === "escuro" ? "☀️" : tema === "rosa" ? "🌸" : "🌙" }),
+        criarEl("span", { text: tema === "escuro" ? "🌙" : tema === "rosa" ? "🌸" : "☀️" }),
         criarEl("span", { text: "Alterar" })
     );
     ui.tema.setAttribute("aria-label", "Tema atual: " + nomesTema[tema] + ". Mudar para " + nomesTema[proximoTema] + ".");
