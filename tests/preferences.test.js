@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { apresentarValorFinanceiro, normalizarPreferenciasMenu } from "../preferences.js";
+import { apresentarValorFinanceiro, normalizarPreferenciasMenu, resolverTelaInicial } from "../preferences.js";
 import { criarArmazenamento } from "../storage.js";
 
 test("preferências antigas ou inválidas mantêm defaults sem quebrar opções existentes", () => {
@@ -34,6 +34,69 @@ test("preferência válida de posição, transparência, tela e período é pres
     assert.equal(preferencia.telaInicial, "lancamentos");
     assert.equal(preferencia.ultimoPeriodo, "2026-09");
     assert.equal(preferencia.escopoCsv, "todos");
+});
+
+test("tela inicial ausente ou inválida usa o resumo do mês", () => {
+    assert.equal(normalizarPreferenciasMenu(null).telaInicial, "resumo");
+    assert.equal(normalizarPreferenciasMenu({ telaInicial: "invalida" }).telaInicial, "resumo");
+    assert.equal(normalizarPreferenciasMenu({ telaInicial: "graficos" }).telaInicial, "graficos");
+});
+
+test("tela inicial e última seção válida persistem e são restauradas", () => {
+    const dados = new Map();
+    const local = {
+        getItem: (chave) => dados.get(chave) ?? null,
+        setItem: (chave, valor) => dados.set(chave, String(valor)),
+        removeItem: (chave) => dados.delete(chave)
+    };
+    const chave = "controleFinanceiro:preferencias-menu";
+    const preferencias = normalizarPreferenciasMenu({
+        telaInicial: "ultimo",
+        ultimaTelaUtilizada: "graficos"
+    });
+    assert.equal(criarArmazenamento(local).escreverJson(chave, preferencias), true);
+
+    const restauradas = normalizarPreferenciasMenu(criarArmazenamento(local).lerJson(chave));
+    assert.equal(restauradas.telaInicial, "ultimo");
+    assert.equal(resolverTelaInicial(restauradas), "graficos");
+});
+
+test("modo última tela só restaura seções permitidas e usa resumo como fallback", () => {
+    assert.equal(resolverTelaInicial(normalizarPreferenciasMenu({
+        telaInicial: "ultimo",
+        ultimaTelaUtilizada: "lancamentos"
+    })), "lancamentos");
+    assert.equal(resolverTelaInicial(normalizarPreferenciasMenu({
+        telaInicial: "ultimo",
+        ultimaTelaUtilizada: "configuracoes"
+    })), "resumo");
+    assert.equal(normalizarPreferenciasMenu({
+        telaInicial: "ultimo",
+        ultimaTelaUtilizada: "configuracoes"
+    }).ultimaTelaUtilizada, null);
+});
+
+test("preferências antigas de receitas e despesas continuam abrindo lançamentos", () => {
+    assert.equal(normalizarPreferenciasMenu({ telaInicial: "receitas" }).telaInicial, "lancamentos");
+    assert.equal(normalizarPreferenciasMenu({ telaInicial: "despesas" }).telaInicial, "lancamentos");
+});
+
+test("preferências existentes permanecem intactas ao normalizar a tela inicial", () => {
+    const preferencias = normalizarPreferenciasMenu({
+        telaInicial: "ultimo",
+        ocultarAoIniciar: true,
+        densidade: "compacta",
+        mostrarGraficos: false,
+        referenciaMes: "ultimo",
+        ultimoPeriodo: "2026-09",
+        escopoCsv: "todos"
+    });
+    assert.equal(preferencias.ocultarAoIniciar, true);
+    assert.equal(preferencias.densidade, "compacta");
+    assert.equal(preferencias.mostrarGraficos, false);
+    assert.equal(preferencias.referenciaMes, "ultimo");
+    assert.equal(preferencias.ultimoPeriodo, "2026-09");
+    assert.equal(preferencias.escopoCsv, "todos");
 });
 
 test("ocultar e revelar usa a mesma formatação sem expor o valor oculto", () => {

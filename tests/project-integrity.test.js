@@ -68,3 +68,24 @@ test("valores monetários usam formatação centralizada nas listas, resumos e g
     assert.match(css, /html\.app-inicializando \.container/);
     assert.match(html, /class="app-inicializando"/);
 });
+
+test("tela inicial reutiliza as seções e o estado de navegação existentes", async () => {
+    const [html, app, serviceWorker] = await Promise.all([
+        read("index.html"), read("app.js"), read("sw.js")
+    ]);
+    for (const [valor, rotulo] of [
+        ["resumo", "Resumo do mês"],
+        ["lancamentos", "Lançamentos"],
+        ["graficos", "Gráficos"],
+        ["ultimo", "Última tela utilizada"]
+    ]) {
+        assert.match(html, new RegExp(`<option value="${valor}">${rotulo}</option>`));
+    }
+    assert.match(app, /resolverTelaInicial\(preferenciasMenu\)/);
+    assert.match(app, /aria-controls="conteudo-\$\{tipo\}"/);
+    assert.match(app, /registrarUltimaTela\("lancamentos"\)/);
+    assert.match(app, /addEventListener\("scroll"/);
+    assert.match(app, /classList\.remove\("app-inicializando"\)[\s\S]*requestAnimationFrame/);
+    assert.match(serviceWorker, /"\.\/preferences\.js"/);
+    assert.match(serviceWorker, /"\.\/app\.js"/);
+});

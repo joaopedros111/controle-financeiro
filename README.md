@@ -15,7 +15,7 @@ Aplicativo web responsivo e instalável para acompanhar entradas, despesas, cate
 - `manifest.json` e `icons/`: instalação e ícones do PWA.
 - `tests/`: testes automatizados da camada de dados, armazenamento e calculadora.
 
-O menu **Opções** mantém as preferências no armazenamento centralizado já existente. Ele oferece densidade de interface, gráficos/indicadores, seção inicial, mês de referência, privacidade visual dos valores e diagnóstico local. A opção **Lançamentos** abre as listas existentes de despesas e receitas. O CSV exporta o mês selecionado ou todos os meses que já tenham registros.
+O menu **Opções** mantém as preferências no armazenamento centralizado já existente. Ele oferece densidade de interface, gráficos/indicadores, seção inicial, mês de referência, privacidade visual dos valores e diagnóstico local. A tela inicial pode abrir o resumo, lançamentos, gráficos ou a última seção utilizada; o último destino válido é mantido entre inicializações. A opção **Lançamentos** abre as listas existentes de despesas e receitas. O CSV exporta o mês selecionado ou todos os meses que já tenham registros.
 
 **Ocultar valores financeiros** mascara valores monetários na interface como `••••`; o controle pode revelar os valores novamente durante a sessão. **Iniciar com valores ocultos** define apenas o estado inicial ao abrir ou recarregar o app e não impede a revelação durante a sessão. Essa é uma proteção visual: os valores reais continuam nos dados locais e nos backups, sem criptografia. O dia inicial do período financeiro segue pendente, porque os cálculos e filtros atuais usam meses do calendário; alterar isso exigiria uma mudança coerente em totais, gráficos e histórico.
 

@@ -1,6 +1,6 @@
 import { storage } from "./storage.js";
 import { CATEGORIAS_PADRAO, CATEGORIA_FIXA, normalizarEstado as normalizarEstadoCore, validarBackup, migrarDadosLegados, calcularExpressao, somarCentavos, gerarCsv } from "./finance-core.js";
-import { apresentarValorFinanceiro, normalizarPreferenciasMenu } from "./preferences.js";
+import { apresentarValorFinanceiro, normalizarPreferenciasMenu, resolverTelaInicial } from "./preferences.js";
 
 
 
@@ -1336,6 +1336,7 @@ document.querySelectorAll(".bloco-retrair").forEach((botao) => {
         const titulo = botao.closest(".bloco-topo").querySelector("h2").textContent.trim().toLowerCase();
         botao.setAttribute("aria-label", (expandido ? "Expandir " : "Recolher ") + titulo);
         conteudo.hidden = expandido;
+        registrarUltimaTela("lancamentos");
     });
 });
 
@@ -2791,6 +2792,7 @@ ui.arquivoBackup.addEventListener("change", () => {
 
 const CHAVE_PREFERENCIAS_MENU = "controleFinanceiro:preferencias-menu";
 let preferenciasMenu = normalizarPreferenciasMenu(null);
+let rastreamentoTelaAtivo = false;
 try {
     preferenciasMenu = normalizarPreferenciasMenu(storage.lerJson(CHAVE_PREFERENCIAS_MENU));
 } catch (_) { /* usa os padrões */ }
@@ -2841,24 +2843,40 @@ function aplicarPreferenciasVisuais() {
     document.body.classList.toggle("graficos-ocultos", !preferenciasMenu.mostrarGraficos);
 }
 function abrirSecaoInicial() {
+    const tela = resolverTelaInicial(preferenciasMenu);
     const alvos = {
         resumo: document.querySelector(".resumo"),
-        receitas: document.querySelector("#titulo-receitas")?.closest(".bloco"),
-        despesas: document.querySelector("#titulo-despesas")?.closest(".bloco"),
-        lancamentos: document.querySelector("#titulo-despesas")?.closest(".bloco")
+        lancamentos: document.querySelector("#titulo-despesas")?.closest(".bloco"),
+        graficos: document.querySelector(".grafico-bloco")
     };
-    if (["receitas", "despesas", "lancamentos"].includes(preferenciasMenu.telaInicial)) {
-        const tipos = preferenciasMenu.telaInicial === "lancamentos"
-            ? ["despesas", "receitas"]
-            : [preferenciasMenu.telaInicial];
-        tipos.forEach((tipo) => {
+    if (tela === "lancamentos") {
+        ["despesas", "receitas"].forEach((tipo) => {
             const botao = document.querySelector(`[aria-controls="conteudo-${tipo}"]`);
             if (botao?.getAttribute("aria-expanded") !== "true") botao?.click();
         });
     }
-    if (preferenciasMenu.telaInicial !== "resumo") {
-        requestAnimationFrame(() => alvos[preferenciasMenu.telaInicial]?.scrollIntoView({ block: "start" }));
-    }
+    requestAnimationFrame(() => alvos[tela]?.scrollIntoView({ block: "start" }));
+    return tela;
+}
+function registrarUltimaTela(tela) {
+    if (!rastreamentoTelaAtivo || !["resumo", "lancamentos", "graficos"].includes(tela)
+        || preferenciasMenu.ultimaTelaUtilizada === tela) return;
+    preferenciasMenu.ultimaTelaUtilizada = tela;
+    salvarPreferenciasMenu();
+}
+function detectarTelaVisivel() {
+    const secoes = [
+        [document.querySelector(".resumo"), "resumo"],
+        [document.querySelector(".grafico-bloco"), "graficos"],
+        [document.querySelector("#titulo-despesas")?.closest(".bloco"), "lancamentos"],
+        [document.querySelector("#titulo-receitas")?.closest(".bloco"), "lancamentos"]
+    ];
+    const referencia = window.innerHeight * 0.2;
+    const visivel = secoes
+        .filter(([secao]) => secao && secao.getClientRects().length)
+        .map(([secao, tela]) => [Math.abs(secao.getBoundingClientRect().top - referencia), tela])
+        .sort(([distanciaA], [distanciaB]) => distanciaA - distanciaB)[0];
+    if (visivel) registrarUltimaTela(visivel[1]);
 }
 function aplicarPreferenciasMenu() {
     document.body.dataset.posicaoMenu = preferenciasMenu.posicao;
@@ -2899,7 +2917,10 @@ ui.transparenciaBotaoMenu.addEventListener("input", () => {
 });
 ui.densidadeInterface.addEventListener("change", () => { preferenciasMenu.densidade = ui.densidadeInterface.value; aplicarPreferenciasVisuais(); salvarPreferenciasMenu(); });
 ui.mostrarGraficos.addEventListener("change", () => { preferenciasMenu.mostrarGraficos = ui.mostrarGraficos.checked; aplicarPreferenciasVisuais(); salvarPreferenciasMenu(); });
-ui.telaInicial.addEventListener("change", () => { preferenciasMenu.telaInicial = ui.telaInicial.value; salvarPreferenciasMenu(); });
+ui.telaInicial.addEventListener("change", () => {
+    preferenciasMenu.telaInicial = ui.telaInicial.value;
+    salvarPreferenciasMenu();
+});
 ui.referenciaMes.addEventListener("change", () => {
     preferenciasMenu.referenciaMes = ui.referenciaMes.value;
     if (preferenciasMenu.referenciaMes === "ultimo") preferenciasMenu.ultimoPeriodo = chaveMes(periodo.ano, periodo.mes);
@@ -3087,8 +3108,20 @@ renderTudo();
 aplicarPreferenciasMenu();
 aplicarPrivacidade();
 atualizarDiagnostico();
-abrirSecaoInicial();
+const telaInicialAplicada = abrirSecaoInicial();
 document.documentElement.classList.remove("app-inicializando");
+let quadroRastreamentoTela = null;
+requestAnimationFrame(() => {
+    rastreamentoTelaAtivo = true;
+    registrarUltimaTela(telaInicialAplicada);
+});
+window.addEventListener("scroll", () => {
+    if (quadroRastreamentoTela !== null) return;
+    quadroRastreamentoTela = requestAnimationFrame(() => {
+        quadroRastreamentoTela = null;
+        detectarTelaVisivel();
+    });
+}, { passive: true });
 
 const avisosInicializacao = [];
 if (migracaoLegadaPendente) {
