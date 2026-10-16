@@ -3128,7 +3128,49 @@ ui.arquivoBackup.addEventListener("change", () => {
 
 /* ---------- Tema ---------- */
 
-ui.abrirAjustes.addEventListener("click", () => ui.dialogoAjustes.showModal());
+let arrastoMenuEmCurso = false;
+let menuFoiArrastado = false;
+ui.abrirAjustes.addEventListener("pointerdown", (evento) => {
+    if (evento.button !== undefined && evento.button !== 0) return;
+    const botao = ui.abrirAjustes;
+    const caixa = botao.getBoundingClientRect();
+    arrastoMenuEmCurso = true;
+    menuFoiArrastado = false;
+    botao.setPointerCapture(evento.pointerId);
+    botao.dataset.arrastoX = String(evento.clientX);
+    botao.dataset.arrastoY = String(evento.clientY);
+    botao.dataset.posicaoX = String(caixa.left);
+    botao.dataset.posicaoY = String(caixa.top);
+});
+ui.abrirAjustes.addEventListener("pointermove", (evento) => {
+    if (!arrastoMenuEmCurso) return;
+    const botao = ui.abrirAjustes;
+    const dx = evento.clientX - Number(botao.dataset.arrastoX);
+    const dy = evento.clientY - Number(botao.dataset.arrastoY);
+    if (Math.abs(dx) + Math.abs(dy) > 4) menuFoiArrastado = true;
+    if (!menuFoiArrastado) return;
+    evento.preventDefault();
+    const margem = 8;
+    const maxX = Math.max(margem, window.innerWidth - botao.offsetWidth - margem);
+    const maxY = Math.max(margem, window.innerHeight - botao.offsetHeight - margem);
+    const x = Math.min(maxX, Math.max(margem, Number(botao.dataset.posicaoX) + dx));
+    const y = Math.min(maxY, Math.max(margem, Number(botao.dataset.posicaoY) + dy));
+    botao.style.left = x + "px";
+    botao.style.top = y + "px";
+    botao.style.right = "auto";
+    botao.style.bottom = "auto";
+});
+const encerrarArrastoMenu = () => { arrastoMenuEmCurso = false; };
+ui.abrirAjustes.addEventListener("pointerup", encerrarArrastoMenu);
+ui.abrirAjustes.addEventListener("pointercancel", encerrarArrastoMenu);
+ui.abrirAjustes.addEventListener("click", (evento) => {
+    if (menuFoiArrastado) {
+        evento.preventDefault();
+        menuFoiArrastado = false;
+        return;
+    }
+    ui.dialogoAjustes.showModal();
+});
 ui.fecharAjustes.addEventListener("click", () => ui.dialogoAjustes.close());
 ui.alternarVisibilidadeResumo.addEventListener("click", () => {
     const ocultos = ui.alternarVisibilidadeResumo.getAttribute("aria-pressed") !== "true";
