@@ -1494,11 +1494,13 @@ document.querySelectorAll(".bloco-retrair").forEach((botao) => {
     botao.addEventListener("click", () => {
         const expandido = botao.getAttribute("aria-expanded") === "true";
         const conteudo = document.getElementById(botao.getAttribute("aria-controls"));
+        if (!conteudo) return;
         botao.setAttribute("aria-expanded", String(!expandido));
-        const titulo = botao.closest(".bloco-topo").querySelector("h2").textContent.trim().toLowerCase();
+        const titulo = botao.closest(".bloco-topo, .orcamento-resumo-topo")
+            .querySelector("h2, h3").textContent.trim().toLowerCase();
         botao.setAttribute("aria-label", (expandido ? "Expandir " : "Recolher ") + titulo);
         conteudo.hidden = expandido;
-        registrarUltimaTela("lancamentos");
+        if (botao.dataset.registraTela) registrarUltimaTela(botao.dataset.registraTela);
     });
 });
 

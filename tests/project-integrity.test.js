@@ -98,7 +98,8 @@ test("tela inicial reutiliza as seções e o estado de navegação existentes", 
     }
     assert.match(app, /resolverTelaInicial\(preferenciasMenu\)/);
     assert.match(app, /aria-controls="conteudo-\$\{tipo\}"/);
-    assert.match(app, /registrarUltimaTela\("lancamentos"\)/);
+    assert.match(html, /data-registra-tela="lancamentos"/);
+    assert.match(app, /if \(botao\.dataset\.registraTela\) registrarUltimaTela/);
     assert.match(app, /addEventListener\("scroll"/);
     assert.match(app, /classList\.remove\("app-inicializando"\)[\s\S]*requestAnimationFrame/);
     assert.match(serviceWorker, /"\.\/preferences\.js"/);
@@ -162,11 +163,26 @@ test("orçamento fica no resumo, usa valores formatados e controles separados po
     assert.match(controls, /body\.valores-ocultos \.orcamento-progresso/);
 });
 
+test("orçamento no resumo pode ser recolhido independentemente dos indicadores", async () => {
+    const [html, app] = await Promise.all([read("index.html"), read("app.js")]);
+    const resumo = html.slice(html.indexOf('<section class="resumo"'), html.indexOf('<section class="bloco grafico-bloco"'));
+    const orcamento = resumo.slice(resumo.indexOf('<section class="orcamento-resumo"'));
+    assert.match(orcamento, /aria-expanded="true" aria-controls="conteudo-resumo-orcamentos"/);
+    assert.match(orcamento, /<div id="conteudo-resumo-orcamentos">[\s\S]*lista-resumo-orcamentos[\s\S]*vazio-resumo-orcamentos/);
+    assert.ok(!orcamento.includes('id="saldo-valor"'));
+    assert.ok(!orcamento.includes('class="indicadores"'));
+    assert.match(app, /botao\.closest\("\.bloco-topo, \.orcamento-resumo-topo"\)/);
+    assert.match(app, /if \(botao\.dataset\.registraTela\) registrarUltimaTela/);
+});
+
 test("seções de despesas e entradas usam botões Adicionar e ícones recolhíveis modernos", async () => {
     const html = await read("index.html");
     assert.match(html, /<h2 id="titulo-receitas">Entradas<\/h2>/);
     assert.match(html, /id="adicionar-despesa"[\s\S]*?Adicionar/);
     assert.match(html, /id="adicionar-receita"[\s\S]*?Adicionar/);
-    assert.equal((html.match(/class="bloco-seta" viewBox="0 0 24 24"/g) || []).length, 2);
+    assert.equal((html.match(/class="bloco-seta" viewBox="0 0 24 24"/g) || []).length, 3);
     assert.match(html, /aria-controls="conteudo-receitas" aria-label="Expandir entradas"/);
+    const css = await read("style.css");
+    assert.match(css, /\.bloco-retrair \{[^}]*width: 38px;[^}]*height: 38px;/);
+    assert.match(css, /\.bloco-seta \{[^}]*width: 21px;[^}]*height: 21px;/);
 });

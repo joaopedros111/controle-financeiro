@@ -46,7 +46,8 @@
     .orcamento-resumo { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--borda); }
     .orcamento-resumo-topo { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
     .orcamento-resumo-topo h3 { font-size: .98rem; }
-    .orcamento-resumo-topo .btn { min-height: 38px; padding: 7px 12px; font-size: .8rem; }
+    .orcamento-resumo-acoes { display: flex; align-items: center; gap: 6px; }
+    .orcamento-resumo-topo #gerenciar-orcamentos { min-height: 38px; padding: 7px 12px; font-size: .8rem; }
     .lista-resumo-orcamentos { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
     .orcamento-item { display: grid; gap: 5px; padding: 10px 12px; border: 1px solid var(--borda); border-radius: 13px; background: var(--superficie-suave); }
     .orcamento-item-topo { display: flex; align-items: center; justify-content: space-between; gap: 8px; }

@@ -114,10 +114,17 @@
                 <span class="grafico-sobretitulo">PLANEJAMENTO</span>
                 <h3 id="titulo-orcamento-resumo">Orçamento por categoria</h3>
             </div>
-            <button id="gerenciar-orcamentos" class="btn btn-secundario" type="button">Configurar</button>
+            <div class="orcamento-resumo-acoes">
+                <button class="bloco-retrair" type="button" aria-expanded="true" aria-controls="conteudo-resumo-orcamentos" aria-label="Recolher orçamento por categoria">
+                    <svg class="bloco-seta" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m7 10 5 5 5-5"/></svg>
+                </button>
+                <button id="gerenciar-orcamentos" class="btn btn-secundario" type="button">Configurar</button>
+            </div>
         </div>
-        <ul id="lista-resumo-orcamentos" class="lista-resumo-orcamentos" aria-label="Gastos e limites por categoria"></ul>
-        <p id="vazio-resumo-orcamentos" class="orcamento-vazio" hidden>Nenhuma categoria disponível para orçamentar.</p>
+        <div id="conteudo-resumo-orcamentos">
+            <ul id="lista-resumo-orcamentos" class="lista-resumo-orcamentos" aria-label="Gastos e limites por categoria"></ul>
+            <p id="vazio-resumo-orcamentos" class="orcamento-vazio" hidden>Nenhuma categoria disponível para orçamentar.</p>
+        </div>
     </section>
 
 </section>
@@ -168,7 +175,7 @@
     <div class="bloco-topo">
         <div class="bloco-titulo-retratil">
             <h2 id="titulo-despesas">Despesas do mês</h2>
-        <button class="bloco-retrair" type="button" aria-expanded="false" aria-controls="conteudo-despesas" aria-label="Expandir despesas">
+        <button class="bloco-retrair" type="button" data-registra-tela="lancamentos" aria-expanded="false" aria-controls="conteudo-despesas" aria-label="Expandir despesas">
                 <svg class="bloco-seta" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m7 10 5 5 5-5"/></svg>
             </button>
         </div>
@@ -195,7 +202,7 @@
     <div class="bloco-topo">
         <div class="bloco-titulo-retratil">
             <h2 id="titulo-receitas">Entradas</h2>
-        <button class="bloco-retrair" type="button" aria-expanded="false" aria-controls="conteudo-receitas" aria-label="Expandir entradas">
+        <button class="bloco-retrair" type="button" data-registra-tela="lancamentos" aria-expanded="false" aria-controls="conteudo-receitas" aria-label="Expandir entradas">
                 <svg class="bloco-seta" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m7 10 5 5 5-5"/></svg>
             </button>
         </div>
