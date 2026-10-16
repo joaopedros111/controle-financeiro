@@ -516,7 +516,7 @@ dialog#dialogo-receita .acoes-dialogo { position: static; margin-top: 12px; padd
 
     .btn-primario {
         color: #ffffff;
-        background: var(--primaria);
+        background: color-mix(in srgb, var(--primaria) 82%, transparent);
         box-shadow: 0 4px 12px rgba(37, 99, 235, 0.25);
 
         &:hover {
@@ -1415,7 +1415,7 @@ dialog#dialogo-receita .acoes-dialogo { position: static; margin-top: 12px; padd
         background: var(--primaria);
         box-shadow: 0 8px 24px color-mix(in srgb, var(--primaria) 40%, transparent);
     }
-    .ajustes-botao:hover { background: var(--primaria-hover); }
+    .ajustes-botao:hover { background: color-mix(in srgb, var(--primaria-hover) 90%, transparent); }
     .ajustes-botao svg { width: 25px; height: 25px; }
     .ajustes-corpo > .bloco-topo { margin-bottom: 20px; }
     .ajustes-secao + .ajustes-secao { margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--borda); }
