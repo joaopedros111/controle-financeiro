@@ -185,12 +185,6 @@ const ui = {
 
 
 
-    resumoCategorias: $("resumo-categorias"),
-
-    vazioCategorias: $("vazio-categorias"),
-
-
-
     copiarMesAnterior: $("copiar-mes-anterior"),
 
     exportarCsv: $("exportar-csv"),
@@ -1106,90 +1100,6 @@ function corDaCategoria(nome) {
 
 
 
-function renderResumoCategorias(mes, receita) {
-
-
-
-    const grupos = {};
-
-
-
-    mes.despesas.forEach((d) => {
-
-        grupos[d.categoria] = (grupos[d.categoria] || 0) + numero(d.valor);
-
-    });
-
-
-
-    const itens = Object.entries(grupos)
-
-        .filter(([, valor]) => valor > 0)
-
-        .sort((a, b) => b[1] - a[1]);
-
-
-
-    const totalDespesas = itens.reduce((soma, [, valor]) => soma + valor, 0);
-
-
-
-    ui.vazioCategorias.hidden = itens.length > 0;
-
-
-
-    ui.resumoCategorias.replaceChildren(...itens.map(([nome, valor]) => {
-
-
-
-        const parteDasDespesas = totalDespesas > 0 ? (valor / totalDespesas) * 100 : 0;
-
-        const parteDaRenda = receita > 0 ? (valor / receita) * 100 : 0;
-
-
-
-        const detalhe = receita > 0
-
-            ? formatarMoeda(valor) + " (" + formatarPercentual(parteDaRenda) + " da renda)"
-
-            : formatarMoeda(valor) + " (" + formatarPercentual(parteDasDespesas) + " das despesas)";
-
-
-
-        const barra = criarEl("div", { class: "cat-barra" });
-
-        barra.style.width = parteDasDespesas + "%";
-
-        barra.style.background = corDaCategoria(nome);
-
-
-
-        const cor = criarEl("span", { class: "cat-cor" });
-
-        cor.style.background = corDaCategoria(nome);
-
-
-
-        return criarEl("div", { class: "cat-linha" }, [
-
-            criarEl("div", { class: "cat-cabecalho" }, [
-
-                criarEl("span", { class: "cat-nome" }, [cor, nome]),
-
-                criarEl("span", { class: "cat-detalhe", text: detalhe })
-
-            ]),
-
-            criarEl("div", { class: "cat-trilho" }, [barra])
-
-        ]);
-
-    }));
-
-}
-
-
-
 function somar(lista) {
 
     return lista.reduce((soma, item) => soma + numero(item.valor), 0);
@@ -1308,9 +1218,9 @@ function atualizarResumo() {
 
 
 
-    renderResumoCategorias(mes, receita);
-
     renderGraficoMensal();
+
+    renderGraficoCategorias();
 
 
 
@@ -1327,7 +1237,7 @@ function renderGraficoMensal() {
     const pontos = [];
     let ano = periodo.ano;
     let mes = periodo.mes;
-    for (let i = 0; i < 6; i += 1) {
+    for (let i = 0; i < 3; i += 1) {
         const chave = chaveMes(ano, mes);
         const dados = estado.meses[chave] || { receitas: [], despesas: [] };
         pontos.unshift({
@@ -1341,7 +1251,7 @@ function renderGraficoMensal() {
     }
 
     const escala = Math.max(0, ...pontos.flatMap((p) => [p.receitas, p.despesas]));
-    $("periodo-grafico").textContent = "Últimos 6 meses";
+    $("periodo-grafico").textContent = "3 meses";
     destino.replaceChildren(...pontos.map((p) => {
         const grupo = criarEl("div", { class: "grafico-grupo" });
         const barras = criarEl("div", { class: "grafico-barras" });
@@ -1357,10 +1267,58 @@ function renderGraficoMensal() {
         grupo.append(barras, criarEl("span", { class: "grafico-mes", text: p.nome }));
         return grupo;
     }));
-    destino.setAttribute("aria-label", "Entradas e despesas nos últimos seis meses: " + pontos.map((p) =>
+    destino.setAttribute("aria-label", "Entradas e despesas nos últimos três meses: " + pontos.map((p) =>
         p.nome + " de " + p.chave.slice(0, 4) + ", entradas " + formatarMoeda(p.receitas) + ", despesas " + formatarMoeda(p.despesas)
     ).join("; "));
 }
+
+function renderGraficoCategorias() {
+    const rosquinha = $("grafico-rosca");
+    const legenda = $("legenda-grafico-categorias");
+    if (!rosquinha || !legenda) return;
+
+    const totais = {};
+    obterMes().despesas.forEach((despesa) => {
+        const valor = numero(despesa.valor);
+        if (valor > 0) totais[despesa.categoria] = (totais[despesa.categoria] || 0) + valor;
+    });
+    const itens = Object.entries(totais).sort((a, b) => b[1] - a[1]);
+    const total = itens.reduce((soma, [, valor]) => soma + valor, 0);
+    const nomeMes = MESES[periodo.mes - 1] + " de " + periodo.ano;
+    $("periodo-grafico-categorias").textContent = nomeMes;
+    $("total-grafico-categorias").textContent = formatarMoeda(total);
+    $("vazio-grafico-categorias").hidden = itens.length > 0;
+
+    if (total > 0) {
+        let angulo = 0;
+        const segmentos = itens.map(([nome, valor], indice) => {
+            const inicio = angulo;
+            angulo += indice === itens.length - 1 ? 360 - angulo : (valor / total) * 360;
+            return corDaCategoria(nome) + " " + inicio + "deg " + angulo + "deg";
+        });
+        rosquinha.style.background = "conic-gradient(" + segmentos.join(", ") + ")";
+    } else {
+        rosquinha.style.background = "conic-gradient(var(--borda) 0deg 360deg)";
+    }
+
+    legenda.replaceChildren(...itens.map(([nome, valor]) => {
+        const percentual = (valor / total) * 100;
+        const cor = criarEl("span", { class: "grafico-categoria-cor", "aria-hidden": "true" });
+        cor.style.background = corDaCategoria(nome);
+        return criarEl("li", { class: "grafico-categoria-item" }, [
+            criarEl("span", { class: "grafico-categoria-nome" }, [cor, criarEl("span", { text: nome })]),
+            criarEl("strong", { class: "grafico-categoria-valor", text: formatarMoeda(valor) }),
+            criarEl("small", { class: "grafico-categoria-percentual", text: formatarPercentual(percentual) })
+        ]);
+    }));
+
+    rosquinha.setAttribute("aria-label", itens.length
+        ? "Despesas por categoria em " + nomeMes + ". Total " + formatarMoeda(total) + ". " + itens.map(([nome, valor]) =>
+            nome + ": " + formatarMoeda(valor) + ", " + formatarPercentual((valor / total) * 100)
+        ).join("; ")
+        : "Nenhuma despesa com valor registrado em " + nomeMes + ".");
+}
+
 function renderTudo() {
 
     renderTema();

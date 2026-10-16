@@ -131,15 +131,39 @@
     <div class="bloco-topo grafico-topo">
         <div>
             <span class="grafico-sobretitulo">PANORAMA</span>
-            <h2 id="titulo-grafico">Entradas e despesas</h2>
+            <h2 id="titulo-grafico">Visão geral</h2>
         </div>
-        <span id="periodo-grafico" class="grafico-periodo"></span>
     </div>
-    <div class="grafico-legenda" aria-hidden="true">
-        <span><i class="legenda-entrada"></i>Entradas</span>
-        <span><i class="legenda-despesa"></i>Despesas</span>
+    <div class="panorama-graficos">
+        <section class="grafico-meses" aria-labelledby="titulo-grafico-meses">
+            <div class="grafico-categorias-topo">
+                <h3 id="titulo-grafico-meses">Entradas e despesas</h3>
+                <span id="periodo-grafico" class="grafico-periodo"></span>
+            </div>
+            <div class="grafico-legenda" aria-hidden="true">
+                <span><i class="legenda-entrada"></i>Entradas</span>
+                <span><i class="legenda-despesa"></i>Despesas</span>
+            </div>
+            <div id="grafico-mensal" class="grafico-mensal" role="img" aria-label="Gráfico comparando entradas e despesas dos últimos três meses"></div>
+        </section>
+
+        <section class="grafico-categorias" aria-labelledby="titulo-grafico-categorias">
+        <div class="grafico-categorias-topo">
+            <h3 id="titulo-grafico-categorias">Gastos do mês</h3>
+            <span id="periodo-grafico-categorias" class="grafico-periodo"></span>
+        </div>
+        <div class="grafico-categorias-conteudo">
+            <div id="grafico-rosca" class="grafico-rosca" role="img" aria-label="Divisão das despesas por categoria neste mês">
+                <div class="grafico-rosca-centro">
+                    <span>Total no mês</span>
+                    <strong id="total-grafico-categorias">R$ 0,00</strong>
+                </div>
+            </div>
+            <ul id="legenda-grafico-categorias" class="legenda-grafico-categorias" aria-label="Categorias e valores das despesas"></ul>
+        </div>
+        <p id="vazio-grafico-categorias" class="grafico-categorias-vazio" hidden>Adicione despesas neste mês para ver a divisão por categoria.</p>
+        </section>
     </div>
-    <div id="grafico-mensal" class="grafico-mensal" role="img" aria-label="Gráfico comparando entradas e despesas do mês selecionado"></div>
 </section>
 
 
@@ -161,24 +185,6 @@
         <span id="total-valor">R$ 0,00</span>
         <span id="total-percentual">0,0%</span>
     </div>
-</section>
-
-
-
-        <!-- Despesas por categoria -->
-
-<section class="bloco" aria-labelledby="titulo-categorias">
-    <div class="bloco-topo">
-        <h2 id="titulo-categorias">Onde gastei</h2>
-        <button id="gerenciar-categorias" class="btn btn-secundario" type="button">
-            Gerenciar
-        </button>
-    </div>
-
-    <div id="resumo-categorias"></div>
-    <p class="vazio" id="vazio-categorias">
-        Adicione despesas com valor para ver a distribuição por categoria.
-    </p>
 </section>
 
 
@@ -224,6 +230,10 @@
                 <div><strong>Tema</strong><span>Claro, escuro ou rosa</span></div>
                 <button id="alternar-tema" class="btn btn-secundario tema-botao" type="button" aria-label="Alternar entre tema claro e escuro" title="Alternar tema">🌙 <span>Alterar</span></button>
             </div>
+        </section>
+        <section class="ajustes-secao" aria-labelledby="titulo-ajustes-categorias">
+            <h3 id="titulo-ajustes-categorias">Categorias</h3>
+            <button id="gerenciar-categorias" class="btn btn-secundario ajustes-categorias-botao" type="button">Gerenciar categorias</button>
         </section>
         <section class="ajustes-secao" aria-labelledby="titulo-ferramentas">
             <h3 id="titulo-ferramentas">Dados e backup</h3>

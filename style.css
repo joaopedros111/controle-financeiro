@@ -1261,3 +1261,177 @@
     :root[data-tema="rosa"] .legenda-despesa { background: #655bbd; }
     :root[data-tema="rosa"] .resumo::before { background: linear-gradient(90deg, #d74786, #a681e2); }
 }
+
+@layer components {
+    .grafico-categorias {
+        margin-top: 20px;
+        padding-top: 18px;
+        border-top: 1px solid var(--borda);
+    }
+    .grafico-categorias-topo {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 10px;
+        margin-bottom: 14px;
+    }
+    .grafico-categorias-topo h3 {
+        margin: 0;
+        font-size: .92rem;
+        font-weight: 800;
+        letter-spacing: -.02em;
+    }
+    .grafico-categorias-conteudo {
+        display: grid;
+        grid-template-columns: minmax(112px, 150px) minmax(0, 1fr);
+        align-items: center;
+        gap: 18px;
+    }
+    .grafico-rosca {
+        display: grid;
+        place-items: center;
+        width: min(100%, 150px);
+        aspect-ratio: 1;
+        border-radius: 50%;
+        transition: background .25s ease;
+    }
+    .grafico-rosca-centro {
+        display: grid;
+        align-content: center;
+        justify-items: center;
+        gap: 4px;
+        width: 72%;
+        aspect-ratio: 1;
+        padding: 8px;
+        border: 1px solid var(--borda);
+        border-radius: 50%;
+        background: var(--superficie);
+        text-align: center;
+    }
+    .grafico-rosca-centro > span {
+        color: var(--texto-secundario);
+        font-size: .64rem;
+        font-weight: 700;
+    }
+    .grafico-rosca-centro strong {
+        max-width: 100%;
+        overflow: hidden;
+        color: var(--texto);
+        font-size: clamp(.72rem, 3.3vw, .9rem);
+        font-variant-numeric: tabular-nums;
+        text-overflow: ellipsis;
+    }
+    .legenda-grafico-categorias {
+        display: grid;
+        gap: 2px;
+        max-height: 188px;
+        min-width: 0;
+        margin: 0;
+        padding: 0 4px 0 0;
+        overflow-y: auto;
+        list-style: none;
+        scrollbar-color: var(--borda) transparent;
+        scrollbar-width: thin;
+    }
+    .grafico-categoria-item {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        grid-template-rows: auto auto;
+        align-items: center;
+        column-gap: 8px;
+        padding: 7px 2px;
+        border-bottom: 1px solid color-mix(in srgb, var(--borda) 70%, transparent);
+    }
+    .grafico-categoria-nome {
+        display: flex;
+        align-items: center;
+        min-width: 0;
+        gap: 7px;
+        font-size: .76rem;
+        font-weight: 700;
+    }
+    .grafico-categoria-nome > span:last-child {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+    .grafico-categoria-cor {
+        flex: 0 0 9px;
+        width: 9px;
+        height: 9px;
+        border-radius: 3px;
+    }
+    .grafico-categoria-valor {
+        font-size: .72rem;
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+    }
+    .grafico-categoria-percentual {
+        grid-column: 1;
+        padding-left: 16px;
+        color: var(--texto-secundario);
+        font-size: .66rem;
+    }
+    .grafico-categorias-vazio {
+        margin: 12px 0 0;
+        color: var(--texto-secundario);
+        font-size: .8rem;
+        text-align: center;
+    }
+    @media (max-width: 380px) {
+        .grafico-categorias-conteudo { grid-template-columns: minmax(100px, 112px) minmax(0, 1fr); gap: 12px; }
+        .grafico-categorias-topo { align-items: flex-start; }
+        .grafico-categorias-topo h3 { font-size: .86rem; }
+        .grafico-categorias-topo .grafico-periodo { font-size: .62rem; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+        .grafico-rosca { transition: none; }
+    }
+}
+@layer components {
+    .panorama-graficos {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        align-items: start;
+        gap: 14px;
+    }
+    .grafico-meses { min-width: 0; }
+    .grafico-meses > .grafico-categorias-topo { min-height: 36px; }
+    .grafico-meses .grafico-categorias-topo h3 { font-size: .84rem; }
+    .grafico-meses .grafico-periodo { font-size: .66rem; }
+    .grafico-meses .grafico-legenda { flex-wrap: wrap; gap: 5px 10px; font-size: .66rem; }
+    .grafico-meses .grafico-mensal { grid-template-columns: repeat(3, minmax(0, 1fr)); height: 138px; gap: 3px; }
+    .grafico-meses .grafico-barra { width: min(38%, 17px); }
+    .grafico-meses .grafico-mes { font-size: .66rem; }
+
+    .panorama-graficos .grafico-categorias {
+        min-width: 0;
+        margin: 0;
+        padding: 0 0 0 14px;
+        border: 0;
+        border-left: 1px solid var(--borda);
+    }
+    .grafico-categorias-topo { align-items: flex-start; flex-wrap: wrap; gap: 3px 6px; margin-bottom: 10px; }
+    .panorama-graficos .grafico-categorias-topo h3 { font-size: .84rem; }
+    .panorama-graficos .grafico-categorias-topo .grafico-periodo { font-size: .65rem; }
+    .panorama-graficos .grafico-categorias-conteudo { grid-template-columns: minmax(0, 1fr); justify-items: center; gap: 8px; }
+    .panorama-graficos .grafico-rosca { width: min(100%, 112px); }
+    .panorama-graficos .grafico-rosca-centro > span { font-size: .58rem; }
+    .panorama-graficos .grafico-rosca-centro strong { font-size: .72rem; }
+    .panorama-graficos .legenda-grafico-categorias { width: 100%; max-height: 132px; }
+    .panorama-graficos .grafico-categoria-item { column-gap: 4px; padding: 5px 0; }
+    .panorama-graficos .grafico-categoria-nome { gap: 5px; font-size: .68rem; }
+    .panorama-graficos .grafico-categoria-valor { font-size: .65rem; }
+    .panorama-graficos .grafico-categoria-percentual { font-size: .61rem; }
+    .panorama-graficos .grafico-categorias-vazio { font-size: .72rem; }
+    .ajustes-categorias-botao { width: 100%; }
+
+    @media (max-width: 380px) {
+        .panorama-graficos { gap: 10px; }
+        .panorama-graficos .grafico-categorias { padding-left: 10px; }
+        .grafico-meses .grafico-categorias-topo h3,
+        .panorama-graficos .grafico-categorias-topo h3 { font-size: .77rem; }
+        .grafico-meses .grafico-periodo,
+        .panorama-graficos .grafico-categorias-topo .grafico-periodo { font-size: .6rem; }
+    }
+}
