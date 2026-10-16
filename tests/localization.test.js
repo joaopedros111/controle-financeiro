@@ -22,6 +22,18 @@ test("traduções localizam frases da interface e preservam o português como pa
     assert.equal(textoTraduzido("Rótulo personalizado", "fr"), "Rótulo personalizado");
 });
 
+test("status dinâmico do Service Worker e do armazenamento acompanha o idioma da interface", () => {
+    const diagnostico = "Service Worker ativo (activated); controlando esta página. Armazenamento: persistente disponível.";
+    assert.equal(
+        textoTraduzido(diagnostico, "en"),
+        "Service Worker active (activated); controlling this page. Storage: persistent storage available."
+    );
+    assert.equal(
+        textoTraduzido(diagnostico, "ja"),
+        "Service Worker有効（activated）このページを制御中。 ストレージ: 永続ストレージを利用できます。"
+    );
+});
+
 test("idioma e moeda persistem sem alterar outras preferências antigas", () => {
     const dados = new Map();
     const local = {
