@@ -108,6 +108,18 @@
 
     </dl>
 
+    <section class="orcamento-resumo" aria-labelledby="titulo-orcamento-resumo">
+        <div class="orcamento-resumo-topo">
+            <div>
+                <span class="grafico-sobretitulo">PLANEJAMENTO</span>
+                <h3 id="titulo-orcamento-resumo">Orçamento por categoria</h3>
+            </div>
+            <button id="gerenciar-orcamentos" class="btn btn-secundario" type="button">Configurar</button>
+        </div>
+        <ul id="lista-resumo-orcamentos" class="lista-resumo-orcamentos" aria-label="Gastos e limites por categoria"></ul>
+        <p id="vazio-resumo-orcamentos" class="orcamento-vazio" hidden>Nenhuma categoria disponível para orçamentar.</p>
+    </section>
+
 </section>
 
 <section class="bloco grafico-bloco" aria-labelledby="titulo-grafico">
@@ -574,9 +586,22 @@
 
     </dialog>
 
+    <dialog id="dialogo-orcamentos" aria-labelledby="titulo-dialogo-orcamentos">
+        <div class="dialogo-corpo">
+            <div class="bloco-topo">
+                <div>
+                    <h2 id="titulo-dialogo-orcamentos">Orçamento por categoria</h2>
+                    <p id="periodo-orcamentos" class="nota"></p>
+                </div>
+                <button id="fechar-orcamentos" class="btn btn-icone" type="button" aria-label="Fechar orçamentos">×</button>
+            </div>
+            <p class="nota">Defina um limite padrão mensal e, se necessário, um valor diferente apenas para o mês selecionado. Limites não configurados permanecem sem orçamento.</p>
+            <div id="lista-orcamentos" class="lista-orcamentos"></div>
+        </div>
+    </dialog>
 
 
-<div id="aviso" class="aviso" role="status" aria-live="polite"></div>
+    <div id="aviso" class="aviso" role="status" aria-live="polite"></div>
 
 <script type="module" src="app.js"></script>
 <script>

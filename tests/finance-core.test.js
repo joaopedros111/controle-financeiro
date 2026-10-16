@@ -1,12 +1,155 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { calcularExpressao, escaparCelulaCsv, gerarCsv, migrarDadosLegados, normalizarEstado, somarCentavos, validarBackup } from "../finance-core.js";
+import { calcularExpressao, calcularOrcamentosPorCategoria, escaparCelulaCsv, gerarCsv, migrarDadosLegados, normalizarEstado, removerCategoriaOrcamentos, renomearCategoriaOrcamentos, somarCentavos, validarBackup } from "../finance-core.js";
 
 test("backup válido é aceito e meses fora do calendário são recusados", () => {
     const backup = { categorias: ["Moradia"], meses: { "2026-10": { receitas: [{ id: "r1", nome: "Salário", valor: 1200 }], despesas: [] } } };
     assert.equal(validarBackup(backup), true);
     assert.equal(validarBackup({ ...backup, meses: { "2026-13": { receitas: [], despesas: [] } } }), false);
     assert.equal(validarBackup({ ...backup, meses: { "2101-01": { receitas: [], despesas: [] } } }), false);
+});
+
+test("modelo v3 adiciona orçamentos e migra estados e backups v2 sem orçamento", () => {
+    const antigo = { versao: 2, categorias: ["Casa"], meses: { "2026-10": { receitas: [], despesas: [] } } };
+    assert.equal(validarBackup(antigo), true);
+    const migrado = normalizarEstado(antigo);
+    assert.equal(migrado.versao, 3);
+    assert.deepEqual(migrado.orcamentos, { padrao: {}, meses: {} });
+
+    const novo = normalizarEstado({
+        versao: 3,
+        categorias: ["Casa"],
+        meses: antigo.meses,
+        orcamentos: { padrao: { Casa: 500 }, meses: { "2026-10": { Casa: 420 } } }
+    });
+    assert.equal(validarBackup(novo), true);
+    assert.deepEqual(normalizarEstado(novo).orcamentos, novo.orcamentos);
+});
+
+test("valida limites de orçamento não negativos e períodos de personalização", () => {
+    const backup = { versao: 3, meses: {}, orcamentos: { padrao: { Casa: 250 }, meses: { "2026-02": { Casa: 200 } } } };
+    assert.equal(validarBackup(backup), true);
+    assert.equal(validarBackup({ ...backup, orcamentos: { padrao: { Casa: -1 } } }), false);
+    assert.equal(validarBackup({ ...backup, orcamentos: { padrao: { Casa: Number.MAX_VALUE } } }), false);
+    assert.equal(validarBackup({ ...backup, orcamentos: { padrao: {}, meses: { "2026-13": { Casa: 10 } } } }), false);
+});
+
+test("orçamento calcula gastos apenas por categoria e mês selecionado", () => {
+    const categorias = ["Alimentação", "Moradia"];
+    const orcamentos = { padrao: { Alimentação: 600 }, meses: {} };
+    const outubro = calcularOrcamentosPorCategoria(categorias, [
+        { categoria: "Alimentação", valor: 100 },
+        { categoria: "Alimentação", valor: 320 },
+        { categoria: "Moradia", valor: 800 }
+    ], orcamentos, "2026-10");
+    const novembro = calcularOrcamentosPorCategoria(categorias, [
+        { categoria: "Alimentação", valor: 50 }
+    ], orcamentos, "2026-11");
+
+    assert.equal(outubro.find((item) => item.categoria === "Alimentação").gastoCentavos, 42000);
+    assert.equal(outubro.find((item) => item.categoria === "Moradia").gastoCentavos, 80000);
+    assert.equal(novembro.find((item) => item.categoria === "Alimentação").gastoCentavos, 5000);
+});
+
+test("orçamento calcula saldo e percentual abaixo, no limite e acima do limite", () => {
+    const calcular = (gasto) => calcularOrcamentosPorCategoria(["Casa"], [
+        { categoria: "Casa", valor: gasto }
+    ], { padrao: { Casa: 100 }, meses: {} }, "2026-10")[0];
+    const abaixo = calcular(75);
+    const exato = calcular(100);
+    const acima = calcular(125);
+
+    assert.equal(abaixo.restanteCentavos, 2500);
+    assert.equal(abaixo.percentualConsumido, 75);
+    assert.equal(exato.restanteCentavos, 0);
+    assert.equal(exato.percentualConsumido, 100);
+    assert.equal(acima.restanteCentavos, -2500);
+    assert.equal(acima.percentualConsumido, 125);
+});
+
+test("limite zero é definido e categoria sem orçamento não assume limite zero", () => {
+    const resultados = calcularOrcamentosPorCategoria(["Sem limite", "Zero"], [
+        { categoria: "Zero", valor: 5 }
+    ], { padrao: { Zero: 0 }, meses: {} }, "2026-10");
+    const semLimite = resultados.find((item) => item.categoria === "Sem limite");
+    const zero = resultados.find((item) => item.categoria === "Zero");
+    assert.equal(semLimite.limiteCentavos, null);
+    assert.equal(semLimite.restanteCentavos, null);
+    assert.equal(semLimite.percentualConsumido, null);
+    assert.equal(zero.limiteCentavos, 0);
+    assert.equal(zero.percentualConsumido, null);
+    assert.equal(zero.restanteCentavos, -500);
+});
+
+test("padrão se aplica sem personalização, e personalização não altera o padrão", () => {
+    const orcamentos = { padrao: { Casa: 500 }, meses: { "2026-10": { Casa: 420 } } };
+    const despesas = [{ categoria: "Casa", valor: 100 }];
+    const outubro = calcularOrcamentosPorCategoria(["Casa"], despesas, orcamentos, "2026-10")[0];
+    const novembro = calcularOrcamentosPorCategoria(["Casa"], despesas, orcamentos, "2026-11")[0];
+    assert.equal(outubro.limiteCentavos, 42000);
+    assert.equal(novembro.limiteCentavos, 50000);
+
+    orcamentos.padrao.Casa = 700;
+    assert.equal(calcularOrcamentosPorCategoria(["Casa"], despesas, orcamentos, "2026-10")[0].limiteCentavos, 42000);
+    assert.equal(calcularOrcamentosPorCategoria(["Casa"], despesas, orcamentos, "2026-11")[0].limiteCentavos, 70000);
+    delete orcamentos.meses["2026-10"].Casa;
+    assert.equal(calcularOrcamentosPorCategoria(["Casa"], despesas, orcamentos, "2026-10")[0].limiteCentavos, 70000);
+});
+
+test("orçamentos acompanham inclusão, edição, exclusão e categorias novas", () => {
+    const despesas = [{ id: "d1", categoria: "Casa", valor: 20 }];
+    const categorias = ["Casa"];
+    const orcamentos = { padrao: { Casa: 100 }, meses: {} };
+    const calcular = () => calcularOrcamentosPorCategoria(categorias, despesas, orcamentos, "2026-10");
+    assert.equal(calcular().find((item) => item.categoria === "Casa").gastoCentavos, 2000);
+    despesas[0].valor = 35;
+    assert.equal(calcular().find((item) => item.categoria === "Casa").gastoCentavos, 3500);
+    categorias.push("Nova");
+    orcamentos.padrao.Nova = 50;
+    despesas.push({ id: "d2", categoria: "Nova", valor: 10 });
+    assert.equal(calcular().find((item) => item.categoria === "Nova").gastoCentavos, 1000);
+    despesas.splice(0, 1);
+    assert.equal(calcular().find((item) => item.categoria === "Casa").gastoCentavos, 0);
+
+    orcamentos.meses["2026-10"] = { Casa: 40, Nova: 15 };
+    const renomeados = renomearCategoriaOrcamentos(orcamentos, "Casa", "Habitação");
+    assert.equal(renomeados.padrao.Habitação, 100);
+    assert.equal(renomeados.meses["2026-10"].Habitação, 40);
+    assert.equal(orcamentos.padrao.Casa, 100);
+
+    const removidos = removerCategoriaOrcamentos(renomeados, "Habitação");
+    assert.equal(Object.hasOwn(removidos.padrao, "Habitação"), false);
+    assert.equal(Object.hasOwn(removidos.meses["2026-10"], "Habitação"), false);
+});
+
+test("nomes especiais de categoria continuam sendo propriedades de orçamento próprias", () => {
+    const bruto = {
+        categorias: ["__proto__"], meses: {},
+        orcamentos: { padrao: Object.fromEntries([["__proto__", 15]]) }
+    };
+    const estado = normalizarEstado(bruto);
+    assert.equal(Object.hasOwn(estado.orcamentos.padrao, "__proto__"), true);
+    assert.equal(estado.orcamentos.padrao["__proto__"], 15);
+    const renomeado = renomearCategoriaOrcamentos(estado.orcamentos, "__proto__", "Especial");
+    assert.equal(renomeado.padrao.Especial, 15);
+    assert.equal(Object.hasOwn(renomeado.padrao, "__proto__"), false);
+});
+
+test("persistência serializada restaura padrões e personalizações mensais", async () => {
+    const { criarArmazenamento } = await import("../storage.js");
+    const dados = new Map();
+    const local = {
+        getItem: (chave) => dados.get(chave) ?? null,
+        setItem: (chave, valor) => dados.set(chave, String(valor)),
+        removeItem: (chave) => dados.delete(chave)
+    };
+    const estado = normalizarEstado({
+        categorias: ["Casa"], meses: {},
+        orcamentos: { padrao: { Casa: 500 }, meses: { "2026-10": { Casa: 450 } } }
+    });
+    assert.equal(criarArmazenamento(local).escreverJson("controleFinanceiro:v3", estado), true);
+    const reiniciado = normalizarEstado(criarArmazenamento(local).lerJson("controleFinanceiro:v3"));
+    assert.deepEqual(reiniciado.orcamentos, estado.orcamentos);
 });
 
 test("backup recusa valores e identificadores inválidos", () => {

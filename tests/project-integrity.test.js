@@ -134,6 +134,34 @@ test("calculadora fica centralizada no topo e oferece operações adicionais", a
     assert.match(app, /evento\.key !== "Enter"/);
 });
 
+test("orçamento fica no resumo, usa valores formatados e controles separados por mês e padrão", async () => {
+    const [html, app, core, controls, serviceWorker] = await Promise.all([
+        read("index.html"), read("app.js"), read("finance-core.js"), read("controls.css"), read("sw.js")
+    ]);
+    const resumo = html.slice(html.indexOf('<section class="resumo"'), html.indexOf('<section class="bloco grafico-bloco"'));
+    assert.match(resumo, /Orçamento por categoria/);
+    assert.ok(resumo.includes('id="lista-resumo-orcamentos"'));
+    assert.match(html, /id="dialogo-orcamentos"/);
+    for (const id of ["gerenciar-orcamentos", "dialogo-orcamentos", "lista-orcamentos", "periodo-orcamentos"]) {
+        assert.ok(app.includes(`$("${id}")`), `${id} não conectado`);
+    }
+    assert.match(app, /calcularOrcamentosPorCategoria/);
+    assert.match(app, /formatarMoeda\(gasto\)/);
+    assert.match(app, /formatarMoeda\(item\.limiteCentavos \/ 100\)/);
+    assert.match(app, /formatarMoeda\(item\.restanteCentavos \/ 100\)/);
+    assert.match(app, /estado\.orcamentos\.padrao/);
+    assert.match(app, /estado\.orcamentos\.meses\[chave\]/);
+    assert.match(app, /campo\.type = valoresOcultos \? "password" : "number"/);
+    assert.match(core, /export function calcularOrcamentosPorCategoria/);
+    assert.match(app, /const CHAVE_ESTADO = "controleFinanceiro:v3"/);
+    assert.match(app, /const CHAVE_ESTADO_V2 = "controleFinanceiro:v2"/);
+    for (const recurso of ["./app.js", "./finance-core.js", "./controls.css"]) {
+        assert.ok(serviceWorker.includes(`"${recurso}"`), `${recurso} ausente do precache`);
+    }
+    assert.match(controls, /orcamento-progresso/);
+    assert.match(controls, /body\.valores-ocultos \.orcamento-progresso/);
+});
+
 test("seções de despesas e entradas usam botões Adicionar e ícones recolhíveis modernos", async () => {
     const html = await read("index.html");
     assert.match(html, /<h2 id="titulo-receitas">Entradas<\/h2>/);

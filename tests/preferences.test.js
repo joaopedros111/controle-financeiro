@@ -163,6 +163,13 @@ test("alternar a apresentação não altera dados financeiros", () => {
     assert.equal(JSON.stringify(estado), antes);
 });
 
+test("ocultação financeira também mascara gasto, limite e restante do orçamento", () => {
+    const formatar = (valor) => `R$ ${valor.toFixed(2)}`;
+    for (const valor of [420, 600, 180]) {
+        assert.equal(apresentarValorFinanceiro(valor, true, formatar), "••••");
+    }
+});
+
 test("preferências antigas ou incompletas mantêm valores visíveis por padrão", () => {
     const antigas = normalizarPreferenciasMenu({ densidade: "confortavel" });
     assert.equal(antigas.ocultarAoIniciar, false);

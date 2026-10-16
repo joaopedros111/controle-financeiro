@@ -14,6 +14,16 @@ function valorValido(valor) {
     return typeof valor === "number" && Number.isFinite(valor) && valor >= 0;
 }
 
+function limiteOrcamentoValido(valor) {
+    return valorValido(valor) && Number.isSafeInteger(Math.round(valor * 100));
+}
+
+function limiteOrcamentoNormalizavel(valor) {
+    const numero = typeof valor === "number" ? valor
+        : typeof valor === "string" && valor.trim() ? Number(valor) : NaN;
+    return Number.isFinite(numero) && numero >= 0 && Number.isSafeInteger(Math.round(numero * 100));
+}
+
 function valorNormalizavel(valor) {
     if (typeof valor === "number") return valorValido(valor);
     if (typeof valor !== "string" || !valor.trim()) return false;
@@ -25,6 +35,56 @@ function listaValida(lista) {
         item && typeof item === "object" && !Array.isArray(item)
         && valorNormalizavel(item.valor)
     );
+}
+
+function mapaOrcamentosValido(mapa) {
+    return mapa && typeof mapa === "object" && !Array.isArray(mapa)
+        && Object.entries(mapa).every(([categoria, limite]) =>
+            categoria.trim() !== "" && categoria.length <= 40 && limiteOrcamentoValido(limite)
+        );
+}
+
+function orcamentosValidos(orcamentos) {
+    if (!orcamentos || typeof orcamentos !== "object" || Array.isArray(orcamentos)) return false;
+    if (orcamentos.padrao !== undefined && !mapaOrcamentosValido(orcamentos.padrao)) return false;
+    if (orcamentos.meses === undefined) return true;
+    if (!orcamentos.meses || typeof orcamentos.meses !== "object" || Array.isArray(orcamentos.meses)) return false;
+    return Object.entries(orcamentos.meses).every(([chave, mapa]) => {
+        const ano = Number(chave.slice(0, 4));
+        return /^\d{4}-(0[1-9]|1[0-2])$/.test(chave)
+            && ano >= ANO_MINIMO && ano <= ANO_MAXIMO
+            && mapaOrcamentosValido(mapa);
+    });
+}
+
+function normalizarMapaOrcamentos(mapa) {
+    if (!mapa || typeof mapa !== "object" || Array.isArray(mapa)) return {};
+    return Object.fromEntries(Object.entries(mapa)
+        .filter(([categoria, limite]) => typeof categoria === "string" && categoria.trim()
+            && categoria.length <= 40 && limiteOrcamentoNormalizavel(limite))
+        .map(([categoria, limite]) => [categoria.trim(), Math.round(Number(limite) * 100) / 100]));
+}
+
+function normalizarOrcamentos(bruto) {
+    const padrao = normalizarMapaOrcamentos(bruto?.padrao);
+    const meses = {};
+    if (bruto?.meses && typeof bruto.meses === "object" && !Array.isArray(bruto.meses)) {
+        Object.entries(bruto.meses).forEach(([chave, mapa]) => {
+            const ano = Number(chave.slice(0, 4));
+            if (/^\d{4}-(0[1-9]|1[0-2])$/.test(chave)
+                && ano >= ANO_MINIMO && ano <= ANO_MAXIMO) {
+                const limites = normalizarMapaOrcamentos(mapa);
+                if (Object.keys(limites).length) meses[chave] = limites;
+            }
+        });
+    }
+    return { padrao, meses };
+}
+
+function definirLimiteOrcamento(mapa, categoria, limite) {
+    Object.defineProperty(mapa, categoria, {
+        value: limite, enumerable: true, configurable: true, writable: true
+    });
 }
 
 export function validarBackup(bruto) {
@@ -39,7 +99,8 @@ export function validarBackup(bruto) {
         return true;
     };
 
-    if (bruto.versao !== undefined && bruto.versao !== 2) return false;
+    if (bruto.versao !== undefined && ![2, 3].includes(bruto.versao)) return false;
+    if (bruto.orcamentos !== undefined && !orcamentosValidos(bruto.orcamentos)) return false;
     if (bruto.tema !== undefined && bruto.tema !== null
         && !["claro", "escuro", "rosa", "pangolim", "floresta"].includes(bruto.tema)) return false;
     if (bruto.categorias !== undefined && (!Array.isArray(bruto.categorias)
@@ -71,13 +132,14 @@ export function validarBackup(bruto) {
 }
 
 export function normalizarEstado(bruto, criarId = gerarId) {
-    const estado = { versao: 2, tema: null, categorias: [], meses: {} };
+    const estado = { versao: 3, tema: null, categorias: [], meses: {}, orcamentos: { padrao: {}, meses: {} } };
     if (!bruto || typeof bruto !== "object" || Array.isArray(bruto)) {
         estado.categorias = [...CATEGORIAS_PADRAO];
         return estado;
     }
 
     if (["claro", "escuro", "rosa", "pangolim", "floresta"].includes(bruto.tema)) estado.tema = bruto.tema;
+    estado.orcamentos = normalizarOrcamentos(bruto.orcamentos);
     if (Array.isArray(bruto.categorias)) {
         for (const categoria of bruto.categorias) {
             if (typeof categoria !== "string") continue;
@@ -122,10 +184,88 @@ export function normalizarEstado(bruto, criarId = gerarId) {
 
     if (!estado.categorias.length) estado.categorias = [...CATEGORIAS_PADRAO];
     if (!estado.categorias.includes(CATEGORIA_FIXA)) estado.categorias.push(CATEGORIA_FIXA);
+    [...Object.keys(estado.orcamentos.padrao), ...Object.values(estado.orcamentos.meses).flatMap(Object.keys)]
+        .forEach((categoria) => {
+            if (!estado.categorias.includes(categoria)) estado.categorias.push(categoria);
+        });
     Object.values(estado.meses).forEach((mes) => mes.despesas.forEach((despesa) => {
         if (!estado.categorias.includes(despesa.categoria)) estado.categorias.push(despesa.categoria);
     }));
     return estado;
+}
+
+export function renomearCategoriaOrcamentos(orcamentos, antiga, nova) {
+    const resultado = {
+        padrao: { ...(orcamentos?.padrao || {}) },
+        meses: Object.fromEntries(Object.entries(orcamentos?.meses || {})
+            .map(([chave, limites]) => [chave, { ...limites }]))
+    };
+    if (Object.prototype.hasOwnProperty.call(resultado.padrao, antiga)) {
+        definirLimiteOrcamento(resultado.padrao, nova, resultado.padrao[antiga]);
+        delete resultado.padrao[antiga];
+    }
+    Object.values(resultado.meses).forEach((limites) => {
+        if (!Object.prototype.hasOwnProperty.call(limites, antiga)) return;
+        definirLimiteOrcamento(limites, nova, limites[antiga]);
+        delete limites[antiga];
+    });
+    return resultado;
+}
+
+export function removerCategoriaOrcamentos(orcamentos, categoria) {
+    const resultado = {
+        padrao: { ...(orcamentos?.padrao || {}) },
+        meses: Object.fromEntries(Object.entries(orcamentos?.meses || {})
+            .map(([chave, limites]) => [chave, { ...limites }]))
+    };
+    delete resultado.padrao[categoria];
+    Object.entries(resultado.meses).forEach(([chave, limites]) => {
+        delete limites[categoria];
+        if (!Object.keys(limites).length) delete resultado.meses[chave];
+    });
+    return resultado;
+}
+
+export function calcularOrcamentosPorCategoria(categorias, despesas, orcamentos, chaveMes) {
+    const gastos = new Map();
+    (Array.isArray(despesas) ? despesas : []).forEach((despesa) => {
+        if (!despesa || typeof despesa.categoria !== "string") return;
+        const categoria = despesa.categoria.trim();
+        const valor = Number(despesa.valor);
+        if (!categoria || !Number.isFinite(valor) || valor < 0) return;
+        gastos.set(categoria, (gastos.get(categoria) || 0) + Math.round(valor * 100));
+    });
+
+    const padrao = orcamentos?.padrao || {};
+    const mensal = orcamentos?.meses?.[chaveMes] || {};
+    const nomes = new Set([
+        ...(Array.isArray(categorias) ? categorias.filter((categoria) => typeof categoria === "string" && categoria.trim()) : []),
+        ...gastos.keys(),
+        ...Object.keys(padrao),
+        ...Object.keys(mensal)
+    ]);
+
+    return [...nomes].map((categoria) => {
+        const gastoCentavos = gastos.get(categoria) || 0;
+        const temLimiteMensal = Object.prototype.hasOwnProperty.call(mensal, categoria);
+        const temLimitePadrao = Object.prototype.hasOwnProperty.call(padrao, categoria);
+        const valorLimite = temLimiteMensal ? mensal[categoria] : temLimitePadrao ? padrao[categoria] : null;
+        const limiteCentavos = valorLimite !== null && valorLimite !== undefined
+            && Number.isFinite(Number(valorLimite)) && Number(valorLimite) >= 0
+            ? Math.round(Number(valorLimite) * 100)
+            : null;
+        return {
+            categoria,
+            gastoCentavos,
+            limiteCentavos,
+            restanteCentavos: limiteCentavos === null ? null : limiteCentavos - gastoCentavos,
+            percentualConsumido: limiteCentavos === null
+                ? null
+                : limiteCentavos === 0
+                    ? (gastoCentavos > 0 ? null : 0)
+                    : (gastoCentavos / limiteCentavos) * 100
+        };
+    });
 }
 
 export function migrarDadosLegados(registrosPorMes, ano) {

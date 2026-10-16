@@ -1,5 +1,5 @@
 import { storage } from "./storage.js";
-import { CATEGORIAS_PADRAO, CATEGORIA_FIXA, normalizarEstado as normalizarEstadoCore, validarBackup, migrarDadosLegados, calcularExpressao, somarCentavos, gerarCsv } from "./finance-core.js";
+import { CATEGORIAS_PADRAO, CATEGORIA_FIXA, normalizarEstado as normalizarEstadoCore, validarBackup, migrarDadosLegados, calcularExpressao, somarCentavos, gerarCsv, calcularOrcamentosPorCategoria, renomearCategoriaOrcamentos, removerCategoriaOrcamentos } from "./finance-core.js";
 import { apresentarValorFinanceiro, normalizarPreferenciasMenu, resolverTelaInicial } from "./preferences.js";
 
 
@@ -14,7 +14,8 @@ import { apresentarValorFinanceiro, normalizarPreferenciasMenu, resolverTelaInic
 
 
 
-const CHAVE_ESTADO = "controleFinanceiro:v2";
+const CHAVE_ESTADO = "controleFinanceiro:v3";
+const CHAVE_ESTADO_V2 = "controleFinanceiro:v2";
 const CHAVE_ESTADO_STORAGE_ANTIGO = "controle-financeiro-dados";
 
 const PREFIXO_LEGADO = "controleFinanceiro-"; // versão antiga: um item por mês
@@ -66,6 +67,11 @@ const ui = {
     diagnosticoDados: $("diagnostico-dados"),
     ultimaOperacaoDados: $("ultima-operacao-dados"),
     diagnosticoApp: $("diagnostico-app"),
+    gerenciarOrcamentos: $("gerenciar-orcamentos"),
+    dialogoOrcamentos: $("dialogo-orcamentos"),
+    fecharOrcamentos: $("fechar-orcamentos"),
+    periodoOrcamentos: $("periodo-orcamentos"),
+    listaOrcamentos: $("lista-orcamentos"),
     abrirCalculadora: $("abrir-calculadora"),
     dialogoCalculadora: $("dialogo-calculadora"),
     fecharCalculadora: $("fechar-calculadora"),
@@ -176,6 +182,8 @@ const ui = {
     totalRotulo: $("total-rotulo"),
 
     totalValor: $("total-valor"),
+    listaResumoOrcamentos: $("lista-resumo-orcamentos"),
+    vazioResumoOrcamentos: $("vazio-resumo-orcamentos"),
 
 
 
@@ -375,6 +383,7 @@ function normalizarEstado(bruto) {
 }
 
 let migracaoLegadaPendente = false;
+let migracaoEstadoV2Pendente = false;
 let dadosStorageAntigoPendentes = false;
 let avisoArmazenamentoTemporarioExibido = false;
 
@@ -405,6 +414,12 @@ function carregarEstado() {
 
             return normalizarEstado(salvo);
 
+        }
+
+        const estadoV2 = storage.lerJson(CHAVE_ESTADO_V2);
+        if (estadoV2 && typeof estadoV2 === "object" && estadoV2.meses) {
+            migracaoEstadoV2Pendente = true;
+            return normalizarEstado(estadoV2);
         }
 
         const storageAntigo = storage.lerJson(CHAVE_ESTADO_STORAGE_ANTIGO);
@@ -879,6 +894,146 @@ function somar(lista) {
 
 }
 
+function renderOrcamentoPorCategoria() {
+    if (!ui.listaResumoOrcamentos) return;
+    const chave = chaveMes(periodo.ano, periodo.mes);
+    const mes = estado.meses[chave] || { despesas: [] };
+    const itens = calcularOrcamentosPorCategoria(
+        estado.categorias,
+        mes.despesas,
+        estado.orcamentos,
+        chave
+    );
+    ui.listaResumoOrcamentos.replaceChildren(...itens.map((item) => {
+        const linha = criarEl("li", {
+            class: "orcamento-item" + (item.limiteCentavos !== null && item.gastoCentavos > item.limiteCentavos ? " acima-do-orcamento" : "")
+        });
+        const topo = criarEl("div", { class: "orcamento-item-topo" }, [
+            criarEl("strong", { text: item.categoria })
+        ]);
+        const gasto = item.gastoCentavos / 100;
+        const detalhes = item.limiteCentavos === null
+            ? `Gasto: ${formatarMoeda(gasto)} · Sem orçamento definido`
+            : `Gasto: ${formatarMoeda(gasto)} · Limite: ${formatarMoeda(item.limiteCentavos / 100)}`;
+        linha.append(topo, criarEl("p", { class: "orcamento-detalhes", text: detalhes }));
+
+        if (item.limiteCentavos !== null) {
+            const percentualIndeterminado = item.percentualConsumido === null;
+            const percentual = percentualIndeterminado ? 100 : item.percentualConsumido;
+            const barra = criarEl("div", {
+                class: "orcamento-progresso",
+                role: "progressbar",
+                "aria-label": `Orçamento de ${item.categoria}`,
+                "aria-valuemin": "0",
+                "aria-valuemax": "100",
+                "aria-valuenow": String(Math.min(100, Math.max(0, percentual))),
+                "aria-valuetext": percentualIndeterminado ? "Gasto acima de limite zero" : `${formatarPercentual(percentual)} consumido`
+            });
+            barra.append(criarEl("span", { class: "orcamento-progresso-preenchido" }));
+            barra.firstElementChild.style.width = Math.min(100, Math.max(0, percentual)) + "%";
+            linha.append(barra);
+            linha.append(item.restanteCentavos < 0
+                ? criarEl("p", {
+                    class: "orcamento-restante orcamento-excesso",
+                    text: percentualIndeterminado
+                        ? `Excesso: ${formatarMoeda(Math.abs(item.restanteCentavos) / 100)} · limite zero`
+                        : `Excesso: ${formatarMoeda(Math.abs(item.restanteCentavos) / 100)} · ${formatarPercentual(percentual)} do limite`
+                })
+                : criarEl("p", { class: "orcamento-restante", text: `Restante: ${formatarMoeda(item.restanteCentavos / 100)} · ${formatarPercentual(percentual)} consumido` }));
+        }
+        return linha;
+    }));
+    ui.vazioResumoOrcamentos.hidden = itens.length > 0;
+}
+
+function renderListaOrcamentos() {
+    const chave = chaveMes(periodo.ano, periodo.mes);
+    ui.periodoOrcamentos.textContent = `${MESES[periodo.mes - 1]} de ${periodo.ano}`;
+    const categorias = [...new Set([
+        ...estado.categorias,
+        ...Object.keys(estado.orcamentos.padrao),
+        ...Object.keys(estado.orcamentos.meses[chave] || {})
+    ])].sort((a, b) => a.localeCompare(b, "pt-BR"));
+    ui.listaOrcamentos.replaceChildren(...categorias.map((categoria) => {
+        const padraoConfigurado = Object.prototype.hasOwnProperty.call(estado.orcamentos.padrao, categoria);
+        const mensal = estado.orcamentos.meses[chave] || {};
+        const mensalConfigurado = Object.prototype.hasOwnProperty.call(mensal, categoria);
+        const limitePadrao = padraoConfigurado ? String(estado.orcamentos.padrao[categoria]) : "";
+        const limiteMensal = mensalConfigurado ? String(mensal[categoria]) : "";
+        const linha = criarEl("fieldset", { class: "orcamento-edicao", dataset: { categoria } }, [
+            criarEl("legend", { text: categoria }),
+            criarEl("label", { class: "orcamento-campo" }, [
+                criarEl("span", { text: "Limite padrão mensal (R$)" }),
+                criarEl("input", {
+                    type: valoresOcultos ? "password" : "number", min: "0", step: "0.01", inputMode: "decimal",
+                    value: limitePadrao, placeholder: "Sem limite",
+                    dataset: { orcamentoCampo: "padrao" },
+                    "aria-label": `Limite padrão mensal para ${categoria}`
+                })
+            ]),
+            criarEl("div", { class: "orcamento-acoes" }, [
+                criarEl("button", {
+                    type: "button", class: "btn btn-secundario",
+                    dataset: { orcamentoAcao: "salvar-padrao" }, text: "Salvar padrão"
+                }),
+                criarEl("button", {
+                    type: "button", class: "btn btn-secundario",
+                    dataset: { orcamentoAcao: "remover-padrao" }, text: "Remover padrão",
+                    disabled: !padraoConfigurado
+                })
+            ]),
+            criarEl("label", { class: "orcamento-campo" }, [
+                criarEl("span", { text: "Limite somente para este mês (R$)" }),
+                criarEl("input", {
+                    type: valoresOcultos ? "password" : "number", min: "0", step: "0.01", inputMode: "decimal",
+                    value: limiteMensal,
+                    placeholder: padraoConfigurado
+                        ? (valoresOcultos ? "Usa o orçamento padrão" : `Usa padrão: R$ ${Number(estado.orcamentos.padrao[categoria]).toFixed(2)}`)
+                        : "Sem limite padrão",
+                    dataset: { orcamentoCampo: "mes" },
+                    "aria-label": `Limite de ${categoria} para ${MESES[periodo.mes - 1]}`
+                })
+            ]),
+            criarEl("div", { class: "orcamento-acoes" }, [
+                criarEl("button", {
+                    type: "button", class: "btn btn-secundario",
+                    dataset: { orcamentoAcao: "salvar-mes" }, text: "Salvar para este mês"
+                }),
+                criarEl("button", {
+                    type: "button", class: "btn btn-secundario",
+                    dataset: { orcamentoAcao: "usar-padrao" }, text: "Usar padrão",
+                    disabled: !mensalConfigurado
+                })
+            ])
+        ]);
+        return linha;
+    }));
+    aplicarPrivacidade();
+}
+
+function atualizarOrcamentos() {
+    renderListaOrcamentos();
+    renderOrcamentoPorCategoria();
+    salvar();
+}
+
+function lerLimiteOrcamento(campo) {
+    const texto = campo?.value.trim() || "";
+    const valor = Number(texto);
+    const centavos = Math.round(valor * 100);
+    if (!texto || !Number.isFinite(valor) || valor < 0 || !Number.isSafeInteger(centavos)) {
+        avisar("Informe um limite válido igual ou maior que zero.");
+        campo?.focus();
+        return null;
+    }
+    return centavos / 100;
+}
+
+function definirLimiteOrcamento(mapa, categoria, limite) {
+    Object.defineProperty(mapa, categoria, {
+        value: limite, enumerable: true, configurable: true, writable: true
+    });
+}
 
 
 // Recalcula tudo o que depende de valores e salva. Não recria as linhas
@@ -987,6 +1142,7 @@ function atualizarResumo(persistir = true) {
     renderGraficoMensal();
 
     renderGraficoCategorias();
+    renderOrcamentoPorCategoria();
 
     atualizarDiagnostico();
 
@@ -2271,6 +2427,7 @@ function renomearCategoria(antigo) {
 
 
     estado.categorias = estado.categorias.map((c) => (c === antigo ? novo : c));
+    estado.orcamentos = renomearCategoriaOrcamentos(estado.orcamentos, antigo, novo);
 
 
 
@@ -2317,6 +2474,7 @@ function removerCategoria(nome) {
 
 
     estado.categorias = estado.categorias.filter((c) => c !== nome);
+    estado.orcamentos = removerCategoriaOrcamentos(estado.orcamentos, nome);
 
 
 
@@ -2348,6 +2506,55 @@ ui.gerenciarCategorias.addEventListener("click", () => {
 
     ui.novaCategoria.focus();
 
+});
+
+ui.gerenciarOrcamentos.addEventListener("click", () => {
+    renderListaOrcamentos();
+    ui.dialogoOrcamentos.showModal();
+});
+ui.fecharOrcamentos.addEventListener("click", () => ui.dialogoOrcamentos.close());
+ui.dialogoOrcamentos.addEventListener("click", (evento) => {
+    if (evento.target === ui.dialogoOrcamentos) ui.dialogoOrcamentos.close();
+});
+ui.listaOrcamentos.addEventListener("click", (evento) => {
+    const botao = evento.target.closest("[data-orcamento-acao]");
+    if (!botao) return;
+    const linha = botao.closest(".orcamento-edicao");
+    const categoria = linha.dataset.categoria;
+    const acao = botao.dataset.orcamentoAcao;
+    const chave = chaveMes(periodo.ano, periodo.mes);
+
+    if (acao === "salvar-padrao" || acao === "salvar-mes") {
+        const tipo = acao === "salvar-padrao" ? "padrao" : "mes";
+        const limite = lerLimiteOrcamento(linha.querySelector(`[data-orcamento-campo="${tipo}"]`));
+        if (limite === null) return;
+        if (tipo === "padrao") {
+            definirLimiteOrcamento(estado.orcamentos.padrao, categoria, limite);
+        } else {
+            estado.orcamentos.meses[chave] ||= {};
+            definirLimiteOrcamento(estado.orcamentos.meses[chave], categoria, limite);
+        }
+        atualizarOrcamentos();
+        avisar(tipo === "padrao" ? "Orçamento padrão salvo." : "Orçamento deste mês salvo.");
+        return;
+    }
+
+    if (acao === "remover-padrao") {
+        delete estado.orcamentos.padrao[categoria];
+        atualizarOrcamentos();
+        avisar("Orçamento padrão removido.");
+        return;
+    }
+
+    if (acao === "usar-padrao") {
+        const limites = estado.orcamentos.meses[chave];
+        if (limites) {
+            delete limites[categoria];
+            if (!Object.keys(limites).length) delete estado.orcamentos.meses[chave];
+        }
+        atualizarOrcamentos();
+        avisar("Este mês voltou a usar o orçamento padrão.");
+    }
 });
 
 
@@ -2831,7 +3038,11 @@ function atualizarDiagnostico() {
 function aplicarPrivacidade() {
     document.body.classList.toggle("valores-ocultos", valoresOcultos);
     document.querySelector(".resumo").classList.toggle("valores-ocultos", valoresOcultos);
-    [ui.receitaValor, ui.despesaValor].forEach((campo) => {
+    [
+        ui.receitaValor,
+        ui.despesaValor,
+        ...ui.dialogoOrcamentos.querySelectorAll(".orcamento-campo input")
+    ].forEach((campo) => {
         const valorAtual = campo.value;
         campo.type = valoresOcultos ? "password" : "number";
         campo.inputMode = "decimal";
@@ -3156,6 +3367,7 @@ const avisosInicializacao = [];
 if (migracaoLegadaPendente) {
     avisosInicializacao.push("Dados antigos migrados para " + new Date().getFullYear() + "; confira os meses.");
 }
+if (migracaoEstadoV2Pendente) avisosInicializacao.push("Dados da versão anterior atualizados; os backups antigos continuam compatíveis.");
 if (dadosStorageAntigoPendentes) avisosInicializacao.push("Dados salvos em uma versão anterior do armazenamento foram migrados.");
 if (!storage.persistente || avisoArmazenamentoTemporarioExibido) {
     avisoArmazenamentoTemporarioExibido = true;

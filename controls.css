@@ -43,6 +43,39 @@
     .ajuste-controle output { color: var(--texto-secundario); }
     #dialogo-ajustes .btn-secundario { background: var(--superficie-suave); }
     #dialogo-ajustes .btn-secundario:hover { background: color-mix(in srgb, var(--superficie-suave) 82%, var(--borda)); }
+    .orcamento-resumo { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--borda); }
+    .orcamento-resumo-topo { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+    .orcamento-resumo-topo h3 { font-size: .98rem; }
+    .orcamento-resumo-topo .btn { min-height: 38px; padding: 7px 12px; font-size: .8rem; }
+    .lista-resumo-orcamentos { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+    .orcamento-item { display: grid; gap: 5px; padding: 10px 12px; border: 1px solid var(--borda); border-radius: 13px; background: var(--superficie-suave); }
+    .orcamento-item-topo { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    .orcamento-item-topo strong { font-size: .86rem; }
+    .orcamento-detalhes, .orcamento-restante, .orcamento-vazio { color: var(--texto-secundario); font-size: .77rem; line-height: 1.45; }
+    .orcamento-progresso { height: 7px; overflow: hidden; border-radius: 999px; background: var(--borda); }
+    .orcamento-progresso-preenchido { display: block; height: 100%; border-radius: inherit; background: var(--verde); transition: width .2s ease; }
+    .orcamento-excesso { color: var(--vermelho); font-weight: 700; }
+    .orcamento-item.acima-do-orcamento { border-color: color-mix(in srgb, var(--vermelho) 55%, var(--borda)); background: color-mix(in srgb, var(--vermelho-suave) 55%, var(--superficie)); }
+    body.valores-ocultos .orcamento-progresso { visibility: hidden; }
+    .orcamento-vazio { margin-top: 8px; }
+    #dialogo-orcamentos { width: min(calc(100% - 28px), 680px); max-height: 88dvh; }
+    #dialogo-orcamentos .dialogo-corpo { height: auto; min-height: 0; }
+    #dialogo-orcamentos .bloco-topo { align-items: flex-start; }
+    #dialogo-orcamentos .bloco-topo h2 { margin-bottom: 4px; }
+    #dialogo-orcamentos .bloco-topo .nota { margin: 0; }
+    .lista-orcamentos { display: grid; gap: 12px; max-height: 58dvh; margin-top: 16px; overflow: auto; padding: 2px; }
+    .orcamento-edicao { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 14px; min-width: 0; padding: 12px; border: 1px solid var(--borda); border-radius: 14px; }
+    .orcamento-edicao legend { padding: 0 6px; font-weight: 750; }
+    .orcamento-campo { display: grid; gap: 5px; min-width: 0; color: var(--texto-secundario); font-size: .77rem; }
+    .orcamento-campo input { width: 100%; min-width: 0; min-height: 40px; padding: 8px 10px; border: 1px solid var(--borda); border-radius: 10px; color: var(--texto); background: var(--superficie-suave); font: inherit; font-size: 1rem; }
+    .orcamento-acoes { display: flex; flex-wrap: wrap; align-items: end; gap: 6px; }
+    .orcamento-acoes .btn { flex: 1 1 auto; min-height: 38px; padding: 6px 9px; font-size: .74rem; white-space: normal; }
+    .orcamento-acoes .btn:disabled { opacity: .5; cursor: not-allowed; }
+    @media (max-width: 480px) {
+        .orcamento-edicao { grid-template-columns: 1fr; }
+        .orcamento-acoes .btn { min-width: 120px; }
+        #dialogo-orcamentos { width: 100%; }
+    }
     .resumo-calculadora { width: 34px; min-width: 34px; height: 34px; min-height: 34px; padding: 6px; margin: -5px 0 4px auto; }
     .resumo-calculadora svg { width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
     .dialogo-calculadora { position: fixed; inset: max(8vh, env(safe-area-inset-top, 0px)) auto auto 50%; width: min(calc(100% - 28px), 380px); height: fit-content; max-height: 90dvh; margin: 0; border: 1px solid var(--borda); border-radius: 22px; padding: 0; transform: translateX(-50%); }
