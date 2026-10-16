@@ -173,7 +173,7 @@
     <div class="bloco-topo">
         <div class="bloco-titulo-retratil">
             <h2 id="titulo-despesas">Despesas do mês</h2>
-            <button class="bloco-retrair" type="button" aria-expanded="true" aria-controls="conteudo-despesas" aria-label="Recolher despesas">
+        <button class="bloco-retrair" type="button" aria-expanded="false" aria-controls="conteudo-despesas" aria-label="Expandir despesas">
                 <span class="bloco-seta" aria-hidden="true">⌄</span>
             </button>
         </div>
@@ -182,7 +182,7 @@
         </button>
     </div>
 
-    <div id="conteudo-despesas">
+    <div id="conteudo-despesas" hidden>
         <div id="lista-despesas"></div>
         <p class="vazio" id="vazio-despesas"></p>
         <div class="total">
@@ -201,7 +201,7 @@
     <div class="bloco-topo">
         <div class="bloco-titulo-retratil">
             <h2 id="titulo-receitas">Dinheiro que entrou</h2>
-            <button class="bloco-retrair" type="button" aria-expanded="true" aria-controls="conteudo-receitas" aria-label="Recolher dinheiro que entrou">
+        <button class="bloco-retrair" type="button" aria-expanded="false" aria-controls="conteudo-receitas" aria-label="Expandir dinheiro que entrou">
                 <span class="bloco-seta" aria-hidden="true">⌄</span>
             </button>
         </div>
@@ -210,7 +210,7 @@
         </button>
     </div>
 
-    <div id="conteudo-receitas">
+    <div id="conteudo-receitas" hidden>
         <div id="lista-receitas"></div>
         <p class="vazio" id="vazio-receitas">
             Nenhuma receita neste mês. Adicione salário, renda extra ou outros valores recebidos.

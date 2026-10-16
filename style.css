@@ -119,6 +119,60 @@
     }
 }
 
+@layer components {
+    /* Formulários de lançamento mais compactos, sem alterar os demais diálogos. */
+    dialog#dialogo-despesa,
+    dialog#dialogo-receita { width: min(100% - 28px, 420px); }
+
+    dialog#dialogo-despesa .dialogo-corpo,
+    dialog#dialogo-receita .dialogo-corpo { padding: 18px; }
+
+    dialog#dialogo-despesa .dialogo-corpo > .bloco-topo,
+    dialog#dialogo-receita .dialogo-corpo > .bloco-topo { margin-bottom: 14px; }
+
+    dialog#dialogo-despesa .campos,
+    dialog#dialogo-receita .campos {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        align-items: start;
+        gap: 10px 12px;
+    }
+
+    dialog#dialogo-despesa #form-despesa > .campos > .campo:first-child { grid-column: 1 / -1; }
+    dialog#dialogo-despesa #campo-tipo,
+    dialog#dialogo-despesa #campo-parcelas,
+    dialog#dialogo-despesa #campo-propagar { grid-column: 1 / -1; }
+    dialog#dialogo-despesa .campo,
+    dialog#dialogo-receita .campo { gap: 3px; font-size: .78rem; }
+
+    dialog#dialogo-despesa .campo input,
+    dialog#dialogo-despesa .campo select,
+    dialog#dialogo-receita .campo input { min-height: 42px; padding: 7px 10px; }
+
+    dialog#dialogo-despesa .campo-check { min-height: 40px; padding: 6px 9px; font-size: .82rem; }
+    dialog#dialogo-despesa .acoes-dialogo,
+    dialog#dialogo-receita .acoes-dialogo { gap: 9px; margin-top: 16px; padding-top: 12px; }
+    dialog#dialogo-despesa .acoes-dialogo .btn,
+    dialog#dialogo-receita .acoes-dialogo .btn { min-height: 44px; }
+
+    @media (max-width: 600px) {
+        dialog#dialogo-despesa,
+        dialog#dialogo-receita {
+            inset: 50% auto auto 50%;
+            width: min(100% - 28px, 420px);
+            max-height: min(88dvh, 680px);
+            border: 1px solid var(--borda);
+            border-radius: 22px;
+            padding-bottom: 0;
+            transform: translate(-50%, -50%);
+        }
+
+        dialog#dialogo-despesa .dialogo-corpo,
+        dialog#dialogo-receita .dialogo-corpo { padding: 16px; }
+        dialog#dialogo-despesa .acoes-dialogo,
+        dialog#dialogo-receita .acoes-dialogo { position: static; margin-top: 14px; padding: 12px 0 0; }
+    }
+}
+
 @layer base {
     :root {
         color-scheme: light;
