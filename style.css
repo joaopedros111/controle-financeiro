@@ -1176,15 +1176,20 @@
 
 /* Navegação compacta e painel de ajustes */
 @layer components {
-    main.container { touch-action: pan-y pinch-zoom; }
-    .topo { margin-bottom: 12px; }
-    .periodo { margin-bottom: 12px; }
-    .resumo { margin-bottom: 12px; }
-    .bloco { margin-bottom: 12px; }
+    main.container {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        touch-action: pan-y pinch-zoom;
+    }
+    main.container > .topo,
+    main.container > .periodo,
+    main.container > .resumo,
+    main.container > .bloco { margin-bottom: 0; }
     .periodo {
         width: 100%;
         max-width: 100%;
-        grid-template-columns: 40px 140px 72px 40px auto;
+        grid-template-columns: 40px 120px 82px 40px auto;
         grid-template-rows: auto;
         align-content: start;
         gap: 6px;
@@ -1193,8 +1198,8 @@
         touch-action: pan-y pinch-zoom;
     }
     .periodo #mes-anterior { grid-column: 1; grid-row: 1; }
-    .periodo #mes { grid-column: 2; grid-row: 1; min-width: 0; padding: 8px; font-size: .88rem; }
-    .periodo #ano { grid-column: 3; grid-row: 1; min-width: 0; padding: 8px; font-size: .88rem; }
+    .periodo #mes { grid-column: 2; grid-row: 1; width: 100%; min-width: 0; padding: 8px; font-size: .88rem; }
+    .periodo #ano { grid-column: 3; grid-row: 1; width: 100%; min-width: 0; padding: 8px; font-size: .88rem; }
     .periodo #mes-proximo { grid-column: 4; grid-row: 1; }
     .periodo #hoje { grid-column: 5; grid-row: 1; width: auto; min-height: 44px; margin: 0; padding: 8px 12px; }
     .ajustes-botao svg { width: 21px; height: 21px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
@@ -1211,10 +1216,13 @@
     .ajustes-secao .nota { margin-top: 12px; }
 
     @media (max-width: 420px) {
-        .periodo { width: 100%; grid-template-columns: 34px minmax(72px, 1fr) 52px 34px 38px; gap: 4px; padding: 7px; }
+        .periodo { width: 100%; grid-template-columns: 34px 120px 68px 34px 38px; gap: 4px; padding: 7px; }
         .periodo #mes, .periodo #ano { padding: 7px 4px; font-size: .82rem; }
         .periodo .btn-icone { width: 34px; min-width: 34px; height: 38px; min-height: 38px; }
         .periodo #hoje { min-width: 38px; min-height: 38px; padding: 6px; font-size: .75rem; }
+    }
+    @media (max-width: 360px) {
+        .periodo { grid-template-columns: 34px 84px 62px 34px 38px; }
     }
 }
 
