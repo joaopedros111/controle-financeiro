@@ -1454,6 +1454,74 @@ body[data-densidade="confortavel"] .receita { padding-top: 16px; padding-bottom:
     :root[data-tema="rosa"] .resumo::before { background: linear-gradient(90deg, #d74786, #a681e2); }
 }
 
+@layer base {
+    :root[data-tema="pangolim"] {
+        color-scheme: light;
+        --fundo: #f8f0dc;
+        --superficie: #fffaf0;
+        --superficie-suave: #f3e8ce;
+        --texto: #453723;
+        --texto-secundario: #827254;
+        --borda: #e4d6b8;
+        --primaria: #a66c32;
+        --primaria-hover: #875326;
+        --primaria-suave: #f2e2c4;
+        --verde: #667b4f;
+        --verde-suave: #e9eddf;
+        --vermelho: #ba5947;
+        --vermelho-suave: #f8e9e2;
+        --ambar: #b97727;
+        --ambar-suave: #f7ecd4;
+        --sombra-card: 0 8px 28px -16px rgba(88, 65, 32, .24), 0 2px 8px rgba(88, 65, 32, .05);
+        --sombra-flutuante: 0 18px 44px -24px rgba(110, 77, 35, .3), 0 5px 16px rgba(88, 65, 32, .07);
+        --foco: 0 0 0 4px rgba(166, 108, 50, .2);
+    }
+
+    :root[data-tema="floresta"] {
+        color-scheme: light;
+        --fundo: #edf4ed;
+        --superficie: #fbfdf9;
+        --superficie-suave: #e6efe5;
+        --texto: #24382b;
+        --texto-secundario: #627767;
+        --borda: #d3e0d2;
+        --primaria: #39734d;
+        --primaria-hover: #2d5c3d;
+        --primaria-suave: #dcebdd;
+        --verde: #357b58;
+        --verde-suave: #e1f0e5;
+        --vermelho: #b94f50;
+        --vermelho-suave: #f7e7e5;
+        --ambar: #a8752c;
+        --ambar-suave: #f5edda;
+        --sombra-card: 0 8px 28px -16px rgba(38, 76, 49, .22), 0 2px 8px rgba(38, 76, 49, .05);
+        --sombra-flutuante: 0 18px 44px -24px rgba(34, 83, 48, .28), 0 5px 16px rgba(38, 76, 49, .07);
+        --foco: 0 0 0 4px rgba(57, 115, 77, .2);
+    }
+}
+
+@layer components {
+    :root[data-tema="pangolim"] .marca-icone {
+        background: linear-gradient(145deg, #c9924d, #a66c32 72%, #754a28);
+        box-shadow: 0 9px 20px -8px rgba(131, 83, 38, .55), inset 0 1px 0 rgba(255,255,255,.35);
+    }
+    :root[data-tema="pangolim"] .grafico-barra-entrada { background: linear-gradient(180deg, #c2a46b, #718055); color: #718055; }
+    :root[data-tema="pangolim"] .grafico-barra-despesa { background: linear-gradient(180deg, #d39859, #a66c32); color: #a66c32; }
+    :root[data-tema="pangolim"] .legenda-entrada { background: #718055; }
+    :root[data-tema="pangolim"] .legenda-despesa { background: #a66c32; }
+    :root[data-tema="pangolim"] .resumo::before { background: linear-gradient(90deg, #a66c32, #c2a46b); }
+
+    :root[data-tema="floresta"] .marca-icone {
+        background: linear-gradient(145deg, #5d9669, #39734d 72%, #254d36);
+        box-shadow: 0 9px 20px -8px rgba(41, 91, 57, .56), inset 0 1px 0 rgba(255,255,255,.35);
+    }
+    :root[data-tema="floresta"] .grafico-barra-entrada { background: linear-gradient(180deg, #83b782, #39734d); color: #39734d; }
+    :root[data-tema="floresta"] .grafico-barra-despesa { background: linear-gradient(180deg, #b99a61, #8b6e3f); color: #8b6e3f; }
+    :root[data-tema="floresta"] .legenda-entrada { background: #39734d; }
+    :root[data-tema="floresta"] .legenda-despesa { background: #8b6e3f; }
+    :root[data-tema="floresta"] .resumo::before { background: linear-gradient(90deg, #39734d, #83b782); }
+}
+
 @layer components {
     .grafico-categorias {
         margin-top: 20px;

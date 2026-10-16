@@ -16,6 +16,14 @@ test("backup recusa valores e identificadores inválidos", () => {
     assert.equal(validarBackup({ meses: { "2026-01": { receitas: [], despesas: [{ nome: "Conta", valor: 3, parcela: { atual: 3, total: 2 } }] } } }), false);
 });
 
+test("temas pangolim e floresta são preservados no estado e em backups", () => {
+    for (const tema of ["pangolim", "floresta"]) {
+        const backup = { tema, meses: {} };
+        assert.equal(validarBackup(backup), true);
+        assert.equal(normalizarEstado(backup).tema, tema);
+    }
+});
+
 test("normalização descarta meses e registros inválidos e garante IDs distintos", () => {
     const estado = normalizarEstado({ meses: {
         "2026-13": { receitas: [{ nome: "Inválida", valor: 1 }] },

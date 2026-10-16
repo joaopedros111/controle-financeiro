@@ -594,18 +594,22 @@ function renderTema() {
 
 
     const tema = estado.tema || (escuroNoSistema ? "escuro" : "claro");
-    const nomesTema = { claro: "Claro", escuro: "Escuro", rosa: "Rosa" };
-    const ordemTemas = ["claro", "escuro", "rosa"];
+    const nomesTema = { claro: "Claro", escuro: "Escuro", rosa: "Rosa", pangolim: "Pangolim", floresta: "Floresta" };
+    const ordemTemas = ["claro", "escuro", "rosa", "pangolim", "floresta"];
     const proximoTema = ordemTemas[(ordemTemas.indexOf(tema) + 1) % ordemTemas.length];
 
 
 
     document.documentElement.dataset.tema = tema;
-    const corDaBarraDoNavegador = tema === "rosa" ? "#fff7fb" : tema === "escuro" ? "#0c1020" : "#f4f6fb";
+    const coresBarraNavegador = {
+        claro: "#f4f6fb", escuro: "#0c1020", rosa: "#fff7fb",
+        pangolim: "#fbf3df", floresta: "#edf5ed"
+    };
+    const corDaBarraDoNavegador = coresBarraNavegador[tema] || coresBarraNavegador.claro;
     document.querySelector('meta[name="theme-color"]').content = corDaBarraDoNavegador;
 
     ui.tema.replaceChildren(
-        criarEl("span", { text: tema === "escuro" ? "🌙" : tema === "rosa" ? "🌸" : "☀️" }),
+        criarEl("span", { text: ({ escuro: "🌙", rosa: "🌸", pangolim: "🐾", floresta: "🌲" })[tema] || "☀️" }),
         criarEl("span", { text: "Alterar" })
     );
     ui.tema.setAttribute("aria-label", "Tema atual: " + nomesTema[tema] + ". Mudar para " + nomesTema[proximoTema] + ".");
@@ -3087,7 +3091,7 @@ ui.tema.addEventListener("click", () => {
 
 
 
-    const ordemTemas = ["claro", "escuro", "rosa"];
+    const ordemTemas = ["claro", "escuro", "rosa", "pangolim", "floresta"];
     estado.tema = ordemTemas[(ordemTemas.indexOf(atual) + 1) % ordemTemas.length];
 
 

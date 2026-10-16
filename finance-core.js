@@ -41,7 +41,7 @@ export function validarBackup(bruto) {
 
     if (bruto.versao !== undefined && bruto.versao !== 2) return false;
     if (bruto.tema !== undefined && bruto.tema !== null
-        && !["claro", "escuro", "rosa"].includes(bruto.tema)) return false;
+        && !["claro", "escuro", "rosa", "pangolim", "floresta"].includes(bruto.tema)) return false;
     if (bruto.categorias !== undefined && (!Array.isArray(bruto.categorias)
         || bruto.categorias.some((categoria) => typeof categoria !== "string" || !categoria.trim() || categoria.length > 40))) return false;
 
@@ -77,7 +77,7 @@ export function normalizarEstado(bruto, criarId = gerarId) {
         return estado;
     }
 
-    if (["claro", "escuro", "rosa"].includes(bruto.tema)) estado.tema = bruto.tema;
+    if (["claro", "escuro", "rosa", "pangolim", "floresta"].includes(bruto.tema)) estado.tema = bruto.tema;
     if (Array.isArray(bruto.categorias)) {
         for (const categoria of bruto.categorias) {
             if (typeof categoria !== "string") continue;

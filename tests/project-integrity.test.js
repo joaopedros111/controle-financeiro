@@ -89,3 +89,18 @@ test("tela inicial reutiliza as seções e o estado de navegação existentes", 
     assert.match(serviceWorker, /"\.\/preferences\.js"/);
     assert.match(serviceWorker, /"\.\/app\.js"/);
 });
+
+test("temas pangolim e floresta têm cores, alternância e persistência reconhecidas", async () => {
+    const [app, css, core, html] = await Promise.all([
+        read("app.js"), read("style.css"), read("finance-core.js"), read("index.html")
+    ]);
+    for (const tema of ["pangolim", "floresta"]) {
+        const nome = tema[0].toUpperCase() + tema.slice(1);
+        assert.match(app, new RegExp(`${tema}: "${nome}"`));
+        assert.match(css, new RegExp(`data-tema="${tema}"`));
+        assert.match(core, new RegExp(`"${tema}"`));
+    }
+    assert.match(app, /claro: "Claro", escuro: "Escuro", rosa: "Rosa", pangolim: "Pangolim", floresta: "Floresta"/);
+    assert.match(app, /"claro", "escuro", "rosa", "pangolim", "floresta"/);
+    assert.match(html, /pangolim ou floresta/);
+});
