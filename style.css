@@ -1391,6 +1391,23 @@ dialog#dialogo-receita .acoes-dialogo { position: static; margin-top: 12px; padd
     .periodo #hoje { grid-column: 4; grid-row: 1; width: auto; min-height: 44px; margin: 0; padding: 8px 12px; }
     .periodo #mes-proximo { grid-column: 5; grid-row: 1; }
     .ajustes-botao svg { width: 21px; height: 21px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+    .ajustes-botao {
+        position: fixed;
+        z-index: 20;
+        right: max(20px, env(safe-area-inset-right));
+        bottom: max(20px, env(safe-area-inset-bottom));
+        display: grid;
+        place-items: center;
+        width: 58px;
+        height: 58px;
+        border: 0;
+        border-radius: 50%;
+        color: #fff;
+        background: var(--primaria);
+        box-shadow: 0 8px 24px color-mix(in srgb, var(--primaria) 40%, transparent);
+    }
+    .ajustes-botao:hover { background: var(--primaria-hover); }
+    .ajustes-botao svg { width: 25px; height: 25px; }
     .ajustes-corpo > .bloco-topo { margin-bottom: 20px; }
     .ajustes-secao + .ajustes-secao { margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--borda); }
     .ajustes-secao h3 { margin: 0 0 10px; color: var(--texto-secundario); font-size: .72rem; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
