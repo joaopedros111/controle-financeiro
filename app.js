@@ -1564,6 +1564,17 @@ function salvarReceita() {
 
 ui.adicionarReceita.addEventListener("click", () => abrirDialogoReceita(null));
 
+document.querySelectorAll(".bloco-retrair").forEach((botao) => {
+    botao.addEventListener("click", () => {
+        const expandido = botao.getAttribute("aria-expanded") === "true";
+        const conteudo = document.getElementById(botao.getAttribute("aria-controls"));
+        botao.setAttribute("aria-expanded", String(!expandido));
+        const titulo = botao.closest(".bloco-topo").querySelector("h2").textContent.trim().toLowerCase();
+        botao.setAttribute("aria-label", (expandido ? "Expandir " : "Recolher ") + titulo);
+        conteudo.hidden = expandido;
+    });
+});
+
 
 
 ui.formReceita.addEventListener("submit", (evento) => {

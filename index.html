@@ -171,19 +171,25 @@
 
 <section class="bloco despesas" aria-labelledby="titulo-despesas">
     <div class="bloco-topo">
-        <h2 id="titulo-despesas">Despesas do mês</h2>
+        <div class="bloco-titulo-retratil">
+            <h2 id="titulo-despesas">Despesas do mês</h2>
+            <button class="bloco-retrair" type="button" aria-expanded="true" aria-controls="conteudo-despesas" aria-label="Recolher despesas">
+                <span class="bloco-seta" aria-hidden="true">⌄</span>
+            </button>
+        </div>
         <button id="adicionar-despesa" class="btn btn-primario" type="button">
             + Despesa
         </button>
     </div>
 
-    <div id="lista-despesas"></div>
-    <p class="vazio" id="vazio-despesas"></p>
-
-    <div class="total">
-        <span id="total-rotulo">Total a pagar</span>
-        <span id="total-valor">R$ 0,00</span>
-        <span id="total-percentual">0,0%</span>
+    <div id="conteudo-despesas">
+        <div id="lista-despesas"></div>
+        <p class="vazio" id="vazio-despesas"></p>
+        <div class="total">
+            <span id="total-rotulo">Total a pagar</span>
+            <span id="total-valor">R$ 0,00</span>
+            <span id="total-percentual">0,0%</span>
+        </div>
     </div>
 </section>
 
@@ -193,20 +199,26 @@
 
 <section class="bloco" aria-labelledby="titulo-receitas">
     <div class="bloco-topo">
-        <h2 id="titulo-receitas">Dinheiro que entrou</h2>
+        <div class="bloco-titulo-retratil">
+            <h2 id="titulo-receitas">Dinheiro que entrou</h2>
+            <button class="bloco-retrair" type="button" aria-expanded="true" aria-controls="conteudo-receitas" aria-label="Recolher dinheiro que entrou">
+                <span class="bloco-seta" aria-hidden="true">⌄</span>
+            </button>
+        </div>
         <button id="adicionar-receita" class="btn btn-primario" type="button">
             + Receita
         </button>
     </div>
 
-    <div id="lista-receitas"></div>
-    <p class="vazio" id="vazio-receitas">
-        Nenhuma receita neste mês. Adicione salário, renda extra ou outros valores recebidos.
-    </p>
-
-    <div class="total total-receitas">
-        <span>Total</span>
-        <span id="total-receitas-lista">R$ 0,00</span>
+    <div id="conteudo-receitas">
+        <div id="lista-receitas"></div>
+        <p class="vazio" id="vazio-receitas">
+            Nenhuma receita neste mês. Adicione salário, renda extra ou outros valores recebidos.
+        </p>
+        <div class="total total-receitas">
+            <span>Total</span>
+            <span id="total-receitas-lista">R$ 0,00</span>
+        </div>
     </div>
 </section>
 
