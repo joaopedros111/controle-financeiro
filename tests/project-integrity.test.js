@@ -45,3 +45,26 @@ test("controles das preferências incrementais têm implementação e cache atua
     assert.match(serviceWorker, /const CACHE = PREFIXO_CACHE \+ "v7"/);
     assert.equal((serviceWorker.match(/"\.\/preferences\.js"/g) || []).length, 1, "preferences.js deve ser precacheado uma vez");
 });
+
+test("valores monetários usam formatação centralizada nas listas, resumos e gráficos", async () => {
+    const [html, app, css] = await Promise.all([
+        read("index.html"), read("app.js"), read("style.css")
+    ]);
+    assert.match(app, /return apresentarValorFinanceiro\(valor, valoresOcultos,/);
+    assert.match(app, /valoresOcultos = preferenciasMenu\.ocultarAoIniciar/);
+    assert.match(app, /renderTudo\(false\)/);
+    for (const seletor of [
+        "saldo-valor", "total-receitas", "total-despesas", "valor-pago", "valor-pendente",
+        "total-receitas-lista", "total-valor", "total-grafico-categorias",
+        "grafico-categoria-valor", "valor-receita", "valor-despesa"
+    ]) {
+        assert.ok(html.includes(`id="${seletor}"`) || app.includes(`class: "${seletor}"`), `${seletor} sem componente`);
+    }
+    assert.match(app, /title: rotulo \+ " em ".*formatarMoeda\(valor\)/);
+    assert.match(app, /formatarMoeda\(p\.receitas\).*formatarMoeda\(p\.despesas\)/);
+    assert.match(app, /formatarMoeda\(total\)[\s\S]*formatarMoeda\(valor\)/);
+    assert.match(css, /body\.valores-ocultos \.grafico-barras/);
+    assert.match(css, /body\.valores-ocultos #grafico-rosca/);
+    assert.match(css, /html\.app-inicializando \.container/);
+    assert.match(html, /class="app-inicializando"/);
+});

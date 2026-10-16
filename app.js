@@ -1,6 +1,6 @@
 import { storage } from "./storage.js";
 import { CATEGORIAS_PADRAO, CATEGORIA_FIXA, normalizarEstado as normalizarEstadoCore, validarBackup, migrarDadosLegados, calcularExpressao, somarCentavos, gerarCsv } from "./finance-core.js";
-import { normalizarPreferenciasMenu } from "./preferences.js";
+import { apresentarValorFinanceiro, normalizarPreferenciasMenu } from "./preferences.js";
 
 
 
@@ -241,31 +241,19 @@ function numero(valor) {
 let valoresOcultos = false;
 
 function formatarMoeda(valor) {
-
-    if (valoresOcultos) return "••••";
-
-    return valor.toLocaleString("pt-BR", {
-
-        style: "currency",
-
-        currency: "BRL"
-
-    });
-
+    return apresentarValorFinanceiro(valor, valoresOcultos, (valorVisivel) =>
+        valorVisivel.toLocaleString("pt-BR", {
+            style: "currency",
+            currency: "BRL"
+        })
+    );
 }
 
-
-
 function formatarPercentual(valor) {
-
     return valor.toLocaleString("pt-BR", {
-
         minimumFractionDigits: 1,
-
         maximumFractionDigits: 1
-
     }) + "%";
-
 }
 
 
@@ -891,7 +879,7 @@ function somar(lista) {
 
 // de despesas/receitas, então o cursor do usuário nunca é perdido.
 
-function atualizarResumo() {
+function atualizarResumo(persistir = true) {
 
 
 
@@ -998,7 +986,7 @@ function atualizarResumo() {
 
 
 
-    salvar();
+    if (persistir) salvar();
 
 }
 
@@ -1093,7 +1081,7 @@ function renderGraficoCategorias() {
         : "Nenhuma despesa com valor registrado em " + nomeMes + ".");
 }
 
-function renderTudo() {
+function renderTudo(persistir = true) {
 
     renderTema();
     aplicarPrivacidade();
@@ -1105,7 +1093,7 @@ function renderTudo() {
 
     renderDespesas();
 
-    atualizarResumo();
+    atualizarResumo(persistir);
 
 }
 
@@ -2834,6 +2822,7 @@ function atualizarDiagnostico() {
 }
 function aplicarPrivacidade() {
     document.body.classList.toggle("valores-ocultos", valoresOcultos);
+    document.querySelector(".resumo").classList.toggle("valores-ocultos", valoresOcultos);
     [ui.receitaValor, ui.despesaValor].forEach((campo) => {
         const valorAtual = campo.value;
         campo.type = valoresOcultos ? "password" : "number";
@@ -2844,7 +2833,8 @@ function aplicarPrivacidade() {
     const rotulo = valoresOcultos ? "Mostrar valores" : "Ocultar valores";
     ui.alternarVisibilidadeResumo.setAttribute("aria-label", rotulo + " do resumo");
     ui.alternarVisibilidadeResumo.title = rotulo + " do resumo";
-    ui.alternarValores.textContent = rotulo + " agora";
+    ui.alternarValores.textContent = rotulo + " financeiros";
+    ui.alternarValores.setAttribute("aria-pressed", String(valoresOcultos));
 }
 function aplicarPreferenciasVisuais() {
     document.body.dataset.densidade = preferenciasMenu.densidade;
@@ -2995,9 +2985,9 @@ $("calcular-resultado").addEventListener("click", () => {
 });
 ui.alternarVisibilidadeResumo.addEventListener("click", () => {
     valoresOcultos = !valoresOcultos;
-    renderTudo();
+    renderTudo(false);
 });
-ui.alternarValores.addEventListener("click", () => { valoresOcultos = !valoresOcultos; renderTudo(); });
+ui.alternarValores.addEventListener("click", () => { valoresOcultos = !valoresOcultos; renderTudo(false); });
 ui.atualizarApp.addEventListener("click", async () => {
     if (!("serviceWorker" in navigator) || !navigator.onLine) {
         avisar("Conecte-se à internet para verificar atualizações.");
@@ -3098,6 +3088,7 @@ aplicarPreferenciasMenu();
 aplicarPrivacidade();
 atualizarDiagnostico();
 abrirSecaoInicial();
+document.documentElement.classList.remove("app-inicializando");
 
 const avisosInicializacao = [];
 if (migracaoLegadaPendente) {

@@ -606,11 +606,10 @@ dialog#dialogo-receita .acoes-dialogo { position: static; margin-top: 12px; padd
 .resumo-cabecalho .resumo-titulo { margin-bottom: 10px; }
 .resumo-visibilidade { width: 34px; min-width: 34px; height: 34px; min-height: 34px; padding: 6px; margin: -5px -4px 4px 0; }
 .resumo-visibilidade svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
-.resumo.valores-ocultos .saldo-valor,
-.resumo.valores-ocultos .barra-texto,
-.resumo.valores-ocultos .indicadores dd { visibility: hidden; }
-.resumo.valores-ocultos .barra { visibility: hidden; }
-body.valores-ocultos .grafico-bloco { visibility: hidden; }
+html.app-inicializando .container { visibility: hidden; }
+body.valores-ocultos .barra,
+body.valores-ocultos .grafico-barras { visibility: hidden; }
+body.valores-ocultos #grafico-rosca { background: conic-gradient(var(--borda) 0deg 360deg) !important; }
 body.graficos-ocultos .grafico-bloco { display: none; }
 body.graficos-ocultos .indicadores { display: none; }
 body[data-densidade="compacta"] .bloco { padding: 14px 12px; }

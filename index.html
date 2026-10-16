@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="pt-BR">
+<html lang="pt-BR" class="app-inicializando">
 <head>
     <meta charset="UTF-8">
 
@@ -64,7 +64,7 @@
         RESUMO DO MÊS
     </h2>
     <button id="abrir-calculadora" class="btn btn-icone resumo-calculadora" type="button" aria-label="Abrir calculadora" title="Calculadora"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M8 7h8M8 11h2m4 0h2M8 15h2m4 0h2M8 19h2m4 0h2"/></svg></button>
-    <button id="alternar-visibilidade-resumo" class="btn btn-icone resumo-visibilidade" type="button" aria-label="Ocultar valores do resumo" title="Ocultar valores do resumo" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg></button>
+    <button id="alternar-visibilidade-resumo" class="btn btn-icone resumo-visibilidade" type="button" aria-label="Ocultar valores financeiros do resumo" title="Ocultar valores financeiros do resumo" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg></button>
     </div>
 
     <p class="saldo-rotulo" id="saldo-rotulo">
@@ -281,7 +281,7 @@
                 <span>Iniciar com valores ocultos</span>
                 <input id="ocultar-ao-iniciar" type="checkbox">
             </label>
-            <button id="alternar-valores" class="btn btn-secundario ajustes-categorias-botao" type="button">Ocultar valores agora</button>
+            <button id="alternar-valores" class="btn btn-secundario ajustes-categorias-botao" type="button" aria-pressed="false">Ocultar valores financeiros</button>
         </section>
         <section class="ajustes-secao" aria-labelledby="titulo-ajustes-categorias">
             <h3 id="titulo-ajustes-categorias">Categorias</h3>

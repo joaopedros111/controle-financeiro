@@ -17,7 +17,7 @@ Aplicativo web responsivo e instalável para acompanhar entradas, despesas, cate
 
 O menu **Opções** mantém as preferências no armazenamento centralizado já existente. Ele oferece densidade de interface, gráficos/indicadores, seção inicial, mês de referência, privacidade visual dos valores e diagnóstico local. A opção **Lançamentos** abre as listas existentes de despesas e receitas. O CSV exporta o mês selecionado ou todos os meses que já tenham registros.
 
-O ocultamento é apenas visual: não altera nem protege os dados armazenados. A preferência de ocultar ao iniciar não força os valores a permanecerem escondidos durante a sessão. O dia inicial do período financeiro segue pendente, porque os cálculos e filtros atuais usam meses do calendário; alterar isso exigiria uma mudança coerente em totais, gráficos e histórico.
+**Ocultar valores financeiros** mascara valores monetários na interface como `••••`; o controle pode revelar os valores novamente durante a sessão. **Iniciar com valores ocultos** define apenas o estado inicial ao abrir ou recarregar o app e não impede a revelação durante a sessão. Essa é uma proteção visual: os valores reais continuam nos dados locais e nos backups, sem criptografia. O dia inicial do período financeiro segue pendente, porque os cálculos e filtros atuais usam meses do calendário; alterar isso exigiria uma mudança coerente em totais, gráficos e histórico.
 
 O diagnóstico não declara versão do aplicativo, pois o projeto não fornece uma versão funcional identificada. Ele informa a disponibilidade do armazenamento e os resultados registrados das operações locais; nada é enviado para serviços externos.
 

@@ -27,3 +27,7 @@ export function normalizarPreferenciasMenu(salvas) {
     }
     return preferencias;
 }
+
+export function apresentarValorFinanceiro(valor, ocultos, formatar) {
+    return ocultos ? "••••" : formatar(valor);
+}
