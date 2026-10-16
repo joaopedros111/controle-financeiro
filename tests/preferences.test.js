@@ -27,6 +27,14 @@ test("preferência válida de posição, transparência, tela e período é pres
         densidade: "compacta", telaInicial: "lancamentos", referenciaMes: "ultimo",
         ultimoPeriodo: "2026-09", escopoCsv: "todos"
     });
+
+    test("tamanho do botão usa default e limites seguros", () => {
+        assert.equal(normalizarPreferenciasMenu({}).tamanhoBotao, 58);
+        assert.equal(normalizarPreferenciasMenu({ tamanhoBotao: 20 }).tamanhoBotao, 44);
+        assert.equal(normalizarPreferenciasMenu({ tamanhoBotao: 100 }).tamanhoBotao, 76);
+        assert.equal(normalizarPreferenciasMenu({ tamanhoBotao: "invalido" }).tamanhoBotao, 58);
+        assert.equal(normalizarPreferenciasMenu({ tamanhoBotao: 63.7 }).tamanhoBotao, 64);
+    });
     assert.equal(preferencia.posicao, "arrastavel");
     assert.equal(preferencia.transparencia, 34);
     assert.equal(preferencia.x, 50);

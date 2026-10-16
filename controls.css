@@ -7,8 +7,8 @@
         bottom: max(20px, env(safe-area-inset-bottom));
         display: grid;
         place-items: center;
-        width: 58px;
-        height: 58px;
+        width: var(--menu-tamanho, 58px);
+        height: var(--menu-tamanho, 58px);
         border: 0;
         border-radius: 50%;
         color: #fff;
@@ -25,7 +25,7 @@
     body[data-posicao-menu="arrastavel"] .ajustes-botao:active { cursor: grabbing; }
     body[data-posicao-menu="arrastavel"] .ajustes-botao[style*="left"] { transform: none; }
     .ajustes-botao:hover { background: color-mix(in srgb, var(--primaria-hover) var(--menu-transparencia, 55%), transparent); }
-    .ajustes-botao svg { width: 25px; height: 25px; }
+    .ajustes-botao svg { width: clamp(20px, 4vw, 28px); height: clamp(20px, 4vw, 28px); }
     .ajustes-corpo > .bloco-topo { margin-bottom: 20px; }
     .ajustes-secao + .ajustes-secao { margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--borda); }
     .ajustes-secao h3 { margin: 0 0 10px; color: var(--texto-secundario); font-size: .72rem; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
@@ -41,6 +41,8 @@
     .ajuste-controle select { min-height: 40px; border: 1px solid var(--borda); border-radius: 10px; padding: 0 10px; color: var(--texto); background: var(--superficie); }
     .ajuste-controle input[type="range"] { width: 100%; accent-color: var(--primaria); }
     .ajuste-controle output { color: var(--texto-secundario); }
+    #dialogo-ajustes .btn-secundario { background: var(--superficie-suave); }
+    #dialogo-ajustes .btn-secundario:hover { background: color-mix(in srgb, var(--superficie-suave) 82%, var(--borda)); }
     .resumo-calculadora { width: 34px; min-width: 34px; height: 34px; min-height: 34px; padding: 6px; margin: -5px 0 4px auto; }
     .resumo-calculadora svg { width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
     .dialogo-calculadora { position: fixed; inset: max(8vh, env(safe-area-inset-top, 0px)) auto auto 50%; width: min(calc(100% - 28px), 380px); height: fit-content; max-height: 90dvh; margin: 0; border: 1px solid var(--borda); border-radius: 22px; padding: 0; transform: translateX(-50%); }

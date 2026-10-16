@@ -1,5 +1,5 @@
 const PADRAO = {
-    posicao: "centro", transparencia: 45, x: null, y: null,
+    posicao: "centro", transparencia: 45, tamanhoBotao: 58, x: null, y: null,
     densidade: "padrao", mostrarGraficos: true, telaInicial: "resumo",
     ultimaTelaUtilizada: null,
     referenciaMes: "atual", ultimoPeriodo: null, ocultarAoIniciar: false,
@@ -12,6 +12,10 @@ export function normalizarPreferenciasMenu(salvas) {
     if (!["centro", "direita", "esquerda", "arrastavel"].includes(preferencias.posicao)) preferencias.posicao = PADRAO.posicao;
     const transparencia = Number(preferencias.transparencia);
     preferencias.transparencia = Number.isFinite(transparencia) ? Math.max(20, Math.min(80, transparencia)) : PADRAO.transparencia;
+    const tamanhoBotao = Number(preferencias.tamanhoBotao);
+    preferencias.tamanhoBotao = Number.isFinite(tamanhoBotao)
+        ? Math.max(44, Math.min(76, Math.round(tamanhoBotao)))
+        : PADRAO.tamanhoBotao;
     if (!["compacta", "padrao", "confortavel"].includes(preferencias.densidade)) preferencias.densidade = PADRAO.densidade;
     if (preferencias.telaInicial === "receitas" || preferencias.telaInicial === "despesas") {
         preferencias.telaInicial = "lancamentos";

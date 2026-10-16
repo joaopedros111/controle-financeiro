@@ -46,6 +46,21 @@ test("controles das preferências incrementais têm implementação e cache atua
     assert.equal((serviceWorker.match(/"\.\/preferences\.js"/g) || []).length, 1, "preferences.js deve ser precacheado uma vez");
 });
 
+test("controle de tamanho é conectado e botões de opções contrastam com o fundo", async () => {
+    const [html, app, css] = await Promise.all([
+        read("index.html"), read("app.js"), read("controls.css")
+    ]);
+    for (const id of ["tamanho-botao-menu", "valor-tamanho-botao-menu"]) {
+        assert.match(html, new RegExp(`id="${id}"`));
+    }
+    assert.match(html, /id="tamanho-botao-menu" type="range" min="44" max="76"/);
+    assert.match(app, /preferenciasMenu\.tamanhoBotao/);
+    assert.match(app, /ui\.tamanhoBotaoMenu\.addEventListener\("input"/);
+    assert.match(app, /ui\.tamanhoBotaoMenu\.value = String\(preferenciasMenu\.tamanhoBotao\)/);
+    assert.match(css, /width: var\(--menu-tamanho, 58px\)/);
+    assert.match(css, /#dialogo-ajustes \.btn-secundario \{ background: var\(--superficie-suave\); \}/);
+});
+
 test("valores monetários usam formatação centralizada nas listas, resumos e gráficos", async () => {
     const [html, app, css] = await Promise.all([
         read("index.html"), read("app.js"), read("style.css")
@@ -117,4 +132,13 @@ test("calculadora fica centralizada no topo e oferece operações adicionais", a
     assert.match(css, /\.dialogo-calculadora\[open\] \{ animation: none; \}/);
     assert.match(app, /apagar-calculadora/);
     assert.match(app, /evento\.key !== "Enter"/);
+});
+
+test("seções de despesas e entradas usam botões Adicionar e ícones recolhíveis modernos", async () => {
+    const html = await read("index.html");
+    assert.match(html, /<h2 id="titulo-receitas">Entradas<\/h2>/);
+    assert.match(html, /id="adicionar-despesa"[\s\S]*?Adicionar/);
+    assert.match(html, /id="adicionar-receita"[\s\S]*?Adicionar/);
+    assert.equal((html.match(/class="bloco-seta" viewBox="0 0 24 24"/g) || []).length, 2);
+    assert.match(html, /aria-controls="conteudo-receitas" aria-label="Expandir entradas"/);
 });

@@ -157,11 +157,11 @@
         <div class="bloco-titulo-retratil">
             <h2 id="titulo-despesas">Despesas do mês</h2>
         <button class="bloco-retrair" type="button" aria-expanded="false" aria-controls="conteudo-despesas" aria-label="Expandir despesas">
-                <span class="bloco-seta" aria-hidden="true">⌄</span>
+                <svg class="bloco-seta" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m7 10 5 5 5-5"/></svg>
             </button>
         </div>
         <button id="adicionar-despesa" class="btn btn-primario" type="button">
-            + Despesa
+            Adicionar
         </button>
     </div>
 
@@ -182,13 +182,13 @@
 <section class="bloco" aria-labelledby="titulo-receitas">
     <div class="bloco-topo">
         <div class="bloco-titulo-retratil">
-            <h2 id="titulo-receitas">Dinheiro que entrou</h2>
-        <button class="bloco-retrair" type="button" aria-expanded="false" aria-controls="conteudo-receitas" aria-label="Expandir dinheiro que entrou">
-                <span class="bloco-seta" aria-hidden="true">⌄</span>
+            <h2 id="titulo-receitas">Entradas</h2>
+        <button class="bloco-retrair" type="button" aria-expanded="false" aria-controls="conteudo-receitas" aria-label="Expandir entradas">
+                <svg class="bloco-seta" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m7 10 5 5 5-5"/></svg>
             </button>
         </div>
         <button id="adicionar-receita" class="btn btn-primario" type="button">
-            + Receita
+            Adicionar
         </button>
     </div>
 
@@ -253,6 +253,10 @@
             <label class="ajuste-linha ajuste-controle" for="transparencia-botao-menu">
                 <span>Transparência <output id="valor-transparencia-botao">45%</output></span>
                 <input id="transparencia-botao-menu" type="range" min="20" max="80" value="45">
+            </label>
+            <label class="ajuste-linha ajuste-controle" for="tamanho-botao-menu">
+                <span>Tamanho do botão <output id="valor-tamanho-botao-menu">58 px</output></span>
+                <input id="tamanho-botao-menu" type="range" min="44" max="76" step="2" value="58">
             </label>
         </section>
         <section class="ajustes-secao" aria-labelledby="titulo-preferencias-financeiras">

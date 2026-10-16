@@ -54,6 +54,8 @@ const ui = {
     posicaoBotaoMenu: $("posicao-botao-menu"),
     transparenciaBotaoMenu: $("transparencia-botao-menu"),
     valorTransparenciaBotao: $("valor-transparencia-botao"),
+    tamanhoBotaoMenu: $("tamanho-botao-menu"),
+    valorTamanhoBotaoMenu: $("valor-tamanho-botao-menu"),
     densidadeInterface: $("densidade-interface"),
     mostrarGraficos: $("mostrar-graficos"),
     telaInicial: $("tela-inicial"),
@@ -2885,9 +2887,12 @@ function detectarTelaVisivel() {
 function aplicarPreferenciasMenu() {
     document.body.dataset.posicaoMenu = preferenciasMenu.posicao;
     document.documentElement.style.setProperty("--menu-transparencia", (100 - preferenciasMenu.transparencia) + "%");
+    document.documentElement.style.setProperty("--menu-tamanho", preferenciasMenu.tamanhoBotao + "px");
     ui.posicaoBotaoMenu.value = preferenciasMenu.posicao;
     ui.transparenciaBotaoMenu.value = String(preferenciasMenu.transparencia);
     ui.valorTransparenciaBotao.value = preferenciasMenu.transparencia + "%";
+    ui.tamanhoBotaoMenu.value = String(preferenciasMenu.tamanhoBotao);
+    ui.valorTamanhoBotaoMenu.value = preferenciasMenu.tamanhoBotao + " px";
     ui.densidadeInterface.value = preferenciasMenu.densidade;
     ui.mostrarGraficos.checked = preferenciasMenu.mostrarGraficos;
     ui.telaInicial.value = preferenciasMenu.telaInicial;
@@ -2916,6 +2921,17 @@ ui.posicaoBotaoMenu.addEventListener("change", () => {
 });
 ui.transparenciaBotaoMenu.addEventListener("input", () => {
     preferenciasMenu.transparencia = Number(ui.transparenciaBotaoMenu.value);
+    aplicarPreferenciasMenu();
+    salvarPreferenciasMenu();
+});
+ui.tamanhoBotaoMenu.addEventListener("input", () => {
+    preferenciasMenu.tamanhoBotao = Number(ui.tamanhoBotaoMenu.value);
+    document.documentElement.style.setProperty("--menu-tamanho", preferenciasMenu.tamanhoBotao + "px");
+    if (preferenciasMenu.posicao === "arrastavel" && Number.isFinite(preferenciasMenu.x) && Number.isFinite(preferenciasMenu.y)) {
+        const margem = 8;
+        preferenciasMenu.x = Math.min(Math.max(margem, window.innerWidth - ui.abrirAjustes.offsetWidth - margem), preferenciasMenu.x);
+        preferenciasMenu.y = Math.min(Math.max(margem, window.innerHeight - ui.abrirAjustes.offsetHeight - margem), preferenciasMenu.y);
+    }
     aplicarPreferenciasMenu();
     salvarPreferenciasMenu();
 });

@@ -62,7 +62,7 @@ dialog#dialogo-receita .acoes-dialogo { position: static; margin-top: 12px; padd
 
 .bloco-titulo-retratil { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
 .bloco-titulo-retratil h2 { margin: 0; font-size: 1.05rem; letter-spacing: -.02em; font-weight: 800; }
-.bloco-seta { display: inline-block; color: var(--texto-secundario); font-size: 1.15rem; line-height: 1; transition: transform .18s ease; }
+.bloco-seta { display: block; width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; color: var(--texto-secundario); transition: transform .18s ease; }
 .bloco-retrair[aria-expanded="false"] .bloco-seta { transform: rotate(-90deg); }
 .bloco-retrair:focus-visible { outline: 2px solid var(--primaria); outline-offset: 4px; border-radius: 4px; }
 
