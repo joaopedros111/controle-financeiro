@@ -1,5 +1,6 @@
 import { storage } from "./storage.js";
-import { CATEGORIAS_PADRAO, CATEGORIA_FIXA, normalizarEstado as normalizarEstadoCore, validarBackup, migrarDadosLegados, calcularExpressao, somarCentavos, escaparCelulaCsv } from "./finance-core.js";
+import { CATEGORIAS_PADRAO, CATEGORIA_FIXA, normalizarEstado as normalizarEstadoCore, validarBackup, migrarDadosLegados, calcularExpressao, somarCentavos, gerarCsv } from "./finance-core.js";
+import { normalizarPreferenciasMenu } from "./preferences.js";
 
 
 
@@ -53,6 +54,16 @@ const ui = {
     posicaoBotaoMenu: $("posicao-botao-menu"),
     transparenciaBotaoMenu: $("transparencia-botao-menu"),
     valorTransparenciaBotao: $("valor-transparencia-botao"),
+    densidadeInterface: $("densidade-interface"),
+    mostrarGraficos: $("mostrar-graficos"),
+    telaInicial: $("tela-inicial"),
+    referenciaMes: $("referencia-mes"),
+    ocultarAoIniciar: $("ocultar-ao-iniciar"),
+    alternarValores: $("alternar-valores"),
+    escopoCsv: $("escopo-csv"),
+    diagnosticoDados: $("diagnostico-dados"),
+    ultimaOperacaoDados: $("ultima-operacao-dados"),
+    diagnosticoApp: $("diagnostico-app"),
     abrirCalculadora: $("abrir-calculadora"),
     dialogoCalculadora: $("dialogo-calculadora"),
     fecharCalculadora: $("fechar-calculadora"),
@@ -227,7 +238,11 @@ function numero(valor) {
 
 
 
+let valoresOcultos = false;
+
 function formatarMoeda(valor) {
+
+    if (valoresOcultos) return "••••";
 
     return valor.toLocaleString("pt-BR", {
 
@@ -470,6 +485,7 @@ function salvar() {
 
     try {
         if (!storage.escreverJson(CHAVE_ESTADO, estadoParaSalvar())) avisarArmazenamentoTemporario();
+        atualizarDiagnostico();
     } catch (erro) {
         avisar("Não foi possível salvar os dados neste dispositivo.");
     }
@@ -551,6 +567,11 @@ function mudarPeriodo(ano, mes) {
 
 
     periodo = { ano, mes };
+
+    if (preferenciasMenu.referenciaMes === "ultimo") {
+        preferenciasMenu.ultimoPeriodo = chaveMes(ano, mes);
+        salvarPreferenciasMenu();
+    }
 
 
 
@@ -973,6 +994,8 @@ function atualizarResumo() {
 
     renderGraficoCategorias();
 
+    atualizarDiagnostico();
+
 
 
     salvar();
@@ -1073,6 +1096,8 @@ function renderGraficoCategorias() {
 function renderTudo() {
 
     renderTema();
+    aplicarPrivacidade();
+    aplicarPreferenciasVisuais();
 
     renderPeriodo();
 
@@ -2627,87 +2652,24 @@ function baixarArquivo(conteudo, nome, tipo) {
 
 
     setTimeout(() => URL.revokeObjectURL(url), 1000);
-
-}
-
-
-
-function numeroCsv(valor) {
-
-    return numero(valor).toFixed(2).replace(".", ",");
+    return true;
 
 }
 
 
 
 function exportarCsv() {
-
-
-
-    const mes = obterMes();
-
-
-
-    if (!mes.receitas.length && !mes.despesas.length) {
-
-        avisar("Não há lançamentos neste mês para exportar.");
-
+    const escopo = ui.escopoCsv.value;
+    if (escopo === "mes") obterMes();
+    const csv = gerarCsv(estado, { ano: periodo.ano, mes: periodo.mes, escopo });
+    if (!csv) {
+        avisar("Não há lançamentos neste período para exportar.");
         return;
-
     }
-
-
-
-    const linhas = [["Tipo", "Nome", "Categoria", "Valor", "Situação", "Observação"]];
-
-
-
-    mes.receitas.forEach((r) => {
-
-        linhas.push(["Entrada", r.nome, "", numeroCsv(r.valor), "", ""]);
-
-    });
-
-
-
-    mes.despesas.forEach((d) => {
-
-        const observacao = d.parcela
-
-            ? "Parcela " + d.parcela.atual + "/" + d.parcela.total
-
-            : (d.fixa ? "Fixa" : "");
-
-
-
-        linhas.push(["Despesa", d.nome, d.categoria, numeroCsv(d.valor), d.pago ? "Paga" : "A pagar", observacao]);
-
-    });
-
-
-
-    const csv = linhas
-
-        .map((linha) => linha.map(escaparCelulaCsv).join(";"))
-
-        .join("\r\n");
-
-
-
-    baixarArquivo(
-
-        "\ufeff" + csv,
-
-        "controle-financeiro-" + chaveMes(periodo.ano, periodo.mes) + ".csv",
-
-        "text/csv;charset=utf-8"
-
-    );
-
-
-
+    baixarArquivo(csv,
+        "controle-financeiro-" + (escopo === "todos" ? "completo" : chaveMes(periodo.ano, periodo.mes)) + ".csv",
+        "text/csv;charset=utf-8");
     avisar("Arquivo CSV gerado.");
-
 }
 
 
@@ -2731,8 +2693,7 @@ function exportarBackup() {
 
     );
 
-
-
+    registrarOperacaoDados("Backup JSON gerado em " + new Date().toLocaleString("pt-BR") + ".");
     avisar("Backup salvo.");
 
 }
@@ -2797,6 +2758,7 @@ function importarBackup(arquivo) {
 
         renderTudo();
 
+        registrarOperacaoDados("Backup restaurado em " + new Date().toLocaleString("pt-BR") + ".");
         avisar("Backup restaurado.");
 
     };
@@ -2840,19 +2802,73 @@ ui.arquivoBackup.addEventListener("change", () => {
 /* ---------- Tema ---------- */
 
 const CHAVE_PREFERENCIAS_MENU = "controleFinanceiro:preferencias-menu";
-let preferenciasMenu = { posicao: "centro", transparencia: 45, x: null, y: null };
+let preferenciasMenu = normalizarPreferenciasMenu(null);
 try {
-    const salvas = storage.lerJson(CHAVE_PREFERENCIAS_MENU);
-    if (salvas && typeof salvas === "object") preferenciasMenu = { ...preferenciasMenu, ...salvas };
+    preferenciasMenu = normalizarPreferenciasMenu(storage.lerJson(CHAVE_PREFERENCIAS_MENU));
 } catch (_) { /* usa os padrões */ }
-if (!["centro", "direita", "esquerda", "arrastavel"].includes(preferenciasMenu.posicao)) preferenciasMenu.posicao = "centro";
-preferenciasMenu.transparencia = Math.max(20, Math.min(80, Number(preferenciasMenu.transparencia) || 45));
-if (!Number.isFinite(preferenciasMenu.x) || !Number.isFinite(preferenciasMenu.y)) {
-    preferenciasMenu.x = null;
-    preferenciasMenu.y = null;
+if (preferenciasMenu.referenciaMes === "ultimo" && preferenciasMenu.ultimoPeriodo) {
+    const [anoSalvo, mesSalvo] = preferenciasMenu.ultimoPeriodo.split("-").map(Number);
+    periodo = { ano: anoSalvo, mes: mesSalvo };
 }
+valoresOcultos = preferenciasMenu.ocultarAoIniciar;
 function salvarPreferenciasMenu() {
     if (!storage.escreverJson(CHAVE_PREFERENCIAS_MENU, preferenciasMenu)) avisarArmazenamentoTemporario();
+    atualizarDiagnostico();
+}
+function registrarOperacaoDados(texto) {
+    preferenciasMenu.ultimaOperacao = texto;
+    salvarPreferenciasMenu();
+    atualizarDiagnostico();
+}
+function atualizarDiagnostico() {
+    if (!ui.diagnosticoDados) return;
+    const despesas = Object.values(estado.meses).reduce((n, mes) => n + mes.despesas.length, 0);
+    const receitas = Object.values(estado.meses).reduce((n, mes) => n + mes.receitas.length, 0);
+    const categorias = estado.categorias.length;
+    const armazenamento = storage.persistente
+        ? "Armazenamento persistente disponível."
+        : "Armazenamento em memória: os dados podem se perder ao recarregar ou fechar o app.";
+    ui.diagnosticoDados.textContent = `${receitas + despesas} lançamentos (${receitas} receitas, ${despesas} despesas) · ${categorias} categorias · ${armazenamento}`;
+    ui.ultimaOperacaoDados.textContent = preferenciasMenu.ultimaOperacao;
+    ui.diagnosticoApp.textContent = `Armazenamento: ${storage.persistente ? "persistente disponível" : "somente memória"}. Última verificação de atualização: ${preferenciasMenu.ultimaVerificacao}`;
+}
+function aplicarPrivacidade() {
+    document.body.classList.toggle("valores-ocultos", valoresOcultos);
+    [ui.receitaValor, ui.despesaValor].forEach((campo) => {
+        const valorAtual = campo.value;
+        campo.type = valoresOcultos ? "password" : "number";
+        campo.inputMode = "decimal";
+        campo.value = valorAtual;
+    });
+    ui.alternarVisibilidadeResumo.setAttribute("aria-pressed", String(valoresOcultos));
+    const rotulo = valoresOcultos ? "Mostrar valores" : "Ocultar valores";
+    ui.alternarVisibilidadeResumo.setAttribute("aria-label", rotulo + " do resumo");
+    ui.alternarVisibilidadeResumo.title = rotulo + " do resumo";
+    ui.alternarValores.textContent = rotulo + " agora";
+}
+function aplicarPreferenciasVisuais() {
+    document.body.dataset.densidade = preferenciasMenu.densidade;
+    document.body.classList.toggle("graficos-ocultos", !preferenciasMenu.mostrarGraficos);
+}
+function abrirSecaoInicial() {
+    const alvos = {
+        resumo: document.querySelector(".resumo"),
+        receitas: document.querySelector("#titulo-receitas")?.closest(".bloco"),
+        despesas: document.querySelector("#titulo-despesas")?.closest(".bloco"),
+        lancamentos: document.querySelector("#titulo-despesas")?.closest(".bloco")
+    };
+    if (["receitas", "despesas", "lancamentos"].includes(preferenciasMenu.telaInicial)) {
+        const tipos = preferenciasMenu.telaInicial === "lancamentos"
+            ? ["despesas", "receitas"]
+            : [preferenciasMenu.telaInicial];
+        tipos.forEach((tipo) => {
+            const botao = document.querySelector(`[aria-controls="conteudo-${tipo}"]`);
+            if (botao?.getAttribute("aria-expanded") !== "true") botao?.click();
+        });
+    }
+    if (preferenciasMenu.telaInicial !== "resumo") {
+        requestAnimationFrame(() => alvos[preferenciasMenu.telaInicial]?.scrollIntoView({ block: "start" }));
+    }
 }
 function aplicarPreferenciasMenu() {
     document.body.dataset.posicaoMenu = preferenciasMenu.posicao;
@@ -2860,6 +2876,12 @@ function aplicarPreferenciasMenu() {
     ui.posicaoBotaoMenu.value = preferenciasMenu.posicao;
     ui.transparenciaBotaoMenu.value = String(preferenciasMenu.transparencia);
     ui.valorTransparenciaBotao.value = preferenciasMenu.transparencia + "%";
+    ui.densidadeInterface.value = preferenciasMenu.densidade;
+    ui.mostrarGraficos.checked = preferenciasMenu.mostrarGraficos;
+    ui.telaInicial.value = preferenciasMenu.telaInicial;
+    ui.referenciaMes.value = preferenciasMenu.referenciaMes;
+    ui.ocultarAoIniciar.checked = preferenciasMenu.ocultarAoIniciar;
+    ui.escopoCsv.value = preferenciasMenu.escopoCsv;
     if (preferenciasMenu.posicao === "arrastavel" && Number.isFinite(preferenciasMenu.x) && Number.isFinite(preferenciasMenu.y)) {
         ui.abrirAjustes.style.left = preferenciasMenu.x + "px";
         ui.abrirAjustes.style.top = preferenciasMenu.y + "px";
@@ -2885,6 +2907,16 @@ ui.transparenciaBotaoMenu.addEventListener("input", () => {
     aplicarPreferenciasMenu();
     salvarPreferenciasMenu();
 });
+ui.densidadeInterface.addEventListener("change", () => { preferenciasMenu.densidade = ui.densidadeInterface.value; aplicarPreferenciasVisuais(); salvarPreferenciasMenu(); });
+ui.mostrarGraficos.addEventListener("change", () => { preferenciasMenu.mostrarGraficos = ui.mostrarGraficos.checked; aplicarPreferenciasVisuais(); salvarPreferenciasMenu(); });
+ui.telaInicial.addEventListener("change", () => { preferenciasMenu.telaInicial = ui.telaInicial.value; salvarPreferenciasMenu(); });
+ui.referenciaMes.addEventListener("change", () => {
+    preferenciasMenu.referenciaMes = ui.referenciaMes.value;
+    if (preferenciasMenu.referenciaMes === "ultimo") preferenciasMenu.ultimoPeriodo = chaveMes(periodo.ano, periodo.mes);
+    salvarPreferenciasMenu();
+});
+ui.ocultarAoIniciar.addEventListener("change", () => { preferenciasMenu.ocultarAoIniciar = ui.ocultarAoIniciar.checked; salvarPreferenciasMenu(); });
+ui.escopoCsv.addEventListener("change", () => { preferenciasMenu.escopoCsv = ui.escopoCsv.value; salvarPreferenciasMenu(); });
 let arrastoMenuEmCurso = false;
 let menuFoiArrastado = false;
 ui.abrirAjustes.addEventListener("pointerdown", (evento) => {
@@ -2962,12 +2994,10 @@ $("calcular-resultado").addEventListener("click", () => {
     }
 });
 ui.alternarVisibilidadeResumo.addEventListener("click", () => {
-    const ocultos = ui.alternarVisibilidadeResumo.getAttribute("aria-pressed") !== "true";
-    document.querySelector(".resumo").classList.toggle("valores-ocultos", ocultos);
-    ui.alternarVisibilidadeResumo.setAttribute("aria-pressed", String(ocultos));
-    ui.alternarVisibilidadeResumo.setAttribute("aria-label", ocultos ? "Mostrar valores do resumo" : "Ocultar valores do resumo");
-    ui.alternarVisibilidadeResumo.title = ocultos ? "Mostrar valores do resumo" : "Ocultar valores do resumo";
+    valoresOcultos = !valoresOcultos;
+    renderTudo();
 });
+ui.alternarValores.addEventListener("click", () => { valoresOcultos = !valoresOcultos; renderTudo(); });
 ui.atualizarApp.addEventListener("click", async () => {
     if (!("serviceWorker" in navigator) || !navigator.onLine) {
         avisar("Conecte-se à internet para verificar atualizações.");
@@ -3018,9 +3048,14 @@ ui.atualizarApp.addEventListener("click", async () => {
             throw new Error("Não foi possível baixar a versão mais recente. Tente novamente.");
         }
 
+        preferenciasMenu.ultimaVerificacao = "Concluída em " + new Date().toLocaleString("pt-BR") + ".";
+        salvarPreferenciasMenu();
         avisar("App atualizado. Reabrindo…");
         setTimeout(() => window.location.reload(), 500);
     } catch (erro) {
+        preferenciasMenu.ultimaVerificacao = "Falhou em " + new Date().toLocaleString("pt-BR") + ": " + (erro.message || "erro não identificado");
+        salvarPreferenciasMenu();
+        atualizarDiagnostico();
         avisar(erro.message || "Não foi possível verificar atualizações.");
     } finally {
         botao.disabled = false;
@@ -3059,6 +3094,10 @@ ui.tema.addEventListener("click", () => {
 
 
 renderTudo();
+aplicarPreferenciasMenu();
+aplicarPrivacidade();
+atualizarDiagnostico();
+abrirSecaoInicial();
 
 const avisosInicializacao = [];
 if (migracaoLegadaPendente) {

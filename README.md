@@ -9,10 +9,17 @@ Aplicativo web responsivo e instalável para acompanhar entradas, despesas, cate
 - `controls.css`: estilos de opções, botão flutuante e calculadora.
 - `app.js`: inicialização e interação da interface.
 - `finance-core.js`: validação e normalização dos dados, cálculos em centavos e operações da calculadora.
+- `preferences.js`: validação de preferências, com compatibilidade com opções antigas ou ausentes.
 - `storage.js`: acesso ao armazenamento persistente e fallback temporário em memória.
 - `sw.js`: cache offline e atualização do app.
 - `manifest.json` e `icons/`: instalação e ícones do PWA.
 - `tests/`: testes automatizados da camada de dados, armazenamento e calculadora.
+
+O menu **Opções** mantém as preferências no armazenamento centralizado já existente. Ele oferece densidade de interface, gráficos/indicadores, seção inicial, mês de referência, privacidade visual dos valores e diagnóstico local. A opção **Lançamentos** abre as listas existentes de despesas e receitas. O CSV exporta o mês selecionado ou todos os meses que já tenham registros.
+
+O ocultamento é apenas visual: não altera nem protege os dados armazenados. A preferência de ocultar ao iniciar não força os valores a permanecerem escondidos durante a sessão. O dia inicial do período financeiro segue pendente, porque os cálculos e filtros atuais usam meses do calendário; alterar isso exigiria uma mudança coerente em totais, gráficos e histórico.
+
+O diagnóstico não declara versão do aplicativo, pois o projeto não fornece uma versão funcional identificada. Ele informa a disponibilidade do armazenamento e os resultados registrados das operações locais; nada é enviado para serviços externos.
 
 ## Executar localmente
 

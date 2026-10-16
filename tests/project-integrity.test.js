@@ -29,3 +29,19 @@ test("módulos e estilos usados pela página estão incluídos no cache offline"
         assert.ok(existsSync(fileURLToPath(new URL(arquivo, root))), `${arquivo} não existe`);
     }
 });
+
+test("controles das preferências incrementais têm implementação e cache atualizados", async () => {
+    const [html, app, css, serviceWorker] = await Promise.all([
+        read("index.html"), read("app.js"), read("style.css"), read("sw.js")
+    ]);
+    for (const id of ["densidade-interface", "mostrar-graficos", "tela-inicial", "referencia-mes", "ocultar-ao-iniciar", "alternar-valores", "escopo-csv", "diagnostico-dados"]) {
+        assert.match(html, new RegExp(`id="${id}"`), `controle ${id} ausente`);
+        assert.ok(app.includes(`$("${id}")`), `controle ${id} sem conexão com o app`);
+    }
+    assert.match(css, /data-densidade="compacta"/);
+    assert.match(css, /graficos-ocultos/);
+    assert.match(app, /preferenciasMenu\.ocultarAoIniciar/);
+    assert.match(app, /preferenciasMenu\.ultimoPeriodo/);
+    assert.match(serviceWorker, /const CACHE = PREFIXO_CACHE \+ "v7"/);
+    assert.equal((serviceWorker.match(/"\.\/preferences\.js"/g) || []).length, 1, "preferences.js deve ser precacheado uma vez");
+});

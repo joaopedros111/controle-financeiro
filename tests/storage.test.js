@@ -27,6 +27,7 @@ test("camada mantém cópia temporária quando o armazenamento persistente falha
     const store = criarArmazenamento(fake);
     assert.equal(store.escreverJson("estado", { valor: 7 }), false);
     assert.deepEqual(store.lerJson("estado"), { valor: 7 });
+    assert.equal(store.persistente, false);
 });
 
 test("camada sem armazenamento local mantém os dados apenas na memória", () => {

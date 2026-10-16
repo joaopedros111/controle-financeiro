@@ -10,14 +10,16 @@ function detectarArmazenamentoLocal() {
 }
 
 export function criarArmazenamento(local = detectarArmazenamentoLocal(), memoria = new Map()) {
+    let persistenciaDisponivel = Boolean(local);
     return {
-        persistente: Boolean(local),
+        get persistente() { return persistenciaDisponivel; },
 
         ler(chave) {
             if (memoria.has(chave)) return memoria.get(chave);
             try {
                 return local ? local.getItem(chave) : null;
             } catch {
+                persistenciaDisponivel = false;
                 return memoria.get(chave) ?? null;
             }
         },
@@ -27,9 +29,11 @@ export function criarArmazenamento(local = detectarArmazenamentoLocal(), memoria
                 if (!local) throw new Error("armazenamento local indisponível");
                 local.setItem(chave, valor);
                 memoria.delete(chave);
+                persistenciaDisponivel = true;
                 return true;
             } catch {
                 memoria.set(chave, valor);
+                persistenciaDisponivel = false;
                 return false;
             }
         },

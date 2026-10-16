@@ -165,6 +165,30 @@ export function escaparCelulaCsv(valor) {
     return '"' + texto.replace(/"/g, '""') + '"';
 }
 
+export function gerarCsv(estado, { ano, mes, escopo = "mes" } = {}) {
+    const chaveSelecionada = `${ano}-${String(mes).padStart(2, "0")}`;
+    const meses = escopo === "todos"
+        ? Object.entries(estado?.meses || {}).sort(([a], [b]) => a.localeCompare(b))
+        : [[chaveSelecionada, estado?.meses?.[chaveSelecionada] || { receitas: [], despesas: [] }]];
+    const registros = meses.filter(([, dados]) => dados?.receitas?.length || dados?.despesas?.length);
+    if (!registros.length) return "";
+    const valorCsv = (valor) => {
+        const n = Number(valor);
+        return (Number.isFinite(n) ? n : 0).toFixed(2).replace(".", ",");
+    };
+    const linhas = [["Período", "Tipo", "Nome", "Categoria", "Valor", "Situação", "Observação"]];
+    registros.forEach(([periodo, dados]) => {
+        dados.receitas.forEach((r) => linhas.push([periodo, "Entrada", r.nome, "", valorCsv(r.valor), "", ""]));
+        dados.despesas.forEach((d) => {
+            const observacao = d.parcela
+                ? `Parcela ${d.parcela.atual}/${d.parcela.total}`
+                : (d.fixa ? "Fixa" : "");
+            linhas.push([periodo, "Despesa", d.nome, d.categoria, valorCsv(d.valor), d.pago ? "Paga" : "A pagar", observacao]);
+        });
+    });
+    return "\ufeff" + linhas.map((linha) => linha.map(escaparCelulaCsv).join(";")).join("\r\n");
+}
+
 export function calcularExpressao(expressao) {
     const texto = String(expressao).replace(/,/g, ".").replace(/\s+/g, "");
     if (!texto) throw new Error("Expressão vazia");

@@ -226,6 +226,18 @@
                 <div><strong>Tema</strong><span>Claro, escuro ou rosa</span></div>
                 <button id="alternar-tema" class="btn btn-secundario tema-botao" type="button" aria-label="Alternar entre tema claro e escuro" title="Alternar tema">☀️ <span>Alterar</span></button>
             </div>
+            <label class="ajuste-linha ajuste-controle" for="densidade-interface">
+                <span>Densidade da interface</span>
+                <select id="densidade-interface">
+                    <option value="padrao">Padrão</option>
+                    <option value="compacta">Compacta</option>
+                    <option value="confortavel">Confortável</option>
+                </select>
+            </label>
+            <label class="ajuste-linha ajuste-controle" for="mostrar-graficos">
+                <span>Mostrar gráficos e indicadores</span>
+                <input id="mostrar-graficos" type="checkbox" checked>
+            </label>
         </section>
         <section class="ajustes-secao" aria-labelledby="titulo-botao-menu">
             <h3 id="titulo-botao-menu">Botão de opções</h3>
@@ -243,12 +255,44 @@
                 <input id="transparencia-botao-menu" type="range" min="20" max="80" value="45">
             </label>
         </section>
+        <section class="ajustes-secao" aria-labelledby="titulo-preferencias-financeiras">
+            <h3 id="titulo-preferencias-financeiras">Preferências financeiras</h3>
+            <label class="ajuste-linha ajuste-controle" for="tela-inicial">
+                <span>Tela inicial</span>
+                <select id="tela-inicial">
+                    <option value="resumo">Resumo do mês</option>
+                    <option value="receitas">Receitas</option>
+                    <option value="despesas">Despesas</option>
+                    <option value="lancamentos">Lançamentos</option>
+                </select>
+            </label>
+            <label class="ajuste-linha ajuste-controle" for="referencia-mes">
+                <span>Mês de referência</span>
+                <select id="referencia-mes">
+                    <option value="atual">Abrir no mês atual</option>
+                    <option value="ultimo">Preservar último acesso</option>
+                </select>
+            </label>
+            <p class="nota">O dia inicial do período financeiro não está disponível: os cálculos atuais usam meses do calendário.</p>
+        </section>
+        <section class="ajustes-secao" aria-labelledby="titulo-privacidade">
+            <h3 id="titulo-privacidade">Privacidade e visualização</h3>
+            <label class="ajuste-linha ajuste-controle" for="ocultar-ao-iniciar">
+                <span>Iniciar com valores ocultos</span>
+                <input id="ocultar-ao-iniciar" type="checkbox">
+            </label>
+            <button id="alternar-valores" class="btn btn-secundario ajustes-categorias-botao" type="button">Ocultar valores agora</button>
+        </section>
         <section class="ajustes-secao" aria-labelledby="titulo-ajustes-categorias">
             <h3 id="titulo-ajustes-categorias">Categorias</h3>
             <button id="gerenciar-categorias" class="btn btn-secundario ajustes-categorias-botao" type="button">Gerenciar categorias</button>
         </section>
         <section class="ajustes-secao" aria-labelledby="titulo-ferramentas">
-            <h3 id="titulo-ferramentas">Dados e backup</h3>
+            <h3 id="titulo-ferramentas">Dados e segurança</h3>
+            <label class="ajuste-linha ajuste-controle" for="escopo-csv">
+                <span>Período do CSV</span>
+                <select id="escopo-csv"><option value="mes">Mês selecionado</option><option value="todos">Todos os meses</option></select>
+            </label>
             <div class="acoes acoes-ferramentas">
                 <button id="copiar-mes-anterior" class="btn btn-secundario" type="button">Copiar mês anterior</button>
                 <button id="exportar-csv" class="btn btn-secundario" type="button">Exportar CSV</button>
@@ -257,7 +301,14 @@
                 <button id="limpar-mes" class="btn btn-perigo" type="button">Limpar mês</button>
             </div>
             <input id="arquivo-backup" type="file" accept="application/json,.json" hidden>
-            <p class="nota">Seus dados ficam salvos neste dispositivo. Faça backup periodicamente para não perder os lançamentos.</p>
+            <p id="diagnostico-dados" class="nota" aria-live="polite"></p>
+            <p id="ultima-operacao-dados" class="nota"></p>
+            <p class="nota">Restaurar substitui todos os dados atuais; o app pede confirmação antes da troca. Seus dados ficam neste dispositivo. Faça backups periodicamente.</p>
+        </section>
+        <section class="ajustes-secao" aria-labelledby="titulo-sobre">
+            <h3 id="titulo-sobre">Sobre e diagnóstico</h3>
+            <p class="nota">Controle Financeiro · versão do aplicativo não declarada.</p>
+            <p id="diagnostico-app" class="nota"></p>
         </section>
         <section class="ajustes-secao" aria-labelledby="titulo-atualizacoes">
             <h3 id="titulo-atualizacoes">Atualizações</h3>

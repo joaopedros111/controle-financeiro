@@ -610,6 +610,15 @@ dialog#dialogo-receita .acoes-dialogo { position: static; margin-top: 12px; padd
 .resumo.valores-ocultos .barra-texto,
 .resumo.valores-ocultos .indicadores dd { visibility: hidden; }
 .resumo.valores-ocultos .barra { visibility: hidden; }
+body.valores-ocultos .grafico-bloco { visibility: hidden; }
+body.graficos-ocultos .grafico-bloco { display: none; }
+body.graficos-ocultos .indicadores { display: none; }
+body[data-densidade="compacta"] .bloco { padding: 14px 12px; }
+body[data-densidade="compacta"] .despesa,
+body[data-densidade="compacta"] .receita { padding-top: 8px; padding-bottom: 8px; }
+body[data-densidade="confortavel"] .bloco { padding: 24px 20px; }
+body[data-densidade="confortavel"] .despesa,
+body[data-densidade="confortavel"] .receita { padding-top: 16px; padding-bottom: 16px; }
 
     .resumo-titulo {
         margin: 0 0 10px;

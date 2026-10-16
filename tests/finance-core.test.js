@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { calcularExpressao, escaparCelulaCsv, migrarDadosLegados, normalizarEstado, somarCentavos, validarBackup } from "../finance-core.js";
+import { calcularExpressao, escaparCelulaCsv, gerarCsv, migrarDadosLegados, normalizarEstado, somarCentavos, validarBackup } from "../finance-core.js";
 
 test("backup válido é aceito e meses fora do calendário são recusados", () => {
     const backup = { categorias: ["Moradia"], meses: { "2026-10": { receitas: [{ id: "r1", nome: "Salário", valor: 1200 }], despesas: [] } } };
@@ -50,6 +50,22 @@ test("somas monetárias são acumuladas em centavos inteiros", () => {
 test("CSV protege fórmulas e escapa aspas", () => {
     assert.equal(escaparCelulaCsv("  =1+1"), '"\'  =1+1"');
     assert.equal(escaparCelulaCsv('Conta "A"'), '"Conta ""A"""');
+});
+
+test("CSV exporta o mês escolhido ou todos os meses com período, UTF-8 e proteção de fórmula", () => {
+    const estado = { meses: {
+        "2026-01": { receitas: [{ nome: "Salário; bônus", valor: 1000.5 }], despesas: [] },
+        "2026-02": { receitas: [], despesas: [{ nome: '=HYPERLINK("x")\nconta', categoria: "Casa", valor: 12.34, pago: true }] }
+    } };
+    const fevereiro = gerarCsv(estado, { ano: 2026, mes: 2 });
+    assert.ok(fevereiro.startsWith("\ufeff\"Período\";"));
+    assert.ok(fevereiro.includes('"2026-02";"Despesa";"\'=HYPERLINK(""x"")\nconta"'));
+    assert.ok(fevereiro.includes('"12,34"'));
+    assert.ok(!fevereiro.includes("Salário"));
+    const todos = gerarCsv(estado, { ano: 2026, mes: 2, escopo: "todos" });
+    assert.ok(todos.includes('"2026-01";"Entrada";"Salário; bônus"'));
+    assert.ok(todos.includes('"2026-02";"Despesa"'));
+    assert.equal(gerarCsv({ meses: {} }, { ano: 2026, mes: 2 }), "");
 });
 
 test("calculadora respeita precedência, parênteses e decimal brasileiro", () => {
