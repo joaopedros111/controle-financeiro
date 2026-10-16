@@ -602,6 +602,15 @@ dialog#dialogo-receita .acoes-dialogo { position: static; margin-top: 12px; padd
     box-shadow: var(--sombra-flutuante);
 }
 
+.resumo-cabecalho { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.resumo-cabecalho .resumo-titulo { margin-bottom: 10px; }
+.resumo-visibilidade { width: 34px; min-width: 34px; height: 34px; min-height: 34px; padding: 6px; margin: -5px -4px 4px 0; }
+.resumo-visibilidade svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.resumo.valores-ocultos .saldo-valor,
+.resumo.valores-ocultos .barra-texto,
+.resumo.valores-ocultos .indicadores dd { visibility: hidden; }
+.resumo.valores-ocultos .barra { visibility: hidden; }
+
     .resumo-titulo {
         margin: 0 0 10px;
         font-size: .75rem;

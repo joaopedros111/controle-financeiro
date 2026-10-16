@@ -83,6 +83,7 @@ const ui = {
     saldoRotulo: $("saldo-rotulo"),
 
     saldoValor: $("saldo-valor"),
+    alternarVisibilidadeResumo: $("alternar-visibilidade-resumo"),
 
     barra: $("barra"),
 
@@ -3136,6 +3137,13 @@ ui.arquivoBackup.addEventListener("change", () => {
 
 ui.abrirAjustes.addEventListener("click", () => ui.dialogoAjustes.showModal());
 ui.fecharAjustes.addEventListener("click", () => ui.dialogoAjustes.close());
+ui.alternarVisibilidadeResumo.addEventListener("click", () => {
+    const ocultos = ui.alternarVisibilidadeResumo.getAttribute("aria-pressed") !== "true";
+    document.querySelector(".resumo").classList.toggle("valores-ocultos", ocultos);
+    ui.alternarVisibilidadeResumo.setAttribute("aria-pressed", String(ocultos));
+    ui.alternarVisibilidadeResumo.setAttribute("aria-label", ocultos ? "Mostrar valores do resumo" : "Ocultar valores do resumo");
+    ui.alternarVisibilidadeResumo.title = ocultos ? "Mostrar valores do resumo" : "Ocultar valores do resumo";
+});
 ui.atualizarApp.addEventListener("click", async () => {
     if (!("serviceWorker" in navigator) || !navigator.onLine) {
         avisar("Conecte-se à internet para verificar atualizações.");
