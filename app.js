@@ -76,6 +76,7 @@ const ui = {
     abrirAjustes: $("abrir-ajustes"),
     dialogoAjustes: $("dialogo-ajustes"),
     fecharAjustes: $("fechar-ajustes"),
+    atualizarApp: $("atualizar-app"),
 
 
 
@@ -3135,6 +3136,48 @@ ui.arquivoBackup.addEventListener("change", () => {
 
 ui.abrirAjustes.addEventListener("click", () => ui.dialogoAjustes.showModal());
 ui.fecharAjustes.addEventListener("click", () => ui.dialogoAjustes.close());
+ui.atualizarApp.addEventListener("click", async () => {
+    if (!("serviceWorker" in navigator) || !navigator.onLine) {
+        avisar("Conecte-se à internet para verificar atualizações.");
+        return;
+    }
+
+    const botao = ui.atualizarApp;
+    const textoOriginal = botao.textContent;
+    botao.disabled = true;
+    botao.textContent = "Verificando…";
+
+    try {
+        const registro = await navigator.serviceWorker.getRegistration();
+        if (!registro) throw new Error("O app ainda não está pronto para atualização.");
+
+        await registro.update();
+        const worker = navigator.serviceWorker.controller || registro.active;
+        if (!worker) throw new Error("Não foi possível acessar o atualizador do app.");
+
+        const resposta = await new Promise((resolve, reject) => {
+            const canal = new MessageChannel();
+            const temporizador = setTimeout(() => reject(new Error("A atualização demorou demais. Tente novamente.")), 30000);
+            canal.port1.onmessage = (evento) => {
+                clearTimeout(temporizador);
+                resolve(evento.data);
+            };
+            worker.postMessage({ tipo: "ATUALIZAR_ARQUIVOS" }, [canal.port2]);
+        });
+
+        if (!resposta?.ok || !resposta.arquivos?.includes("./index.html") || !resposta.arquivos?.includes("./app.js")) {
+            throw new Error("Não foi possível baixar a versão mais recente. Tente novamente.");
+        }
+
+        avisar("App atualizado. Reabrindo…");
+        setTimeout(() => window.location.reload(), 500);
+    } catch (erro) {
+        avisar(erro.message || "Não foi possível verificar atualizações.");
+    } finally {
+        botao.disabled = false;
+        botao.textContent = textoOriginal;
+    }
+});
 ui.dialogoAjustes.addEventListener("click", (evento) => {
     if (evento.target === ui.dialogoAjustes) ui.dialogoAjustes.close();
 });

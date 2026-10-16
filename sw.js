@@ -1,4 +1,4 @@
-const CACHE = 'controle-financeiro-v3';
+const CACHE = 'controle-financeiro-v4';
 const ARQUIVOS = [
   './',
   './index.html',
@@ -29,6 +29,30 @@ self.addEventListener('activate', (event) => {
     )
   );
   self.clients.claim();
+});
+
+self.addEventListener('message', (event) => {
+  if (event.data?.tipo !== 'ATUALIZAR_ARQUIVOS' || !event.ports?.[0]) return;
+
+  event.waitUntil((async () => {
+    const cache = await caches.open(CACHE);
+    const arquivos = [];
+
+    await Promise.all(ARQUIVOS.map(async (arquivo) => {
+      try {
+        const url = new URL(arquivo, self.registration.scope);
+        const resposta = await fetch(url, { cache: 'no-store' });
+        if (!resposta.ok || resposta.type === 'opaque') return;
+
+        await cache.put(url.href, resposta.clone());
+        arquivos.push(arquivo);
+      } catch {
+        // Mantém a cópia existente se um recurso não puder ser baixado.
+      }
+    }));
+
+    event.ports[0].postMessage({ ok: true, arquivos });
+  })());
 });
 
 self.addEventListener('fetch', (event) => {
