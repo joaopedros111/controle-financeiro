@@ -147,6 +147,7 @@ test("orçamento fica no resumo, usa valores formatados e controles separados po
         assert.ok(app.includes(`$("${id}")`), `${id} não conectado`);
     }
     assert.match(app, /calcularOrcamentosPorCategoria/);
+    assert.match(app, /ordenarOrcamentosComGastos\(calcularOrcamentosPorCategoria/);
     assert.match(app, /formatarMoeda\(gasto\)/);
     assert.match(app, /formatarMoeda\(item\.limiteCentavos \/ 100\)/);
     assert.match(app, /formatarMoeda\(item\.restanteCentavos \/ 100\)/);
@@ -154,6 +155,7 @@ test("orçamento fica no resumo, usa valores formatados e controles separados po
     assert.match(app, /estado\.orcamentos\.meses\[chave\]/);
     assert.match(app, /campo\.type = valoresOcultos \? "password" : "number"/);
     assert.match(core, /export function calcularOrcamentosPorCategoria/);
+    assert.match(core, /export function ordenarOrcamentosComGastos/);
     assert.match(app, /const CHAVE_ESTADO = "controleFinanceiro:v3"/);
     assert.match(app, /const CHAVE_ESTADO_V2 = "controleFinanceiro:v2"/);
     for (const recurso of ["./app.js", "./finance-core.js", "./controls.css"]) {

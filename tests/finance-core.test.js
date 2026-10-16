@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { calcularExpressao, calcularOrcamentosPorCategoria, escaparCelulaCsv, gerarCsv, migrarDadosLegados, normalizarEstado, removerCategoriaOrcamentos, renomearCategoriaOrcamentos, somarCentavos, validarBackup } from "../finance-core.js";
+import { calcularExpressao, calcularOrcamentosPorCategoria, escaparCelulaCsv, gerarCsv, migrarDadosLegados, normalizarEstado, ordenarOrcamentosComGastos, removerCategoriaOrcamentos, renomearCategoriaOrcamentos, somarCentavos, validarBackup } from "../finance-core.js";
 
 test("backup válido é aceito e meses fora do calendário são recusados", () => {
     const backup = { categorias: ["Moradia"], meses: { "2026-10": { receitas: [{ id: "r1", nome: "Salário", valor: 1200 }], despesas: [] } } };
@@ -49,6 +49,19 @@ test("orçamento calcula gastos apenas por categoria e mês selecionado", () => 
     assert.equal(outubro.find((item) => item.categoria === "Alimentação").gastoCentavos, 42000);
     assert.equal(outubro.find((item) => item.categoria === "Moradia").gastoCentavos, 80000);
     assert.equal(novembro.find((item) => item.categoria === "Alimentação").gastoCentavos, 5000);
+});
+
+test("resumo mostra somente categorias com despesas e ordena pelo maior gasto", () => {
+    const calculados = calcularOrcamentosPorCategoria(["Sem despesas", "Zero", "Mercado", "Casa", "Lazer"], [
+        { categoria: "Mercado", valor: 75 },
+        { categoria: "Casa", valor: 220 },
+        { categoria: "Lazer", valor: 75 },
+        { categoria: "Zero", valor: 0 }
+    ], { padrao: { "Sem despesas": 500, "Zero": 100 }, meses: {} }, "2026-10");
+
+    const resumo = ordenarOrcamentosComGastos(calculados);
+    assert.deepEqual(resumo.map((item) => item.categoria), ["Casa", "Lazer", "Mercado"]);
+    assert.deepEqual(resumo.map((item) => item.gastoCentavos), [22000, 7500, 7500]);
 });
 
 test("orçamento calcula saldo e percentual abaixo, no limite e acima do limite", () => {

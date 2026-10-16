@@ -1,5 +1,5 @@
 import { storage } from "./storage.js";
-import { CATEGORIAS_PADRAO, CATEGORIA_FIXA, normalizarEstado as normalizarEstadoCore, validarBackup, migrarDadosLegados, calcularExpressao, somarCentavos, gerarCsv, calcularOrcamentosPorCategoria, renomearCategoriaOrcamentos, removerCategoriaOrcamentos } from "./finance-core.js";
+import { CATEGORIAS_PADRAO, CATEGORIA_FIXA, normalizarEstado as normalizarEstadoCore, validarBackup, migrarDadosLegados, calcularExpressao, somarCentavos, gerarCsv, calcularOrcamentosPorCategoria, ordenarOrcamentosComGastos, renomearCategoriaOrcamentos, removerCategoriaOrcamentos } from "./finance-core.js";
 import { apresentarValorFinanceiro, normalizarPreferenciasMenu, resolverTelaInicial } from "./preferences.js";
 
 
@@ -898,12 +898,12 @@ function renderOrcamentoPorCategoria() {
     if (!ui.listaResumoOrcamentos) return;
     const chave = chaveMes(periodo.ano, periodo.mes);
     const mes = estado.meses[chave] || { despesas: [] };
-    const itens = calcularOrcamentosPorCategoria(
+    const itens = ordenarOrcamentosComGastos(calcularOrcamentosPorCategoria(
         estado.categorias,
         mes.despesas,
         estado.orcamentos,
         chave
-    );
+    ));
     ui.listaResumoOrcamentos.replaceChildren(...itens.map((item) => {
         const linha = criarEl("li", {
             class: "orcamento-item" + (item.limiteCentavos !== null && item.gastoCentavos > item.limiteCentavos ? " acima-do-orcamento" : "")

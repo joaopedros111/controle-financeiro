@@ -268,6 +268,13 @@ export function calcularOrcamentosPorCategoria(categorias, despesas, orcamentos,
     });
 }
 
+export function ordenarOrcamentosComGastos(itens) {
+    return (Array.isArray(itens) ? itens : [])
+        .filter((item) => item && Number.isFinite(item.gastoCentavos) && item.gastoCentavos > 0)
+        .sort((a, b) => b.gastoCentavos - a.gastoCentavos
+            || a.categoria.localeCompare(b.categoria, "pt-BR"));
+}
+
 export function migrarDadosLegados(registrosPorMes, ano) {
     const bruto = { categorias: [], meses: {} };
     let encontrou = false;
