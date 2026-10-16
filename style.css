@@ -1399,57 +1399,6 @@ dialog#dialogo-receita .acoes-dialogo { position: static; margin-top: 12px; padd
     .periodo #ano { grid-column: 3; grid-row: 1; width: 100%; min-width: 0; padding: 8px; font-size: .88rem; }
     .periodo #hoje { grid-column: 4; grid-row: 1; width: auto; min-height: 44px; margin: 0; padding: 8px 12px; }
     .periodo #mes-proximo { grid-column: 5; grid-row: 1; }
-    .ajustes-botao svg { width: 21px; height: 21px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
-    .ajustes-botao {
-        position: fixed;
-        z-index: 20;
-        left: 50%;
-        bottom: max(20px, env(safe-area-inset-bottom));
-        display: grid;
-        place-items: center;
-        width: 58px;
-        height: 58px;
-        border: 0;
-        border-radius: 50%;
-        color: #fff;
-        background: color-mix(in srgb, var(--primaria) var(--menu-transparencia, 55%), transparent);
-        box-shadow: 0 8px 24px color-mix(in srgb, var(--primaria) 40%, transparent);
-        opacity: 1;
-        transform: translateX(-50%);
-    }
-    body[data-posicao-menu="direita"] .ajustes-botao { left: auto; right: max(20px, env(safe-area-inset-right)); transform: none; }
-    body[data-posicao-menu="esquerda"] .ajustes-botao { left: max(20px, env(safe-area-inset-left)); transform: none; }
-    body[data-posicao-menu="centro"] .ajustes-botao:active,
-    body[data-posicao-menu="arrastavel"] .ajustes-botao:not([style*="left"]):active { transform: translateX(-50%); }
-    body[data-posicao-menu="arrastavel"] .ajustes-botao { touch-action: none; cursor: grab; }
-    body[data-posicao-menu="arrastavel"] .ajustes-botao:active { cursor: grabbing; }
-    body[data-posicao-menu="arrastavel"] .ajustes-botao[style*="left"] { transform: none; }
-    .ajustes-botao:hover { background: color-mix(in srgb, var(--primaria-hover) var(--menu-transparencia, 55%), transparent); }
-    .ajustes-botao svg { width: 25px; height: 25px; }
-    .ajustes-corpo > .bloco-topo { margin-bottom: 20px; }
-    .ajustes-secao + .ajustes-secao { margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--borda); }
-    .ajustes-secao h3 { margin: 0 0 10px; color: var(--texto-secundario); font-size: .72rem; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
-    .ajuste-linha { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px; border: 1px solid var(--borda); border-radius: 15px; background: var(--superficie-suave); }
-    .ajuste-linha > div { display: grid; gap: 2px; }
-    .ajuste-linha strong { font-size: .9rem; }
-    .ajuste-linha span { color: var(--texto-secundario); font-size: .78rem; }
-    .ajuste-linha .tema-botao { flex: 0 0 auto; width: auto; min-width: 104px; height: 42px; min-height: 42px; gap: 6px; padding: 0 12px; font-size: .85rem; }
-    .ajuste-linha .tema-botao span { color: inherit; font-size: inherit; }
-    .ajustes-secao .acoes { margin-top: 0; }
-    .ajustes-secao .nota { margin-top: 12px; }
-    .ajuste-controle { display: grid; grid-template-columns: 1fr; align-items: stretch; gap: 8px; }
-    .ajuste-controle select { min-height: 40px; border: 1px solid var(--borda); border-radius: 10px; padding: 0 10px; color: var(--texto); background: var(--superficie); }
-    .ajuste-controle input[type="range"] { width: 100%; accent-color: var(--primaria); }
-    .ajuste-controle output { color: var(--texto-secundario); }
-    .resumo-calculadora { width: 34px; min-width: 34px; height: 34px; min-height: 34px; padding: 6px; margin: -5px 0 4px auto; }
-    .resumo-calculadora svg { width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
-    .dialogo-calculadora { width: min(calc(100% - 28px), 340px); height: fit-content; max-height: 90dvh; border: 1px solid var(--borda); border-radius: 22px; padding: 0; }
-    .dialogo-calculadora .calculadora-corpo { height: auto; min-height: 0; }
-    .visor-calculadora { width: 100%; min-height: 52px; margin-bottom: 12px; padding: 8px 12px; border: 1px solid var(--borda); border-radius: 12px; color: var(--texto); background: var(--superficie-suave); text-align: right; font-size: 1.35rem; }
-    .teclas-calculadora { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
-    .teclas-calculadora button { min-height: 46px; border: 1px solid var(--borda); border-radius: 12px; color: var(--texto); background: var(--superficie-suave); font-size: 1rem; font-weight: 700; cursor: pointer; }
-    .teclas-calculadora .tecla-resultado { grid-column: 1 / -1; color: #fff; border-color: var(--primaria); background: var(--primaria); }
-
     @media (max-width: 420px) {
         .periodo { width: 100%; grid-template-columns: 34px 120px 68px auto 34px; gap: 4px; padding: 7px; }
         .periodo #mes, .periodo #ano { padding: 7px 4px; font-size: .82rem; }

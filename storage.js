@@ -1,64 +1,63 @@
-(function () {
-  const CHAVE = 'controle-financeiro-dados';
-  const memoria = new Map();
-
-  function disponivel() {
+function detectarArmazenamentoLocal() {
     try {
-      const teste = '__teste_storage__';
-      localStorage.setItem(teste, '1');
-      localStorage.removeItem(teste);
-      return true;
+        const teste = "__controle_financeiro_storage_test__";
+        globalThis.localStorage.setItem(teste, "1");
+        globalThis.localStorage.removeItem(teste);
+        return globalThis.localStorage;
     } catch {
-      return false;
+        return null;
     }
-  }
+}
 
-  const temStorage = disponivel();
+export function criarArmazenamento(local = detectarArmazenamentoLocal(), memoria = new Map()) {
+    return {
+        persistente: Boolean(local),
 
-  function ler() {
-    try {
-      if (!temStorage) return memoria.get(CHAVE) || null;
+        ler(chave) {
+            if (memoria.has(chave)) return memoria.get(chave);
+            try {
+                return local ? local.getItem(chave) : null;
+            } catch {
+                return memoria.get(chave) ?? null;
+            }
+        },
 
-      const bruto = localStorage.getItem(CHAVE);
-      return bruto ? JSON.parse(bruto) : null;
-    } catch (erro) {
-      console.error('Não foi possível ler os dados salvos.', erro);
-      return null;
-    }
-  }
+        escrever(chave, valor) {
+            try {
+                if (!local) throw new Error("armazenamento local indisponível");
+                local.setItem(chave, valor);
+                memoria.delete(chave);
+                return true;
+            } catch {
+                memoria.set(chave, valor);
+                return false;
+            }
+        },
 
-  function salvar(dados) {
-    try {
-      const serializado = JSON.stringify(dados);
+        remover(chave) {
+            try {
+                if (local) local.removeItem(chave);
+            } catch { /* remove também da cópia temporária */ }
+            memoria.delete(chave);
+        },
 
-      if (temStorage) {
-        localStorage.setItem(CHAVE, serializado);
-      } else {
-        memoria.set(CHAVE, dados);
-      }
+        lerJson(chave) {
+            try {
+                const valor = this.ler(chave);
+                return valor === null ? null : JSON.parse(valor);
+            } catch {
+                return null;
+            }
+        },
 
-      return true;
-    } catch (erro) {
-      console.error('Não foi possível salvar os dados.', erro);
-      return false;
-    }
-  }
+        escreverJson(chave, valor) {
+            try {
+                return this.escrever(chave, JSON.stringify(valor));
+            } catch {
+                return false;
+            }
+        }
+    };
+}
 
-  function limpar() {
-    try {
-      if (temStorage) localStorage.removeItem(CHAVE);
-      memoria.delete(CHAVE);
-      return true;
-    } catch (erro) {
-      console.error('Não foi possível limpar os dados.', erro);
-      return false;
-    }
-  }
-
-  window.ControleFinanceiroStorage = {
-    ler,
-    salvar,
-    limpar,
-    temStorage
-  };
-})();
+export const storage = criarArmazenamento();

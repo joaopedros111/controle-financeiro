@@ -1,4 +1,5 @@
-"use strict";
+import { storage } from "./storage.js";
+import { CATEGORIAS_PADRAO, CATEGORIA_FIXA, normalizarEstado as normalizarEstadoCore, validarBackup, migrarDadosLegados, calcularExpressao, somarCentavos, escaparCelulaCsv } from "./finance-core.js";
 
 
 
@@ -13,6 +14,7 @@
 
 
 const CHAVE_ESTADO = "controleFinanceiro:v2";
+const CHAVE_ESTADO_STORAGE_ANTIGO = "controle-financeiro-dados";
 
 const PREFIXO_LEGADO = "controleFinanceiro-"; // versão antiga: um item por mês
 
@@ -25,34 +27,6 @@ const MESES = [
     "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"
 
 ];
-
-
-
-const CATEGORIAS_PADRAO = [
-
-    "Moradia",
-
-    "Alimentação",
-
-    "Transporte",
-
-    "Contas",
-
-    "Assinaturas",
-
-    "Lazer",
-
-    "Saúde",
-
-    "Educação",
-
-    "Outros"
-
-];
-
-
-
-const CATEGORIA_FIXA = "Outros"; // não pode ser removida nem renomeada
 
 
 
@@ -391,257 +365,26 @@ function chaveMes(ano, mes) {
 
 
 
-function objetosValidos(lista) {
-
-    return (Array.isArray(lista) ? lista : [])
-
-        .filter((item) => item && typeof item === "object");
-
-}
-
-
-
 function normalizarEstado(bruto) {
-
-    const estado = {
-
-        versao: 2,
-
-        tema: null,
-
-        categorias: [],
-
-        meses: {}
-
-    };
-
-
-
-    if (bruto && typeof bruto === "object") {
-
-
-
-        if (bruto.tema === "claro" || bruto.tema === "escuro" || bruto.tema === "rosa") {
-
-            estado.tema = bruto.tema;
-
-        }
-
-
-
-        (Array.isArray(bruto.categorias) ? bruto.categorias : []).forEach((c) => {
-
-            if (typeof c !== "string") return;
-
-            const nome = c.trim();
-
-            if (nome && !estado.categorias.includes(nome)) {
-
-                estado.categorias.push(nome);
-
-            }
-
-        });
-
-
-
-        const meses = bruto.meses && typeof bruto.meses === "object" ? bruto.meses : {};
-
-
-
-        Object.entries(meses).forEach(([chave, mes]) => {
-
-
-
-            if (!/^\d{4}-\d{2}$/.test(chave) || !mes || typeof mes !== "object") {
-
-                return;
-
-            }
-
-
-
-            estado.meses[chave] = {
-
-                receitas: objetosValidos(mes.receitas).map((r) => ({
-
-                    id: String(r.id || uid()),
-
-                    nome: String(r.nome || ""),
-
-                    valor: Math.max(0, numero(r.valor))
-
-                })),
-
-                despesas: objetosValidos(mes.despesas).map((d) => {
-
-
-
-                    const atual = Number(d.parcela && d.parcela.atual);
-
-                    const total = Number(d.parcela && d.parcela.total);
-
-                    const parcelaValida = Number.isInteger(atual) && Number.isInteger(total)
-
-                        && atual >= 1 && total >= 2 && atual <= total;
-
-
-
-                    return {
-
-                        id: String(d.id || uid()),
-
-                        nome: String(d.nome || ""),
-
-                        categoria: String(d.categoria || CATEGORIA_FIXA).trim() || CATEGORIA_FIXA,
-
-                        valor: Math.max(0, numero(d.valor)),
-
-                        pago: Boolean(d.pago),
-
-                        fixa: Boolean(d.fixa),
-
-                        serie: d.serie ? String(d.serie) : null,
-
-                        parcela: parcelaValida ? { atual, total } : null
-
-                    };
-
-                })
-
-            };
-
-        });
-
-    }
-
-
-
-    if (!estado.categorias.length) {
-
-        estado.categorias = [...CATEGORIAS_PADRAO];
-
-    }
-
-
-
-    if (!estado.categorias.includes(CATEGORIA_FIXA)) {
-
-        estado.categorias.push(CATEGORIA_FIXA);
-
-    }
-
-
-
-    // Garante que toda categoria usada em uma despesa exista na lista
-
-    Object.values(estado.meses).forEach((mes) => {
-
-        mes.despesas.forEach((d) => {
-
-            if (!estado.categorias.includes(d.categoria)) {
-
-                estado.categorias.push(d.categoria);
-
-            }
-
-        });
-
-    });
-
-
-
-    return estado;
-
+    return normalizarEstadoCore(bruto, uid);
 }
 
+let migracaoLegadaPendente = false;
+let dadosStorageAntigoPendentes = false;
+let avisoArmazenamentoTemporarioExibido = false;
 
-
-// Converte os dados da versão antiga (uma chave por mês) para o formato novo.
-
+// O formato legado não guardava o ano; mantém a associação ao ano atual.
 function migrarLegado() {
-
-
-
-    const ano = new Date().getFullYear();
-
-    const bruto = { categorias: [], meses: {} };
-
-    let achou = false;
-
-
-
-    for (let m = 1; m <= 12; m++) {
-
-
-
-        let texto = null;
-
-
-
-        try {
-
-            texto = localStorage.getItem(PREFIXO_LEGADO + m);
-
-        } catch (erro) {
-
-            return null;
-
-        }
-
-
-
+    const registrosPorMes = {};
+    for (let mes = 1; mes <= 12; mes += 1) {
+        const texto = storage.ler(PREFIXO_LEGADO + mes);
         if (!texto) continue;
-
-
-
-        try {
-
-            const dados = JSON.parse(texto);
-
-            const renda = numero(dados.renda);
-
-
-
-            (Array.isArray(dados.categorias) ? dados.categorias : []).forEach((c) => {
-
-                if (!bruto.categorias.includes(c)) bruto.categorias.push(c);
-
-            });
-
-
-
-            bruto.meses[chaveMes(ano, m)] = {
-
-                receitas: renda > 0
-
-                    ? [{ nome: "Renda mensal", valor: renda }]
-
-                    : [],
-
-                despesas: objetosValidos(dados.despesas)
-
-            };
-
-
-
-            achou = true;
-
-        } catch (erro) {
-
-            // item corrompido: ignora
-
-        }
-
+        try { registrosPorMes[mes] = JSON.parse(texto); } catch (_) { /* ignora mês legado corrompido */ }
     }
-
-
-
-    return achou ? bruto : null;
-
+    const legado = migrarDadosLegados(registrosPorMes, new Date().getFullYear());
+    if (legado) migracaoLegadaPendente = true;
+    return legado;
 }
-
-
 
 function carregarEstado() {
 
@@ -649,14 +392,20 @@ function carregarEstado() {
 
     try {
 
-        const texto = localStorage.getItem(CHAVE_ESTADO);
+        const salvo = storage.lerJson(CHAVE_ESTADO);
 
 
 
-        if (texto) {
+        if (salvo) {
 
-            return normalizarEstado(JSON.parse(texto));
+            return normalizarEstado(salvo);
 
+        }
+
+        const storageAntigo = storage.lerJson(CHAVE_ESTADO_STORAGE_ANTIGO);
+        if (storageAntigo && typeof storageAntigo === "object" && storageAntigo.meses) {
+            dadosStorageAntigoPendentes = true;
+            return normalizarEstado(storageAntigo);
         }
 
 
@@ -720,15 +469,17 @@ function estadoParaSalvar() {
 function salvar() {
 
     try {
-
-        localStorage.setItem(CHAVE_ESTADO, JSON.stringify(estadoParaSalvar()));
-
+        if (!storage.escreverJson(CHAVE_ESTADO, estadoParaSalvar())) avisarArmazenamentoTemporario();
     } catch (erro) {
-
-        avisar("Não foi possível salvar. O armazenamento do navegador pode estar bloqueado ou cheio.");
-
+        avisar("Não foi possível salvar os dados neste dispositivo.");
     }
 
+}
+
+function avisarArmazenamentoTemporario() {
+    if (avisoArmazenamentoTemporarioExibido) return;
+    avisoArmazenamentoTemporarioExibido = true;
+    avisar("O armazenamento persistente está indisponível. Os dados podem se perder ao fechar o app.");
 }
 
 
@@ -1109,8 +860,7 @@ function corDaCategoria(nome) {
 
 
 function somar(lista) {
-
-    return lista.reduce((soma, item) => soma + numero(item.valor), 0);
+    return somarCentavos(lista.map((item) => numero(item.valor))) / 100;
 
 }
 
@@ -1128,15 +878,14 @@ function atualizarResumo() {
 
 
 
-    const receita = somar(mes.receitas);
-
-    const despesa = somar(mes.despesas);
-
-    const pago = somar(mes.despesas.filter((d) => d.pago));
-
-    const pendente = despesa - pago;
-
-    const saldo = receita - despesa;
+    const receitaCentavos = somarCentavos(mes.receitas.map((r) => numero(r.valor)));
+    const despesaCentavos = somarCentavos(mes.despesas.map((d) => numero(d.valor)));
+    const pagoCentavos = somarCentavos(mes.despesas.filter((d) => d.pago).map((d) => numero(d.valor)));
+    const receita = receitaCentavos / 100;
+    const despesa = despesaCentavos / 100;
+    const pago = pagoCentavos / 100;
+    const pendente = (despesaCentavos - pagoCentavos) / 100;
+    const saldo = (receitaCentavos - despesaCentavos) / 100;
 
 
 
@@ -1279,13 +1028,13 @@ function renderGraficoCategorias() {
     const legenda = $("legenda-grafico-categorias");
     if (!rosquinha || !legenda) return;
 
-    const totais = {};
+    const totaisCentavos = {};
     obterMes().despesas.forEach((despesa) => {
-        const valor = numero(despesa.valor);
-        if (valor > 0) totais[despesa.categoria] = (totais[despesa.categoria] || 0) + valor;
+        const valor = Math.round(numero(despesa.valor) * 100);
+        if (valor > 0) totaisCentavos[despesa.categoria] = (totaisCentavos[despesa.categoria] || 0) + valor;
     });
-    const itens = Object.entries(totais).sort((a, b) => b[1] - a[1]);
-    const total = itens.reduce((soma, [, valor]) => soma + valor, 0);
+    const itens = Object.entries(totaisCentavos).map(([nome, centavos]) => [nome, centavos / 100]).sort((a, b) => b[1] - a[1]);
+    const total = itens.reduce((soma, [, valor]) => soma + Math.round(valor * 100), 0) / 100;
     const nomeMes = MESES[periodo.mes - 1] + " de " + periodo.ano;
     $("periodo-grafico-categorias").textContent = nomeMes;
     $("total-grafico-categorias").textContent = formatarMoeda(total);
@@ -1512,7 +1261,7 @@ function salvarReceita() {
 
 
     const valorDigitado = ui.receitaValor.value.trim();
-    const valor = Number(valorDigitado);
+    const valor = Math.round(Number(valorDigitado) * 100) / 100;
 
     if (!valorDigitado || !Number.isFinite(valor) || valor <= 0) {
         avisar("Informe um valor maior que zero para a entrada.");
@@ -1936,7 +1685,7 @@ function salvarDespesa() {
 
 
     const valorDigitado = ui.despesaValor.value.trim();
-    const valor = Number(valorDigitado);
+    const valor = Math.round(Number(valorDigitado) * 100) / 100;
 
     if (!valorDigitado || !Number.isFinite(valor) || valor <= 0) {
         avisar("Informe um valor maior que zero para a despesa.");
@@ -2883,30 +2632,6 @@ function baixarArquivo(conteudo, nome, tipo) {
 
 
 
-function celulaCsv(valor) {
-
-
-
-    let texto = String(valor);
-
-
-
-    // evita que o Excel interprete o texto como fórmula
-
-    if (/^[=+\-@]/.test(texto)) {
-
-        texto = "'" + texto;
-
-    }
-
-
-
-    return '"' + texto.replace(/"/g, '""') + '"';
-
-}
-
-
-
 function numeroCsv(valor) {
 
     return numero(valor).toFixed(2).replace(".", ",");
@@ -2963,7 +2688,7 @@ function exportarCsv() {
 
     const csv = linhas
 
-        .map((linha) => linha.map(celulaCsv).join(";"))
+        .map((linha) => linha.map(escaparCelulaCsv).join(";"))
 
         .join("\r\n");
 
@@ -2991,7 +2716,8 @@ function exportarBackup() {
 
 
 
-    const hoje = new Date().toISOString().slice(0, 10);
+    const agoraLocal = new Date();
+    const hoje = [agoraLocal.getFullYear(), String(agoraLocal.getMonth() + 1).padStart(2, "0"), String(agoraLocal.getDate()).padStart(2, "0")].join("-");
 
 
 
@@ -3039,29 +2765,7 @@ function importarBackup(arquivo) {
 
 
 
-            if (
-                !bruto ||
-                typeof bruto !== "object" ||
-                Array.isArray(bruto) ||
-                !bruto.meses ||
-                typeof bruto.meses !== "object" ||
-                Array.isArray(bruto.meses)
-            ) {
-                throw new Error("formato inválido");
-            }
-
-            const mesesValidos = Object.entries(bruto.meses).every(([chave, mes]) =>
-                /^\d{4}-(0[1-9]|1[0-2])$/.test(chave) &&
-                mes &&
-                typeof mes === "object" &&
-                !Array.isArray(mes) &&
-                (mes.receitas === undefined || Array.isArray(mes.receitas)) &&
-                (mes.despesas === undefined || Array.isArray(mes.despesas))
-            );
-
-            if (!mesesValidos) {
-                throw new Error("estrutura de meses inválida");
-            }
+            if (!validarBackup(bruto)) throw new Error("estrutura do backup inválida");
 
             novo = normalizarEstado(bruto);
 
@@ -3138,11 +2842,17 @@ ui.arquivoBackup.addEventListener("change", () => {
 const CHAVE_PREFERENCIAS_MENU = "controleFinanceiro:preferencias-menu";
 let preferenciasMenu = { posicao: "centro", transparencia: 45, x: null, y: null };
 try {
-    const salvas = JSON.parse(localStorage.getItem(CHAVE_PREFERENCIAS_MENU) || "null");
+    const salvas = storage.lerJson(CHAVE_PREFERENCIAS_MENU);
     if (salvas && typeof salvas === "object") preferenciasMenu = { ...preferenciasMenu, ...salvas };
 } catch (_) { /* usa os padrões */ }
+if (!["centro", "direita", "esquerda", "arrastavel"].includes(preferenciasMenu.posicao)) preferenciasMenu.posicao = "centro";
+preferenciasMenu.transparencia = Math.max(20, Math.min(80, Number(preferenciasMenu.transparencia) || 45));
+if (!Number.isFinite(preferenciasMenu.x) || !Number.isFinite(preferenciasMenu.y)) {
+    preferenciasMenu.x = null;
+    preferenciasMenu.y = null;
+}
 function salvarPreferenciasMenu() {
-    localStorage.setItem(CHAVE_PREFERENCIAS_MENU, JSON.stringify(preferenciasMenu));
+    if (!storage.escreverJson(CHAVE_PREFERENCIAS_MENU, preferenciasMenu)) avisarArmazenamentoTemporario();
 }
 function aplicarPreferenciasMenu() {
     document.body.dataset.posicaoMenu = preferenciasMenu.posicao;
@@ -3209,6 +2919,14 @@ ui.abrirAjustes.addEventListener("pointermove", (evento) => {
     preferenciasMenu.x = x;
     preferenciasMenu.y = y;
 });
+window.addEventListener("resize", () => {
+    if (preferenciasMenu.posicao !== "arrastavel" || !Number.isFinite(preferenciasMenu.x) || !Number.isFinite(preferenciasMenu.y)) return;
+    const margem = 8;
+    preferenciasMenu.x = Math.min(Math.max(margem, window.innerWidth - ui.abrirAjustes.offsetWidth - margem), preferenciasMenu.x);
+    preferenciasMenu.y = Math.min(Math.max(margem, window.innerHeight - ui.abrirAjustes.offsetHeight - margem), preferenciasMenu.y);
+    aplicarPreferenciasMenu();
+    salvarPreferenciasMenu();
+});
 const encerrarArrastoMenu = () => {
     arrastoMenuEmCurso = false;
     if (menuFoiArrastado) salvarPreferenciasMenu();
@@ -3234,11 +2952,8 @@ document.querySelectorAll("[data-calculadora]").forEach((tecla) => {
 });
 $("limpar-calculadora").addEventListener("click", () => { ui.visorCalculadora.value = ""; });
 $("calcular-resultado").addEventListener("click", () => {
-    const expressao = ui.visorCalculadora.value.replace(/,/g, ".").replace(/[^\d.+*/()\-\s]/g, "");
-    if (!expressao.trim()) return;
     try {
-        const resultado = Function("return (" + expressao + ")")();
-        if (!Number.isFinite(resultado)) throw new Error("resultado inválido");
+        const resultado = calcularExpressao(ui.visorCalculadora.value);
         ui.visorCalculadora.value = String(Number(resultado.toFixed(10))).replace(".", ",");
     } catch (_) {
         ui.visorCalculadora.setCustomValidity("Expressão inválida");
@@ -3269,7 +2984,24 @@ ui.atualizarApp.addEventListener("click", async () => {
         if (!registro) throw new Error("O app ainda não está pronto para atualização.");
 
         await registro.update();
-        const worker = navigator.serviceWorker.controller || registro.active;
+        const atualizando = registro.installing;
+        if (atualizando && atualizando.state !== "activated") {
+            await new Promise((resolve, reject) => {
+                const temporizador = setTimeout(() => reject(new Error("A instalação da atualização demorou demais.")), 30000);
+                const verificarEstado = () => {
+                    if (atualizando.state === "activated") {
+                        clearTimeout(temporizador);
+                        resolve();
+                    } else if (atualizando.state === "redundant") {
+                        clearTimeout(temporizador);
+                        reject(new Error("A instalação da atualização falhou."));
+                    }
+                };
+                atualizando.addEventListener("statechange", verificarEstado);
+                verificarEstado();
+            });
+        }
+        const worker = registro.active || navigator.serviceWorker.controller;
         if (!worker) throw new Error("Não foi possível acessar o atualizador do app.");
 
         const resposta = await new Promise((resolve, reject) => {
@@ -3327,3 +3059,14 @@ ui.tema.addEventListener("click", () => {
 
 
 renderTudo();
+
+const avisosInicializacao = [];
+if (migracaoLegadaPendente) {
+    avisosInicializacao.push("Dados antigos migrados para " + new Date().getFullYear() + "; confira os meses.");
+}
+if (dadosStorageAntigoPendentes) avisosInicializacao.push("Dados salvos em uma versão anterior do armazenamento foram migrados.");
+if (!storage.persistente || avisoArmazenamentoTemporarioExibido) {
+    avisoArmazenamentoTemporarioExibido = true;
+    avisosInicializacao.push("O armazenamento persistente está indisponível; os dados podem se perder ao fechar o app.");
+}
+if (avisosInicializacao.length) avisar(avisosInicializacao.join(" "));

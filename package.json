@@ -1,0 +1,12 @@
+{
+  "name": "controle-financeiro",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test",
+    "check": "node --check app.js && node --check finance-core.js && node --check storage.js && node --check sw.js"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

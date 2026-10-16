@@ -1,31 +1,43 @@
-# Controle Financeiro — versão reformulada
+# Controle Financeiro
+
+Aplicativo web responsivo e instalável para acompanhar entradas, despesas, categorias e pagamentos. Os dados ficam no navegador atual; não há sincronização entre dispositivos.
 
 ## Arquivos
-- `index.html`: estrutura e formulários.
-- `style.css`: identidade visual responsiva, temas claro/escuro, estados de foco e diálogos.
-- `app.js`: regras do aplicativo, cálculos e armazenamento local.
 
-## Instalação
-1. Faça uma cópia da pasta atual.
-2. Substitua os três arquivos pelos arquivos deste pacote.
-3. Abra `index.html` no navegador.
-4. Antes de substituir uma versão em uso, use **Ferramentas → Salvar backup** no aplicativo antigo.
+- `index.html`: estrutura da interface e formulários.
+- `style.css`: estilos responsivos e temas.
+- `controls.css`: estilos de opções, botão flutuante e calculadora.
+- `app.js`: inicialização e interação da interface.
+- `finance-core.js`: validação e normalização dos dados, cálculos em centavos e operações da calculadora.
+- `storage.js`: acesso ao armazenamento persistente e fallback temporário em memória.
+- `sw.js`: cache offline e atualização do app.
+- `manifest.json` e `icons/`: instalação e ícones do PWA.
+- `tests/`: testes automatizados da camada de dados, armazenamento e calculadora.
 
-## Recursos preservados
-- Entradas e despesas por mês/ano.
-- Edição e remoção de lançamentos, incluindo desfazer exclusão.
-- Marcação de despesas pagas/pendentes.
-- Categorias e resumo por categoria.
-- Despesas fixas e parceladas, propagação de alterações e remoção de séries.
-- Navegação entre meses, cópia do mês anterior e limpeza do mês.
-- Exportação CSV, backup JSON e restauração de backup.
-- Tema claro/escuro e armazenamento em `localStorage`.
+## Executar localmente
 
-## Mudanças
-- Layout com cartões, hierarquia visual mais clara e melhor leitura dos totais.
-- Ajustes para celular, foco visível no teclado e respeito à preferência por movimento reduzido.
-- Validação para não salvar entrada/despesa sem valor positivo.
-- Verificação mais rigorosa da estrutura do backup antes de substituir os dados locais.
+O service worker requer um contexto seguro. Para desenvolver localmente, inicie um servidor HTTP na pasta do projeto:
 
-## Importante
-Os dados ficam no armazenamento local do navegador e não são sincronizados automaticamente entre dispositivos. Faça backups regulares.
+```sh
+python -m http.server 8000
+```
+
+Abra `http://localhost:8000`. Para instalar o PWA em outros dispositivos, publique os arquivos em uma origem HTTPS.
+
+## Testes
+
+Requer Node.js 20 ou mais recente. Execute:
+
+```sh
+node --test
+```
+
+## Dados e migração
+
+Os dados são guardados no armazenamento local do navegador e não são sincronizados. Exporte backups regularmente e guarde-os fora do dispositivo. Se o armazenamento persistente estiver bloqueado ou cheio, o app avisa que os dados estão apenas na memória e podem se perder ao fechar.
+
+Na migração do formato antigo, os registros não continham ano; por isso, os meses são associados ao ano atual. Confira o período migrado e exporte um backup após a conversão.
+
+Uma despesa fixa gera lançamentos para 12 meses a partir do mês escolhido. Uma despesa parcelada gera no máximo 60 parcelas. Despesas fixas não se estendem automaticamente além desses 12 meses.
+
+Ao atualizar uma instalação existente, use **Salvar backup** antes de substituir os arquivos. Mantenha `manifest.json`, `sw.js`, os módulos JavaScript e a pasta `icons/` junto com a página.

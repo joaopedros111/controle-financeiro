@@ -22,6 +22,7 @@
     <meta name="apple-mobile-web-app-title" content="Finanças">
 
     <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="controls.css">
 </head>
 
 
@@ -341,7 +342,7 @@
 
                         <option value="unica">Não se repete</option>
 
-                        <option value="fixa">Fixa (todo mês)</option>
+                        <option value="fixa">Fixa (12 meses)</option>
 
                         <option value="parcelada">Parcelada</option>
 
@@ -521,7 +522,7 @@
 
 <div id="aviso" class="aviso" role="status" aria-live="polite"></div>
 
-<script src="app.js"></script>
+<script type="module" src="app.js"></script>
 <script>
     if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
