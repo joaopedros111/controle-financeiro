@@ -22,7 +22,9 @@ test("módulos e estilos usados pela página estão incluídos no cache offline"
         ...[...html.matchAll(/<link[^>]+href="([^"]+\.(?:css|json))"/g)].map((match) => match[1]),
         ...[...html.matchAll(/<script[^>]+src="([^"]+\.js)"/g)].map((match) => match[1]),
         "finance-core.js",
-        "storage.js"
+        "storage.js",
+        "update-manager.js",
+        "version.json"
     ].map((path) => path.startsWith("./") ? path : "./" + path);
     for (const arquivo of arquivos) {
         assert.ok(serviceWorker.includes(`"${arquivo}"`), `${arquivo} não consta no precache`);
@@ -42,8 +44,33 @@ test("controles das preferências incrementais têm implementação e cache atua
     assert.match(css, /graficos-ocultos/);
     assert.match(app, /preferenciasMenu\.ocultarAoIniciar/);
     assert.match(app, /preferenciasMenu\.ultimoPeriodo/);
-    assert.match(serviceWorker, /const CACHE = PREFIXO_CACHE \+ "v7"/);
+    assert.match(serviceWorker, /const CACHE = PREFIXO_CACHE \+ "v8"/);
     assert.equal((serviceWorker.match(/"\.\/preferences\.js"/g) || []).length, 1, "preferences.js deve ser precacheado uma vez");
+});
+
+test("versão instalada e publicada usam metadados semver relativos e não cacheados para verificação", async () => {
+    const [metadata, html, app, serviceWorker] = await Promise.all([
+        read("version.json"), read("index.html"), read("app.js"), read("sw.js")
+    ]);
+    const version = JSON.parse(metadata);
+    assert.equal(version.name, "Controle Financeiro");
+    assert.match(version.version, /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/);
+    for (const id of [
+        "versao-instalada", "versao-publicada", "data-verificacao-atualizacao",
+        "resultado-verificacao-atualizacao", "status-atualizacao"
+    ]) assert.ok(html.includes(`id="${id}"`), `${id} ausente`);
+    assert.match(app, /lerVersaoInstalada\(\)/);
+    assert.match(app, /lerVersaoPublicada\(\)/);
+    assert.match(app, /navigator\.serviceWorker\.getRegistration\(escopo\)/);
+    assert.match(app, /if \(verificacaoAtualizacaoAtiva\) return/);
+    assert.match(app, /botao\.disabled = true;[\s\S]*botao\.textContent = "Verificando…"/);
+    assert.match(app, /window\.confirm\([\s\S]*Versão instalada:[\s\S]*Versão disponível:/);
+    assert.match(app, /resultado === "cancelado"/);
+    assert.match(app, /instalarAtualizacao\(registro, navigator\.serviceWorker\)/);
+    assert.match(serviceWorker, /"\.\/version\.json"/);
+    assert.match(serviceWorker, /"\.\/update-manager\.js"/);
+    assert.match(serviceWorker, /searchParams\.has\("_verificacao"\)/);
+    assert.match(serviceWorker, /fetch\(requisicao, \{ cache: "no-store" \}\)/);
 });
 
 test("controle de tamanho é conectado e botões de opções contrastam com o fundo", async () => {

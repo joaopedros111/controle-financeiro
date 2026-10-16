@@ -99,6 +99,33 @@ test("preferências existentes permanecem intactas ao normalizar a tela inicial"
         ultimoPeriodo: "2026-09",
         escopoCsv: "todos"
     });
+
+    test("resultado de atualização persiste sem substituir outras preferências do menu", async () => {
+        const dados = new Map();
+        const local = {
+            getItem: (chave) => dados.get(chave) ?? null,
+            setItem: (chave, valor) => dados.set(chave, String(valor)),
+            removeItem: (chave) => dados.delete(chave)
+        };
+        const chave = "controleFinanceiro:preferencias-menu";
+        const antes = normalizarPreferenciasMenu({
+            tema: "floresta", densidade: "compacta", mostrarGraficos: false,
+            ocultarAoIniciar: true, telaInicial: "graficos",
+            ultimaVerificacao: "16/10/2026 16:00:00",
+            resultadoVerificacao: "Atualização disponível: 1.0.0 → 1.1.0.",
+            versaoPublicada: "1.1.0"
+        });
+        assert.equal(criarArmazenamento(local).escreverJson(chave, antes), true);
+
+        const depois = normalizarPreferenciasMenu(criarArmazenamento(local).lerJson(chave));
+        assert.equal(depois.densidade, "compacta");
+        assert.equal(depois.mostrarGraficos, false);
+        assert.equal(depois.ocultarAoIniciar, true);
+        assert.equal(depois.telaInicial, "graficos");
+        assert.equal(depois.ultimaVerificacao, "16/10/2026 16:00:00");
+        assert.equal(depois.resultadoVerificacao, "Atualização disponível: 1.0.0 → 1.1.0.");
+        assert.equal(depois.versaoPublicada, "1.1.0");
+    });
     assert.equal(preferencias.ocultarAoIniciar, true);
     assert.equal(preferencias.densidade, "compacta");
     assert.equal(preferencias.mostrarGraficos, false);

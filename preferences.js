@@ -4,7 +4,8 @@ const PADRAO = {
     ultimaTelaUtilizada: null,
     referenciaMes: "atual", ultimoPeriodo: null, ocultarAoIniciar: false,
     escopoCsv: "mes", ultimaOperacao: "Nenhum backup ou restauração registrado nesta instalação.",
-    ultimaVerificacao: "Não registrada."
+    ultimaVerificacao: "Não registrada.", resultadoVerificacao: "Não verificada.",
+    versaoPublicada: "Não verificada."
 };
 
 export function normalizarPreferenciasMenu(salvas) {
@@ -28,6 +29,9 @@ export function normalizarPreferenciasMenu(salvas) {
     if (!["mes", "todos"].includes(preferencias.escopoCsv)) preferencias.escopoCsv = PADRAO.escopoCsv;
     preferencias.mostrarGraficos = preferencias.mostrarGraficos !== false;
     preferencias.ocultarAoIniciar = preferencias.ocultarAoIniciar === true;
+    for (const chave of ["ultimaVerificacao", "resultadoVerificacao", "versaoPublicada"]) {
+        if (typeof preferencias[chave] !== "string") preferencias[chave] = PADRAO[chave];
+    }
     preferencias.x = Number.isFinite(preferencias.x) ? preferencias.x : null;
     preferencias.y = Number.isFinite(preferencias.y) ? preferencias.y : null;
     if (preferencias.referenciaMes !== "ultimo" || !/^\d{4}-(0[1-9]|1[0-2])$/.test(preferencias.ultimoPeriodo || "")) {

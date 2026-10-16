@@ -1,5 +1,5 @@
 const PREFIXO_CACHE = "controle-financeiro-pwa-cache-";
-const CACHE = PREFIXO_CACHE + "v7";
+const CACHE = PREFIXO_CACHE + "v8";
 const CACHE_ANTIGO = "controle-financeiro-v5";
 const ARQUIVOS = [
     "./",
@@ -10,6 +10,8 @@ const ARQUIVOS = [
     "./finance-core.js",
     "./preferences.js",
     "./storage.js",
+    "./update-manager.js",
+    "./version.json",
     "./manifest.json",
     "./icons/icon-192.png",
     "./icons/icon-512.png",
@@ -21,10 +23,7 @@ const urlEscopo = new URL(self.registration.scope);
 const urlsPrecache = new Set(ARQUIVOS.map((arquivo) => new URL(arquivo, urlEscopo).href));
 
 self.addEventListener("install", (event) => {
-    event.waitUntil(Promise.all([
-        caches.open(CACHE).then((cache) => cache.addAll(ARQUIVOS)),
-        self.skipWaiting()
-    ]));
+    event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(ARQUIVOS)));
 });
 
 self.addEventListener("activate", (event) => {
@@ -38,24 +37,7 @@ self.addEventListener("activate", (event) => {
 });
 
 self.addEventListener("message", (event) => {
-    if (event.data?.tipo !== "ATUALIZAR_ARQUIVOS" || !event.ports?.[0]) return;
-    event.waitUntil((async () => {
-        const cache = await caches.open(CACHE);
-        const atualizados = [];
-        const falhas = [];
-        await Promise.all(ARQUIVOS.map(async (arquivo) => {
-            const url = new URL(arquivo, urlEscopo);
-            try {
-                const resposta = await fetch(url, { cache: "no-store" });
-                if (!resposta.ok || resposta.type === "opaque") throw new Error("Resposta inválida");
-                await cache.put(url.href, resposta.clone());
-                atualizados.push(arquivo);
-            } catch {
-                falhas.push(arquivo);
-            }
-        }));
-        event.ports[0].postMessage({ ok: falhas.length === 0, arquivos: atualizados, falhas });
-    })());
+    if (event.data?.tipo === "ATIVAR_ATUALIZACAO") event.waitUntil(self.skipWaiting());
 });
 
 self.addEventListener("fetch", (event) => {
@@ -66,6 +48,9 @@ self.addEventListener("fetch", (event) => {
     if (url.origin !== urlEscopo.origin || !url.pathname.startsWith(urlEscopo.pathname)) return;
 
     event.respondWith((async () => {
+        if (url.pathname === new URL("./version.json", urlEscopo).pathname && url.searchParams.has("_verificacao")) {
+            return fetch(requisicao, { cache: "no-store" });
+        }
         const cache = await caches.open(CACHE);
         const armazenada = await cache.match(requisicao);
         if (armazenada) return armazenada;

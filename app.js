@@ -1,6 +1,7 @@
 import { storage } from "./storage.js";
 import { CATEGORIAS_PADRAO, CATEGORIA_FIXA, normalizarEstado as normalizarEstadoCore, validarBackup, migrarDadosLegados, calcularExpressao, somarCentavos, gerarCsv, calcularOrcamentosPorCategoria, ordenarOrcamentosComGastos, renomearCategoriaOrcamentos, removerCategoriaOrcamentos } from "./finance-core.js";
 import { apresentarValorFinanceiro, normalizarPreferenciasMenu, resolverTelaInicial } from "./preferences.js";
+import { instalarAtualizacao, lerVersaoInstalada, lerVersaoPublicada, verificarComConfirmacao } from "./update-manager.js";
 
 
 
@@ -67,6 +68,11 @@ const ui = {
     diagnosticoDados: $("diagnostico-dados"),
     ultimaOperacaoDados: $("ultima-operacao-dados"),
     diagnosticoApp: $("diagnostico-app"),
+    versaoInstalada: $("versao-instalada"),
+    versaoPublicada: $("versao-publicada"),
+    dataVerificacaoAtualizacao: $("data-verificacao-atualizacao"),
+    resultadoVerificacaoAtualizacao: $("resultado-verificacao-atualizacao"),
+    statusAtualizacao: $("status-atualizacao"),
     gerenciarOrcamentos: $("gerenciar-orcamentos"),
     dialogoOrcamentos: $("dialogo-orcamentos"),
     fecharOrcamentos: $("fechar-orcamentos"),
@@ -2950,6 +2956,9 @@ ui.arquivoBackup.addEventListener("change", () => {
 const CHAVE_PREFERENCIAS_MENU = "controleFinanceiro:preferencias-menu";
 let preferenciasMenu = normalizarPreferenciasMenu(null);
 let rastreamentoTelaAtivo = false;
+let versaoInstalada = "Consultando…";
+let estadoServiceWorker = "Estado do Service Worker ainda não consultado.";
+let verificacaoAtualizacaoAtiva = false;
 try {
     preferenciasMenu = normalizarPreferenciasMenu(storage.lerJson(CHAVE_PREFERENCIAS_MENU));
 } catch (_) { /* usa os padrões */ }
@@ -2977,7 +2986,53 @@ function atualizarDiagnostico() {
         : "Armazenamento em memória: os dados podem se perder ao recarregar ou fechar o app.";
     ui.diagnosticoDados.textContent = `${receitas + despesas} lançamentos (${receitas} receitas, ${despesas} despesas) · ${categorias} categorias · ${armazenamento}`;
     ui.ultimaOperacaoDados.textContent = preferenciasMenu.ultimaOperacao;
-    ui.diagnosticoApp.textContent = `Armazenamento: ${storage.persistente ? "persistente disponível" : "somente memória"}. Última verificação de atualização: ${preferenciasMenu.ultimaVerificacao}`;
+    ui.versaoInstalada.textContent = versaoInstalada;
+    ui.versaoPublicada.textContent = preferenciasMenu.versaoPublicada;
+    ui.dataVerificacaoAtualizacao.textContent = preferenciasMenu.ultimaVerificacao;
+    ui.resultadoVerificacaoAtualizacao.textContent = preferenciasMenu.resultadoVerificacao;
+    ui.diagnosticoApp.textContent = `${estadoServiceWorker} Armazenamento: ${storage.persistente ? "persistente disponível." : "somente memória; os dados podem se perder ao recarregar ou fechar o app."}`;
+}
+
+async function atualizarEstadoServiceWorker() {
+    if (!("serviceWorker" in navigator)) {
+        estadoServiceWorker = "Service Worker não é suportado neste navegador.";
+        atualizarDiagnostico();
+        return null;
+    }
+    try {
+        const escopo = new URL("./", import.meta.url).href;
+        const registro = await navigator.serviceWorker.getRegistration(escopo);
+        if (!registro) estadoServiceWorker = "Service Worker ainda não registrado.";
+        else if (registro.waiting) estadoServiceWorker = "Nova instalação do Service Worker aguardando confirmação.";
+        else if (registro.installing) estadoServiceWorker = `Service Worker instalando (${registro.installing.state}).`;
+        else if (registro.active) estadoServiceWorker = `Service Worker ativo (${registro.active.state}); ${navigator.serviceWorker.controller ? "controlando esta página." : "a página ainda não está sob controle."}`;
+        else estadoServiceWorker = "Registro do Service Worker sem worker ativo.";
+        atualizarDiagnostico();
+        return registro;
+    } catch (erro) {
+        estadoServiceWorker = `Não foi possível consultar o Service Worker: ${erro.message || "erro desconhecido"}.`;
+        atualizarDiagnostico();
+        throw erro;
+    }
+}
+
+async function carregarVersaoInstalada() {
+    try {
+        const metadados = await lerVersaoInstalada();
+        versaoInstalada = metadados.version;
+        atualizarDiagnostico();
+    } catch (erro) {
+        versaoInstalada = "Indisponível";
+        ui.statusAtualizacao.textContent = `Não foi possível carregar os metadados da versão instalada: ${erro.message || "erro desconhecido"}.`;
+        atualizarDiagnostico();
+    }
+}
+
+function registrarResultadoVerificacao(resultado, versaoPublicada = preferenciasMenu.versaoPublicada) {
+    preferenciasMenu.ultimaVerificacao = new Date().toLocaleString("pt-BR");
+    preferenciasMenu.resultadoVerificacao = resultado;
+    preferenciasMenu.versaoPublicada = versaoPublicada;
+    salvarPreferenciasMenu();
 }
 function aplicarPrivacidade() {
     document.body.classList.toggle("valores-ocultos", valoresOcultos);
@@ -3194,65 +3249,62 @@ ui.alternarVisibilidadeResumo.addEventListener("click", () => {
 });
 ui.alternarValores.addEventListener("click", () => { valoresOcultos = !valoresOcultos; renderTudo(false); });
 ui.atualizarApp.addEventListener("click", async () => {
-    if (!("serviceWorker" in navigator) || !navigator.onLine) {
-        avisar("Conecte-se à internet para verificar atualizações.");
-        return;
-    }
-
+    if (verificacaoAtualizacaoAtiva) return;
+    verificacaoAtualizacaoAtiva = true;
     const botao = ui.atualizarApp;
     const textoOriginal = botao.textContent;
     botao.disabled = true;
     botao.textContent = "Verificando…";
+    ui.statusAtualizacao.textContent = "Consultando a versão publicada e o estado do Service Worker…";
 
     try {
-        const registro = await navigator.serviceWorker.getRegistration();
-        if (!registro) throw new Error("O app ainda não está pronto para atualização.");
+        if (!navigator.onLine) throw new Error("Você está offline; não foi possível verificar a versão publicada.");
 
-        await registro.update();
-        const atualizando = registro.installing;
-        if (atualizando && atualizando.state !== "activated") {
-            await new Promise((resolve, reject) => {
-                const temporizador = setTimeout(() => reject(new Error("A instalação da atualização demorou demais.")), 30000);
-                const verificarEstado = () => {
-                    if (atualizando.state === "activated") {
-                        clearTimeout(temporizador);
-                        resolve();
-                    } else if (atualizando.state === "redundant") {
-                        clearTimeout(temporizador);
-                        reject(new Error("A instalação da atualização falhou."));
-                    }
-                };
-                atualizando.addEventListener("statechange", verificarEstado);
-                verificarEstado();
-            });
-        }
-        const worker = registro.active || navigator.serviceWorker.controller;
-        if (!worker) throw new Error("Não foi possível acessar o atualizador do app.");
-
-        const resposta = await new Promise((resolve, reject) => {
-            const canal = new MessageChannel();
-            const temporizador = setTimeout(() => reject(new Error("A atualização demorou demais. Tente novamente.")), 30000);
-            canal.port1.onmessage = (evento) => {
-                clearTimeout(temporizador);
-                resolve(evento.data);
-            };
-            worker.postMessage({ tipo: "ATUALIZAR_ARQUIVOS" }, [canal.port2]);
+        const [instalada, publicada] = await Promise.all([
+            lerVersaoInstalada(),
+            lerVersaoPublicada()
+        ]);
+        versaoInstalada = instalada.version;
+        const resultado = await verificarComConfirmacao({
+            instalada: instalada.version,
+            publicada: publicada.version,
+            confirmar: (versaoAtual, versaoNova) => {
+                registrarResultadoVerificacao(`Atualização disponível: ${versaoAtual} → ${versaoNova}.`, publicada.version);
+                return window.confirm(
+                    `Uma nova versão do Controle Financeiro está disponível.\n\nVersão instalada: ${versaoAtual}\nVersão disponível: ${versaoNova}\n\nDeseja atualizar agora?`
+                );
+            },
+            atualizar: async () => {
+                if (!("serviceWorker" in navigator)) throw new Error("Este navegador não oferece atualização por Service Worker.");
+                const escopo = new URL("./", import.meta.url).href;
+                const registro = await navigator.serviceWorker.getRegistration(escopo);
+                if (!registro) throw new Error("O Service Worker deste aplicativo ainda não foi registrado.");
+                await instalarAtualizacao(registro, navigator.serviceWorker);
+                estadoServiceWorker = "Nova versão instalada e controlando esta página.";
+                registrarResultadoVerificacao(`Atualizado para a versão ${publicada.version}.`, publicada.version);
+                ui.statusAtualizacao.textContent = `Versão ${publicada.version} instalada. Reabrindo o aplicativo…`;
+                window.location.reload();
+            }
         });
 
-        if (!resposta?.ok || !resposta.arquivos?.includes("./index.html") || !resposta.arquivos?.includes("./app.js")) {
-            throw new Error("Não foi possível baixar a versão mais recente. Tente novamente.");
+        if (resultado === "cancelado") {
+            registrarResultadoVerificacao(`Atualização ${publicada.version} disponível; atualização adiada pelo usuário.`, publicada.version);
+            ui.statusAtualizacao.textContent = `Versão ${publicada.version} disponível. Você pode verificar novamente quando quiser.`;
+            return;
         }
 
-        preferenciasMenu.ultimaVerificacao = "Concluída em " + new Date().toLocaleString("pt-BR") + ".";
-        salvarPreferenciasMenu();
-        avisar("App atualizado. Reabrindo…");
-        setTimeout(() => window.location.reload(), 500);
+        if (resultado === "atualizado") {
+            const registro = await atualizarEstadoServiceWorker();
+            if (registro) await registro.update();
+            await atualizarEstadoServiceWorker();
+            registrarResultadoVerificacao(`Aplicativo atualizado na versão ${instalada.version}.`, publicada.version);
+            ui.statusAtualizacao.textContent = `O aplicativo já está atualizado na versão ${instalada.version}.`;
+        }
     } catch (erro) {
-        preferenciasMenu.ultimaVerificacao = "Falhou em " + new Date().toLocaleString("pt-BR") + ": " + (erro.message || "erro não identificado");
-        salvarPreferenciasMenu();
-        atualizarDiagnostico();
-        avisar(erro.message || "Não foi possível verificar atualizações.");
+        registrarResultadoVerificacao(`Falha na verificação: ${erro.message || "erro desconhecido"}.`);
+        ui.statusAtualizacao.textContent = `Não foi possível concluir a verificação. ${erro.message || "Tente novamente quando houver conexão."}`;
     } finally {
+        verificacaoAtualizacaoAtiva = false;
         botao.disabled = false;
         botao.textContent = textoOriginal;
     }
@@ -3299,6 +3351,19 @@ requestAnimationFrame(() => {
     rastreamentoTelaAtivo = true;
     registrarUltimaTela(telaInicialAplicada);
 });
+carregarVersaoInstalada();
+if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.addEventListener("controllerchange", () => {
+        estadoServiceWorker = "Service Worker ativo e controlando esta página.";
+        atualizarDiagnostico();
+    });
+    navigator.serviceWorker.ready
+        .then(atualizarEstadoServiceWorker)
+        .catch((erro) => {
+            estadoServiceWorker = `Não foi possível consultar o Service Worker: ${erro.message || "erro desconhecido"}.`;
+            atualizarDiagnostico();
+        });
+}
 window.addEventListener("scroll", () => {
     if (quadroRastreamentoTela !== null) return;
     quadroRastreamentoTela = requestAnimationFrame(() => {
