@@ -60,11 +60,16 @@
     body.valores-ocultos .orcamento-progresso { visibility: hidden; }
     .orcamento-vazio { margin-top: 8px; }
     #dialogo-orcamentos { width: min(calc(100% - 28px), 680px); max-height: 88dvh; }
-    #dialogo-orcamentos .dialogo-corpo { height: auto; min-height: 0; }
+    #dialogo-orcamentos .orcamentos-dialogo-corpo { height: auto; min-height: 0; }
     #dialogo-orcamentos .bloco-topo { align-items: flex-start; }
     #dialogo-orcamentos .bloco-topo h2 { margin-bottom: 4px; }
     #dialogo-orcamentos .bloco-topo .nota { margin: 0; }
     .lista-orcamentos { display: grid; gap: 12px; max-height: 58dvh; margin-top: 16px; overflow: auto; padding: 2px; }
+    .orcamento-categorias { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--borda); }
+    .orcamento-categorias h3 { margin: 0 0 4px; font-size: .95rem; }
+    .orcamento-categorias > .nota { margin: 0 0 10px; }
+    .orcamento-categorias .lista-categorias { max-height: 32dvh; overflow: auto; }
+    .orcamento-categorias .nova-categoria { padding-top: 12px; }
     .orcamento-edicao { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 14px; min-width: 0; padding: 12px; border: 1px solid var(--borda); border-radius: 14px; }
     .orcamento-edicao legend { padding: 0 6px; font-weight: 750; }
     .orcamento-campo { display: grid; gap: 5px; min-width: 0; color: var(--texto-secundario); font-size: .77rem; }

@@ -1018,9 +1018,9 @@ body[data-densidade="confortavel"] .receita { padding-top: 16px; padding-bottom:
     dialog .acoes-dialogo { margin-top: 24px; padding-top: 18px; gap: 12px; }
     dialog .acoes-dialogo .btn { min-height: 48px; border-radius: 14px; }
     dialog .campo-check { min-height: 48px; padding: 8px 12px; border: 1px solid var(--borda); border-radius: 14px; background: var(--fundo); }
-    dialog .lista-categorias { max-height: min(48dvh, 420px); overflow: auto; padding: 2px; }
+    dialog .lista-categorias { max-height: min(32dvh, 300px); overflow: auto; padding: 2px; }
     dialog .lista-categorias > li { border-radius: 14px; }
-    dialog .nova-categoria { position: sticky; bottom: -24px; padding: 16px 0 0; background: var(--superficie); }
+    dialog .nova-categoria { padding: 16px 0 0; background: var(--superficie); }
 
     @media (max-width: 600px) {
         dialog {
@@ -1039,14 +1039,14 @@ body[data-densidade="confortavel"] .receita { padding-top: 16px; padding-bottom:
         dialog .dialogo-corpo { padding: 24px 20px 20px; }
         dialog .dialogo-corpo > .bloco-topo { margin-bottom: 20px; }
         dialog .acoes-dialogo { position: sticky; bottom: -20px; padding: 14px 0 4px; margin-top: 20px; background: var(--superficie); }
-        dialog#dialogo-categorias .lista-categorias > li {
+        dialog#dialogo-orcamentos .lista-categorias > li {
             grid-template-columns: minmax(0, 1fr) auto auto;
             gap: 6px;
             padding: 10px;
         }
-        dialog#dialogo-categorias .lista-categorias > li button { width: auto; min-width: 40px; }
-        dialog#dialogo-categorias .nova-categoria { grid-template-columns: 1fr; bottom: -20px; }
-        dialog#dialogo-categorias .nova-categoria .btn { width: 100%; }
+        dialog#dialogo-orcamentos .lista-categorias > li button { width: auto; min-width: 40px; }
+        dialog#dialogo-orcamentos .nova-categoria { grid-template-columns: 1fr; }
+        dialog#dialogo-orcamentos .nova-categoria .btn { width: 100%; }
     }
 
     @keyframes subir-dialogo {
@@ -1227,7 +1227,7 @@ body[data-densidade="confortavel"] .receita { padding-top: 16px; padding-bottom:
 
     /* Telas estreitas */
 @media (max-width: 420px) {
-    dialog#dialogo-categorias .lista-categorias > li {
+    dialog#dialogo-orcamentos .lista-categorias > li {
         grid-template-columns: minmax(0, 1fr) auto auto;
     }
 }

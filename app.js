@@ -133,8 +133,6 @@ const ui = {
 
     adicionarDespesa: $("adicionar-despesa"),
 
-    gerenciarCategorias: $("gerenciar-categorias"),
-
     dialogoDespesa: $("dialogo-despesa"),
 
     formDespesa: $("form-despesa"),
@@ -202,17 +200,11 @@ const ui = {
 
 
 
-    dialogo: $("dialogo-categorias"),
-
     listaCategorias: $("lista-categorias"),
 
     novaCategoria: $("nova-categoria"),
 
     adicionarCategoria: $("adicionar-categoria"),
-
-    fecharCategorias: $("fechar-categorias"),
-
-
 
     aviso: $("aviso")
 
@@ -1008,6 +1000,7 @@ function renderListaOrcamentos() {
         ]);
         return linha;
     }));
+    renderListaCategorias();
     aplicarPrivacidade();
 }
 
@@ -2333,12 +2326,11 @@ function renderListaCategorias() {
 
 
 function aposMudarCategorias() {
-
-    renderListaCategorias();
-
     renderDespesas();
 
     atualizarResumo();
+
+    renderListaOrcamentos();
 
 }
 
@@ -2500,19 +2492,10 @@ function removerCategoria(nome) {
 
 
 
-ui.gerenciarCategorias.addEventListener("click", () => {
-
-    renderListaCategorias();
-
-    ui.dialogo.showModal();
-
-    ui.novaCategoria.focus();
-
-});
-
 ui.gerenciarOrcamentos.addEventListener("click", () => {
     renderListaOrcamentos();
     ui.dialogoOrcamentos.showModal();
+    ui.novaCategoria.focus();
 });
 ui.fecharOrcamentos.addEventListener("click", () => ui.dialogoOrcamentos.close());
 ui.dialogoOrcamentos.addEventListener("click", (evento) => {
@@ -2557,20 +2540,6 @@ ui.listaOrcamentos.addEventListener("click", (evento) => {
         atualizarOrcamentos();
         avisar("Este mês voltou a usar o orçamento padrão.");
     }
-});
-
-
-
-ui.fecharCategorias.addEventListener("click", () => ui.dialogo.close());
-
-
-
-ui.dialogo.addEventListener("click", (evento) => {
-
-    // clique no fundo escurecido fecha o diálogo
-
-    if (evento.target === ui.dialogo) ui.dialogo.close();
-
 });
 
 

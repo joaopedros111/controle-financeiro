@@ -177,6 +177,21 @@ test("orçamento no resumo pode ser recolhido independentemente dos indicadores"
     assert.match(app, /if \(botao\.dataset\.registraTela\) registrarUltimaTela/);
 });
 
+test("gerenciamento de categorias fica dentro do diálogo de orçamento e sai do menu Opções", async () => {
+    const [html, app] = await Promise.all([read("index.html"), read("app.js")]);
+    const orcamentos = html.slice(html.indexOf('<dialog id="dialogo-orcamentos"'), html.indexOf("</dialog>", html.indexOf('<dialog id="dialogo-orcamentos"')));
+    const ajustes = html.slice(html.indexOf('<dialog id="dialogo-ajustes"'), html.indexOf("</dialog>", html.indexOf('<dialog id="dialogo-ajustes"')));
+
+    assert.match(orcamentos, /id="lista-categorias"/);
+    assert.match(orcamentos, /id="nova-categoria"/);
+    assert.match(orcamentos, /id="adicionar-categoria"/);
+    assert.ok(!html.includes('id="dialogo-categorias"'));
+    assert.ok(!html.includes('id="gerenciar-categorias"'));
+    assert.ok(!ajustes.includes("Gerenciar categorias"));
+    assert.match(app, /renderListaCategorias\(\);\s*aplicarPrivacidade\(\);/);
+    assert.match(app, /ui\.gerenciarOrcamentos\.addEventListener\("click"[\s\S]*ui\.novaCategoria\.focus\(\)/);
+});
+
 test("seções de despesas e entradas usam botões Adicionar e ícones recolhíveis modernos", async () => {
     const html = await read("index.html");
     assert.match(html, /<h2 id="titulo-receitas">Entradas<\/h2>/);
