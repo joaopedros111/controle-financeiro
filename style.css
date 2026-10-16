@@ -1177,14 +1177,19 @@
 /* Navegação compacta e painel de ajustes */
 @layer components {
     main.container { touch-action: pan-y pinch-zoom; }
+    .topo { margin-bottom: 12px; }
+    .periodo { margin-bottom: 12px; }
+    .resumo { margin-bottom: 12px; }
+    .bloco { margin-bottom: 12px; }
     .periodo {
-        width: fit-content;
+        width: 100%;
         max-width: 100%;
-        grid-template-columns: 40px minmax(88px, auto) 72px 40px auto;
+        grid-template-columns: 40px 140px 72px 40px auto;
         grid-template-rows: auto;
+        align-content: start;
         gap: 6px;
         padding: 8px;
-        margin-bottom: 16px;
+        margin-bottom: 12px;
         touch-action: pan-y pinch-zoom;
     }
     .periodo #mes-anterior { grid-column: 1; grid-row: 1; }
@@ -1205,10 +1210,46 @@
     .ajustes-secao .acoes { margin-top: 0; }
     .ajustes-secao .nota { margin-top: 12px; }
 
-    @media (max-width: 380px) {
-        .periodo { width: 100%; grid-template-columns: 34px minmax(0, 1fr) 52px 34px 38px; gap: 4px; padding: 7px; }
+    @media (max-width: 420px) {
+        .periodo { width: 100%; grid-template-columns: 34px minmax(72px, 1fr) 52px 34px 38px; gap: 4px; padding: 7px; }
         .periodo #mes, .periodo #ano { padding: 7px 4px; font-size: .82rem; }
         .periodo .btn-icone { width: 34px; min-width: 34px; height: 38px; min-height: 38px; }
         .periodo #hoje { min-width: 38px; min-height: 38px; padding: 6px; font-size: .75rem; }
     }
+}
+
+@layer base {
+    :root[data-tema="rosa"] {
+        color-scheme: light;
+        --fundo: #fff7fb;
+        --superficie: #ffffff;
+        --superficie-suave: #fff0f6;
+        --texto: #382332;
+        --texto-secundario: #8f7181;
+        --borda: #f0dce7;
+        --primaria: #d74786;
+        --primaria-hover: #ba326c;
+        --primaria-suave: #fff0f6;
+        --verde: #128f83;
+        --verde-suave: #e8f8f4;
+        --vermelho: #d84868;
+        --vermelho-suave: #fff0f3;
+        --ambar: #cc8127;
+        --ambar-suave: #fff7e9;
+        --sombra-card: 0 8px 28px -16px rgba(132, 43, 88, .2), 0 2px 8px rgba(132, 43, 88, .04);
+        --sombra-flutuante: 0 18px 44px -24px rgba(168, 54, 108, .27), 0 5px 16px rgba(132, 43, 88, .06);
+        --foco: 0 0 0 4px rgba(215, 71, 134, .18);
+    }
+}
+
+@layer components {
+    :root[data-tema="rosa"] .marca-icone {
+        background: linear-gradient(145deg, #f276ad, #d74786 72%, #a92b65);
+        box-shadow: 0 9px 20px -8px rgba(196, 47, 112, .62), inset 0 1px 0 rgba(255,255,255,.35);
+    }
+    :root[data-tema="rosa"] .grafico-barra-entrada { background: linear-gradient(180deg, #f59ac2, #d74786); color: #d74786; }
+    :root[data-tema="rosa"] .grafico-barra-despesa { background: linear-gradient(180deg, #8c83e8, #655bbd); color: #655bbd; }
+    :root[data-tema="rosa"] .legenda-entrada { background: #d74786; }
+    :root[data-tema="rosa"] .legenda-despesa { background: #655bbd; }
+    :root[data-tema="rosa"] .resumo::before { background: linear-gradient(90deg, #d74786, #a681e2); }
 }

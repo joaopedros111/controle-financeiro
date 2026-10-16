@@ -419,7 +419,7 @@ function normalizarEstado(bruto) {
 
 
 
-        if (bruto.tema === "claro" || bruto.tema === "escuro") {
+        if (bruto.tema === "claro" || bruto.tema === "escuro" || bruto.tema === "rosa") {
 
             estado.tema = bruto.tema;
 
@@ -832,15 +832,21 @@ function renderTema() {
 
 
     const tema = estado.tema || (escuroNoSistema ? "escuro" : "claro");
+    const nomesTema = { claro: "Claro", escuro: "Escuro", rosa: "Rosa" };
+    const ordemTemas = ["claro", "escuro", "rosa"];
+    const proximoTema = ordemTemas[(ordemTemas.indexOf(tema) + 1) % ordemTemas.length];
 
 
 
     document.documentElement.dataset.tema = tema;
+    const corDaBarraDoNavegador = tema === "rosa" ? "#fff7fb" : tema === "escuro" ? "#0c1020" : "#f4f6fb";
+    document.querySelector('meta[name="theme-color"]').content = corDaBarraDoNavegador;
 
     ui.tema.replaceChildren(
-        criarEl("span", { text: tema === "escuro" ? "☀️" : "🌙" }),
+        criarEl("span", { text: tema === "escuro" ? "☀️" : tema === "rosa" ? "🌸" : "🌙" }),
         criarEl("span", { text: "Alterar" })
     );
+    ui.tema.setAttribute("aria-label", "Tema atual: " + nomesTema[tema] + ". Mudar para " + nomesTema[proximoTema] + ".");
 
 }
 
@@ -3174,7 +3180,8 @@ ui.tema.addEventListener("click", () => {
 
 
 
-    estado.tema = atual === "escuro" ? "claro" : "escuro";
+    const ordemTemas = ["claro", "escuro", "rosa"];
+    estado.tema = ordemTemas[(ordemTemas.indexOf(atual) + 1) % ordemTemas.length];
 
 
 
