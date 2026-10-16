@@ -10,13 +10,14 @@ Aplicativo web responsivo e instalável para acompanhar entradas, despesas, cate
 - `app.js`: inicialização e interação da interface.
 - `finance-core.js`: validação e normalização dos dados, cálculos em centavos e operações da calculadora.
 - `preferences.js`: validação de preferências, com compatibilidade com opções antigas ou ausentes.
+- `localization.js`: textos da interface, formatação por idioma e moeda de apresentação.
 - `storage.js`: acesso ao armazenamento persistente e fallback temporário em memória.
 - `update-manager.js` e `version.json`: comparação semântica e metadados de versão instalada/publicada.
 - `sw.js`: cache offline e atualização do app.
 - `manifest.json` e `icons/`: instalação e ícones do PWA.
 - `tests/`: testes automatizados da camada de dados, armazenamento e calculadora.
 
-O menu **Opções** mantém as preferências no armazenamento centralizado já existente. Ele oferece densidade de interface, gráficos/indicadores, seção inicial, mês de referência, privacidade visual dos valores e diagnóstico local. A tela inicial pode abrir o resumo, lançamentos, gráficos ou a última seção utilizada; o último destino válido é mantido entre inicializações. A opção **Lançamentos** abre as listas existentes de despesas e receitas. O CSV exporta o mês selecionado ou todos os meses que já tenham registros.
+O menu **Opções** mantém as preferências no armazenamento centralizado já existente. Ele oferece densidade de interface, gráficos/indicadores, seção inicial, mês de referência, privacidade visual dos valores, idioma, moeda de apresentação e diagnóstico local. A interface oferece Português (Brasil), Inglês, Espanhol, Francês, Alemão e Japonês. A moeda pode ser exibida em BRL, USD, EUR ou JPY; essa escolha altera somente a formatação, não converte os valores guardados nem suas moedas de origem. A tela inicial pode abrir o resumo, lançamentos, gráficos ou a última seção utilizada; o último destino válido é mantido entre inicializações. A opção **Lançamentos** abre as listas existentes de despesas e receitas. O CSV exporta o mês selecionado ou todos os meses que já tenham registros.
 
 A versão instalada e publicada é declarada somente em `version.json`, no formato `MAJOR.MINOR.PATCH`. A verificação consulta esse arquivo por caminho relativo à aplicação, com cache HTTP desativado e bypass explícito do cache do Service Worker para a consulta publicada. Para cada publicação, atualize `version.json` e incremente a versão do cache em `sw.js`; assim, os novos recursos são pré-carregados antes de a atualização ser oferecida. Um Service Worker novo fica aguardando até o usuário aceitar; cancelar mantém a versão atual em execução. Sem rede, a versão instalada continua disponível pelo precache, mas a versão publicada não pode ser verificada.
 

@@ -3,6 +3,7 @@ const PADRAO = {
     densidade: "padrao", mostrarGraficos: true, telaInicial: "resumo",
     ultimaTelaUtilizada: null,
     referenciaMes: "atual", ultimoPeriodo: null, ocultarAoIniciar: false,
+    idioma: "pt-BR", moeda: "BRL",
     escopoCsv: "mes", ultimaOperacao: "Nenhum backup ou restauração registrado nesta instalação.",
     ultimaVerificacao: "Não registrada.", resultadoVerificacao: "Não verificada.",
     versaoPublicada: "Não verificada."
@@ -27,6 +28,8 @@ export function normalizarPreferenciasMenu(salvas) {
     }
     if (!["atual", "ultimo"].includes(preferencias.referenciaMes)) preferencias.referenciaMes = PADRAO.referenciaMes;
     if (!["mes", "todos"].includes(preferencias.escopoCsv)) preferencias.escopoCsv = PADRAO.escopoCsv;
+    if (!["pt-BR", "en", "es", "fr", "de", "ja"].includes(preferencias.idioma)) preferencias.idioma = PADRAO.idioma;
+    if (!["BRL", "USD", "EUR", "JPY"].includes(preferencias.moeda)) preferencias.moeda = PADRAO.moeda;
     preferencias.mostrarGraficos = preferencias.mostrarGraficos !== false;
     preferencias.ocultarAoIniciar = preferencias.ocultarAoIniciar === true;
     for (const chave of ["ultimaVerificacao", "resultadoVerificacao", "versaoPublicada"]) {

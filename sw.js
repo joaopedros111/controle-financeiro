@@ -1,5 +1,5 @@
 const PREFIXO_CACHE = "controle-financeiro-pwa-cache-";
-const CACHE = PREFIXO_CACHE + "v8";
+const CACHE = PREFIXO_CACHE + "v9";
 const CACHE_ANTIGO = "controle-financeiro-v5";
 const ARQUIVOS = [
     "./",
@@ -9,6 +9,7 @@ const ARQUIVOS = [
     "./app.js",
     "./finance-core.js",
     "./preferences.js",
+    "./localization.js",
     "./storage.js",
     "./update-manager.js",
     "./version.json",

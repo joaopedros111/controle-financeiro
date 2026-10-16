@@ -2,6 +2,7 @@ import { storage } from "./storage.js";
 import { CATEGORIAS_PADRAO, CATEGORIA_FIXA, normalizarEstado as normalizarEstadoCore, validarBackup, migrarDadosLegados, calcularExpressao, somarCentavos, gerarCsv, calcularOrcamentosPorCategoria, ordenarOrcamentosComGastos, renomearCategoriaOrcamentos, removerCategoriaOrcamentos } from "./finance-core.js";
 import { apresentarValorFinanceiro, normalizarPreferenciasMenu, resolverTelaInicial } from "./preferences.js";
 import { instalarAtualizacao, lerVersaoInstalada, lerVersaoPublicada, verificarComConfirmacao } from "./update-manager.js";
+import { aplicarIdioma, formatarMoeda as formatarMoedaLocalizada, LOCALES } from "./localization.js";
 
 
 
@@ -20,16 +21,6 @@ const CHAVE_ESTADO_V2 = "controleFinanceiro:v2";
 const CHAVE_ESTADO_STORAGE_ANTIGO = "controle-financeiro-dados";
 
 const PREFIXO_LEGADO = "controleFinanceiro-"; // versão antiga: um item por mês
-
-
-
-const MESES = [
-
-    "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
-
-    "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"
-
-];
 
 
 
@@ -58,6 +49,8 @@ const ui = {
     valorTransparenciaBotao: $("valor-transparencia-botao"),
     tamanhoBotaoMenu: $("tamanho-botao-menu"),
     valorTamanhoBotaoMenu: $("valor-tamanho-botao-menu"),
+    idiomaInterface: $("idioma-interface"),
+    moedaInterface: $("moeda-interface"),
     densidadeInterface: $("densidade-interface"),
     mostrarGraficos: $("mostrar-graficos"),
     telaInicial: $("tela-inicial"),
@@ -251,21 +244,24 @@ function numero(valor) {
 
 
 let valoresOcultos = false;
-
+let idiomaAtual = "pt-BR";
 function formatarMoeda(valor) {
     return apresentarValorFinanceiro(valor, valoresOcultos, (valorVisivel) =>
-        valorVisivel.toLocaleString("pt-BR", {
-            style: "currency",
-            currency: "BRL"
-        })
+        formatarMoedaLocalizada(valorVisivel, preferenciasMenu.moeda, idiomaAtual)
     );
 }
 
 function formatarPercentual(valor) {
-    return valor.toLocaleString("pt-BR", {
+    return new Intl.NumberFormat(LOCALES[idiomaAtual] || "pt-BR", {
+        style: "percent",
         minimumFractionDigits: 1,
         maximumFractionDigits: 1
-    }) + "%";
+    }).format(valor / 100);
+}
+
+function nomeMes(mes) {
+    return new Intl.DateTimeFormat(LOCALES[idiomaAtual] || "pt-BR", { month: "long" })
+        .format(new Date(2020, mes - 1, 1));
 }
 
 
@@ -958,7 +954,7 @@ function renderListaOrcamentos() {
         const linha = criarEl("fieldset", { class: "orcamento-edicao", dataset: { categoria } }, [
             criarEl("legend", { text: categoria }),
             criarEl("label", { class: "orcamento-campo" }, [
-                criarEl("span", { text: "Limite mensal padrão (R$)" }),
+                criarEl("span", { text: "Limite mensal padrão" }),
                 criarEl("input", {
                     type: valoresOcultos ? "password" : "number", min: "0", step: "0.01", inputMode: "decimal",
                     value: limitePadrao, placeholder: "Sem limite",
@@ -1137,7 +1133,8 @@ function renderGraficoMensal() {
         const chave = chaveMes(ano, mes);
         const dados = estado.meses[chave] || { receitas: [], despesas: [] };
         pontos.unshift({
-            nome: MESES[mes - 1].slice(0, 3).toLocaleLowerCase("pt-BR"),
+            nome: new Intl.DateTimeFormat(LOCALES[idiomaAtual] || "pt-BR", { month: "short" })
+                .format(new Date(2020, mes - 1, 1)).replace(".", "").toLocaleLowerCase(idiomaAtual),
             chave,
             receitas: somar(dados.receitas),
             despesas: somar(dados.despesas)
@@ -1164,7 +1161,9 @@ function renderGraficoMensal() {
         return grupo;
     }));
     destino.setAttribute("aria-label", "Entradas e despesas nos últimos três meses: " + pontos.map((p) =>
-        p.nome + " de " + p.chave.slice(0, 4) + ", entradas " + formatarMoeda(p.receitas) + ", despesas " + formatarMoeda(p.despesas)
+        new Intl.DateTimeFormat(LOCALES[idiomaAtual] || "pt-BR", { month: "long", year: "numeric" })
+            .format(new Date(Number(p.chave.slice(0, 4)), Number(p.chave.slice(5, 7)) - 1, 1))
+        + ", entradas " + formatarMoeda(p.receitas) + ", despesas " + formatarMoeda(p.despesas)
     ).join("; "));
 }
 
@@ -1180,8 +1179,11 @@ function renderGraficoCategorias() {
     });
     const itens = Object.entries(totaisCentavos).map(([nome, centavos]) => [nome, centavos / 100]).sort((a, b) => b[1] - a[1]);
     const total = itens.reduce((soma, [, valor]) => soma + Math.round(valor * 100), 0) / 100;
-    const nomeMes = MESES[periodo.mes - 1] + " de " + periodo.ano;
-    $("periodo-grafico-categorias").textContent = nomeMes;
+    const rotuloMes = new Intl.DateTimeFormat(LOCALES[idiomaAtual] || "pt-BR", {
+        month: "long",
+        year: "numeric"
+    }).format(new Date(periodo.ano, periodo.mes - 1, 1));
+    $("periodo-grafico-categorias").textContent = rotuloMes;
     $("total-grafico-categorias").textContent = formatarMoeda(total);
     $("vazio-grafico-categorias").hidden = itens.length > 0;
 
@@ -1209,10 +1211,10 @@ function renderGraficoCategorias() {
     }));
 
     rosquinha.setAttribute("aria-label", itens.length
-        ? "Despesas por categoria em " + nomeMes + ". Total " + formatarMoeda(total) + ". " + itens.map(([nome, valor]) =>
+        ? "Despesas por categoria em " + rotuloMes + ". Total " + formatarMoeda(total) + ". " + itens.map(([nome, valor]) =>
             nome + ": " + formatarMoeda(valor) + ", " + formatarPercentual((valor / total) * 100)
         ).join("; ")
-        : "Nenhuma despesa com valor registrado em " + nomeMes + ".");
+        : "Nenhuma despesa com valor registrado em " + rotuloMes + ".");
 }
 
 function renderTudo(persistir = true) {
@@ -2681,7 +2683,7 @@ function copiarDoMesAnterior() {
 
     if (!origem || (!origem.receitas.length && !origem.despesas.length)) {
 
-        avisar("O mês anterior (" + MESES[mes - 1] + ") não tem dados para copiar.");
+        avisar("O mês anterior (" + nomeMes(mes) + ") não tem dados para copiar.");
 
         return;
 
@@ -2695,7 +2697,7 @@ function copiarDoMesAnterior() {
 
     if ((destino.receitas.length || destino.despesas.length)
 
-        && !confirm("Este mês já tem lançamentos. Adicionar os de " + MESES[mes - 1] + " junto com eles?")) {
+        && !confirm("Este mês já tem lançamentos. Adicionar os de " + nomeMes(mes) + " junto com eles?")) {
 
         return;
 
@@ -2729,7 +2731,7 @@ function copiarDoMesAnterior() {
 
     atualizarResumo();
 
-    avisar("Lançamentos copiados de " + MESES[mes - 1] + ".");
+    avisar("Lançamentos copiados de " + nomeMes(mes) + ".");
 
 }
 
@@ -2753,7 +2755,7 @@ function limparMes() {
 
 
 
-    if (!confirm("Apagar todas as entradas e despesas de " + MESES[periodo.mes - 1] + " de " + periodo.ano + "? Essa ação não pode ser desfeita.")) {
+    if (!confirm("Apagar todas as entradas e despesas de " + nomeMes(periodo.mes) + " de " + periodo.ano + "? Essa ação não pode ser desfeita.")) {
 
         return;
 
@@ -3095,6 +3097,10 @@ function detectarTelaVisivel() {
     if (visivel) registrarUltimaTela(visivel[1]);
 }
 function aplicarPreferenciasMenu() {
+    idiomaAtual = preferenciasMenu.idioma;
+    ui.idiomaInterface.value = preferenciasMenu.idioma;
+    ui.moedaInterface.value = preferenciasMenu.moeda;
+    aplicarIdioma(preferenciasMenu.idioma);
     document.body.dataset.posicaoMenu = preferenciasMenu.posicao;
     document.documentElement.style.setProperty("--menu-transparencia", (100 - preferenciasMenu.transparencia) + "%");
     document.documentElement.style.setProperty("--menu-tamanho", preferenciasMenu.tamanhoBotao + "px");
@@ -3158,6 +3164,19 @@ ui.referenciaMes.addEventListener("change", () => {
 });
 ui.ocultarAoIniciar.addEventListener("change", () => { preferenciasMenu.ocultarAoIniciar = ui.ocultarAoIniciar.checked; salvarPreferenciasMenu(); });
 ui.escopoCsv.addEventListener("change", () => { preferenciasMenu.escopoCsv = ui.escopoCsv.value; salvarPreferenciasMenu(); });
+ui.idiomaInterface.addEventListener("change", () => {
+    preferenciasMenu.idioma = ui.idiomaInterface.value;
+    idiomaAtual = preferenciasMenu.idioma;
+    aplicarIdioma(idiomaAtual);
+    aplicarPreferenciasMenu();
+    renderTudo();
+    salvarPreferenciasMenu();
+});
+ui.moedaInterface.addEventListener("change", () => {
+    preferenciasMenu.moeda = ui.moedaInterface.value;
+    renderTudo();
+    salvarPreferenciasMenu();
+});
 let arrastoMenuEmCurso = false;
 let menuFoiArrastado = false;
 ui.abrirAjustes.addEventListener("pointerdown", (evento) => {

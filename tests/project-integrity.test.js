@@ -24,6 +24,7 @@ test("módulos e estilos usados pela página estão incluídos no cache offline"
         "finance-core.js",
         "storage.js",
         "update-manager.js",
+        "localization.js",
         "version.json"
     ].map((path) => path.startsWith("./") ? path : "./" + path);
     for (const arquivo of arquivos) {
@@ -44,8 +45,25 @@ test("controles das preferências incrementais têm implementação e cache atua
     assert.match(css, /graficos-ocultos/);
     assert.match(app, /preferenciasMenu\.ocultarAoIniciar/);
     assert.match(app, /preferenciasMenu\.ultimoPeriodo/);
-    assert.match(serviceWorker, /const CACHE = PREFIXO_CACHE \+ "v8"/);
+    assert.match(serviceWorker, /const CACHE = PREFIXO_CACHE \+ "v9"/);
     assert.equal((serviceWorker.match(/"\.\/preferences\.js"/g) || []).length, 1, "preferences.js deve ser precacheado uma vez");
+});
+
+test("idioma e moeda são preferências persistentes, formatam a apresentação e entram no precache", async () => {
+    const [html, app, preferences, localization, serviceWorker] = await Promise.all([
+        read("index.html"), read("app.js"), read("preferences.js"),
+        read("localization.js"), read("sw.js")
+    ]);
+    for (const id of ["idioma-interface", "moeda-interface"]) {
+        assert.match(html, new RegExp(`id="${id}"`));
+        assert.ok(app.includes(`$("${id}")`));
+    }
+    assert.match(preferences, /idioma: "pt-BR", moeda: "BRL"/);
+    assert.match(app, /formatarMoedaLocalizada\(valorVisivel, preferenciasMenu\.moeda, idiomaAtual\)/);
+    assert.match(app, /preferenciasMenu\.idioma = ui\.idiomaInterface\.value/);
+    assert.match(localization, /The currency changes only how amounts are displayed/);
+    assert.match(serviceWorker, /"\.\/localization\.js"/);
+    assert.match(html, /Os números armazenados não são convertidos/);
 });
 
 test("versão instalada e publicada usam metadados semver relativos e não cacheados para verificação", async () => {
