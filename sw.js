@@ -64,7 +64,8 @@ self.addEventListener("fetch", (event) => {
     if (url.origin !== urlEscopo.origin || !url.pathname.startsWith(urlEscopo.pathname)) return;
 
     event.respondWith((async () => {
-        if (url.pathname === new URL("./version.json", urlEscopo).pathname && url.searchParams.has("_verificacao")) {
+        if (url.pathname === new URL("./version.json", urlEscopo).pathname
+            && (url.searchParams.has("_verificacao") || requisicao.cache === "no-cache")) {
             return fetch(requisicao, { cache: "no-store" });
         }
         const cache = await caches.open(CACHE);

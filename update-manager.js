@@ -153,6 +153,11 @@ async function lerIdentidadeWorker(worker, timeoutMs) {
     return resposta.versao;
 }
 
+export async function lerVersaoControlador(serviceWorkers, timeoutMs = 5000) {
+    const controlador = serviceWorkers?.controller;
+    return controlador ? lerIdentidadeWorker(controlador, timeoutMs) : null;
+}
+
 function esperarInstalacao(worker, timeoutMs) {
     return new Promise((resolve, reject) => {
         let temporizador;

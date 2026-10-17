@@ -162,7 +162,8 @@ test("versão instalada e publicada usam metadados semver relativos e não cache
         "versao-instalada", "versao-publicada", "data-verificacao-atualizacao",
         "resultado-verificacao-atualizacao", "status-atualizacao"
     ]) assert.ok(html.includes(`id="${id}"`), `${id} ausente`);
-    assert.match(app, /lerVersaoInstalada\(\)/);
+    assert.match(app, /lerVersaoControlador\(navigator\.serviceWorker\)/);
+    assert.match(app, /versaoControlador\s*\?\s*\{ version: versaoControlador \}\s*:\s*await lerVersaoInstalada\(\)/);
     assert.match(app, /lerVersaoPublicada\(\)/);
     assert.match(app, /navigator\.serviceWorker\.getRegistration\(escopo\)/);
     assert.match(app, /if \(verificacaoAtualizacaoAtiva\) return/);
@@ -175,6 +176,7 @@ test("versão instalada e publicada usam metadados semver relativos e não cache
     assert.ok(lerRecursosPrecache(serviceWorker).includes("./version.json"));
     assert.ok(lerRecursosPrecache(serviceWorker).includes("./update-manager.js"));
     assert.match(serviceWorker, /searchParams\.has\("_verificacao"\)/);
+    assert.match(serviceWorker, /requisicao\.cache === "no-cache"/);
     assert.match(serviceWorker, /fetch\(requisicao, \{ cache: "no-store" \}\)/);
 });
 
@@ -209,6 +211,7 @@ test("protocolo de identidade e ativação está presente nos dois lados", async
         assert.ok(serviceWorker.includes(tipo), `Service Worker não implementa ${tipo}`);
         assert.ok(manager.includes(tipo), `gerenciador não implementa ${tipo}`);
     }
+    assert.match(manager, /export async function lerVersaoControlador/);
 });
 
 test("workflow de Pages publica main pelo artefato oficial sem gravar a versão na branch", async () => {

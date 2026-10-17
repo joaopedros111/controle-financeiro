@@ -5,6 +5,7 @@ import {
     criarVerificadorAutomatico,
     compararVersoes,
     instalarAtualizacao,
+    lerVersaoControlador,
     lerVersaoInstalada,
     lerVersaoPublicada,
     versaoValida,
@@ -118,6 +119,36 @@ test("versão instalada pode ser lida do precache offline sem usar esse cache co
         cachesApi,
         agora: 99
     }), /offline/);
+});
+
+test("após recarregar, a identidade do controlador evita repetir aviso por metadados em cache", async () => {
+    const controlador = criarWorker("1.1.13", { state: "activated" });
+    const instalada = await lerVersaoControlador(criarServiceWorkers(controlador));
+    let confirmou = false;
+    const resultado = await verificarComConfirmacao({
+        instalada,
+        publicada: "1.1.13",
+        confirmar: () => { confirmou = true; return true; },
+        atualizar: async () => assert.fail("não deve reinstalar a versão que já controla a página")
+    });
+
+    assert.equal(instalada, "1.1.13");
+    assert.equal(resultado, "atualizado");
+    assert.equal(confirmou, false);
+});
+
+test("identidade inválida do controlador falha e ausência de controlador permite fallback", async () => {
+    assert.equal(await lerVersaoControlador(criarServiceWorkers()), null);
+
+    const controladorInvalido = {
+        postMessage(_mensagem, portas) {
+            portas[0].postMessage({ tipo: "VERSAO_SERVICE_WORKER", versao: "inválida" });
+        }
+    };
+    await assert.rejects(
+        lerVersaoControlador(criarServiceWorkers(controladorInvalido)),
+        /versão válida/
+    );
 });
 
 test("metadados inválidos e falha de rede não são tratados como aplicativo atualizado", async () => {

@@ -1,7 +1,7 @@
 import { criarRecuperacaoFinanceira, storage } from "./storage.js";
 import { CATEGORIAS_PADRAO, CATEGORIA_FIXA, normalizarEstado as normalizarEstadoCore, normalizarValorMonetario, validarBackup, validarTotaisMonetarios, migrarDadosLegados, calcularExpressao, somarCentavos, gerarCsv, agruparDespesasPorCategoria, agruparLancamentosComOrcamento, renomearCategoriaOrcamentos, removerCategoriaOrcamentos } from "./finance-core.js";
 import { apresentarValorFinanceiro, normalizarPreferenciasMenu, resolverTelaInicial } from "./preferences.js";
-import { criarConfirmacaoAtualizacao, criarVerificadorAutomatico, instalarAtualizacao, lerVersaoInstalada, lerVersaoPublicada, verificarComConfirmacao } from "./update-manager.js";
+import { criarConfirmacaoAtualizacao, criarVerificadorAutomatico, instalarAtualizacao, lerVersaoControlador, lerVersaoInstalada, lerVersaoPublicada, verificarComConfirmacao } from "./update-manager.js";
 import { aplicarIdioma, formatarMoeda as formatarMoedaLocalizada, LOCALES } from "./localization.js";
 
 
@@ -3043,7 +3043,10 @@ async function atualizarEstadoServiceWorker() {
 
 async function carregarVersaoInstalada() {
     try {
-        const metadados = await lerVersaoInstalada();
+        const versaoControlador = await lerVersaoControlador(navigator.serviceWorker);
+        const metadados = versaoControlador
+            ? { version: versaoControlador }
+            : await lerVersaoInstalada();
         versaoInstalada = metadados.version;
         atualizarDiagnostico();
     } catch (erro) {
@@ -3325,10 +3328,13 @@ async function verificarAtualizacao({ automatico = false } = {}) {
     try {
         if (!navigator.onLine) throw new Error("Você está offline; não foi possível verificar a versão publicada.");
 
-        const [instalada, publicada] = await Promise.all([
-            lerVersaoInstalada(),
+        const [versaoControlador, publicada] = await Promise.all([
+            lerVersaoControlador(navigator.serviceWorker),
             lerVersaoPublicada()
         ]);
+        const instalada = versaoControlador
+            ? { version: versaoControlador }
+            : await lerVersaoInstalada();
         versaoInstalada = instalada.version;
         if (automatico && confirmacaoAtualizacao.foiAdiada(publicada.version)) {
             ui.statusAtualizacao.textContent = `A versão ${publicada.version} está disponível. A atualização foi adiada.`;
@@ -3450,6 +3456,7 @@ if ("serviceWorker" in navigator) {
     navigator.serviceWorker.addEventListener("controllerchange", () => {
         estadoServiceWorker = "Service Worker ativo e controlando esta página.";
         atualizarDiagnostico();
+        void carregarVersaoInstalada();
     });
     navigator.serviceWorker.ready
         .then(atualizarEstadoServiceWorker)

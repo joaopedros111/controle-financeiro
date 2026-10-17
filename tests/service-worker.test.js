@@ -127,11 +127,11 @@ test("Service Worker só executa skipWaiting se a versão aceita corresponder ao
     assert.equal(respostaAceita.versao, versao);
 });
 
-test("consulta de version.json com parâmetro de verificação ignora o cache do Service Worker", async () => {
+test("consultas de version.json para verificação ignoram o cache do Service Worker", async () => {
     const source = await readFile(new URL("../sw.js", import.meta.url), "utf8");
     const handlers = {};
     let cacheMatchChamado = 0;
-    let requisicaoRede;
+    const requisicoesRede = [];
     const respostaCache = new Response("versão antiga", { status: 200 });
     const caches = {
         open: async () => ({
@@ -146,15 +146,20 @@ test("consulta de version.json com parâmetro de verificação ignora o cache do
         clients: { claim: async () => {} }
     };
     const fetch = async (request, options) => {
-        requisicaoRede = { request, options };
+        requisicoesRede.push({ request, options });
         return new Response("versão publicada", { status: 200 });
     };
     vm.runInNewContext(source, { self, caches, URL, Promise, Set, Response, fetch });
 
-    let resultado;
-    const requisicao = { method: "GET", url: "https://example.test/finance/version.json?_verificacao=42" };
-    handlers.fetch({ request: requisicao, respondWith: (promise) => { resultado = promise; } });
-    assert.equal(await (await resultado).text(), "versão publicada");
+    for (const requisicao of [
+        { method: "GET", url: "https://example.test/finance/version.json?_verificacao=42" },
+        { method: "GET", url: "https://example.test/finance/version.json", cache: "no-cache" }
+    ]) {
+        let resultado;
+        handlers.fetch({ request: requisicao, respondWith: (promise) => { resultado = promise; } });
+        assert.equal(await (await resultado).text(), "versão publicada");
+    }
     assert.equal(cacheMatchChamado, 0);
-    assert.equal(requisicaoRede.options.cache, "no-store");
+    assert.equal(requisicoesRede.length, 2);
+    assert.ok(requisicoesRede.every(({ options }) => options.cache === "no-store"));
 });
