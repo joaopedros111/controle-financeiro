@@ -611,7 +611,6 @@ body.valores-ocultos .barra,
 body.valores-ocultos .grafico-barras { visibility: hidden; }
 body.valores-ocultos #grafico-rosca { background: conic-gradient(var(--borda) 0deg 360deg) !important; }
 body.graficos-ocultos .grafico-bloco { display: none; }
-body.graficos-ocultos .indicadores { display: none; }
 body[data-densidade="muito-compacta"] .bloco { padding: 10px 10px; }
 body[data-densidade="muito-compacta"] .despesa,
 body[data-densidade="muito-compacta"] .receita { padding-top: 6px; padding-bottom: 6px; }

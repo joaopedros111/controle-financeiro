@@ -103,8 +103,12 @@ test("controles das preferências incrementais têm implementação e cache atua
         assert.match(html, new RegExp(`id="${id}"`), `controle ${id} ausente`);
         assert.ok(app.includes(`$("${id}")`), `controle ${id} sem conexão com o app`);
     }
+    assert.match(html, /for="mostrar-graficos">\s*<span>Mostrar gráficos<\/span>/);
     assert.match(css, /data-densidade="compacta"/);
-    assert.match(css, /graficos-ocultos/);
+    assert.match(css, /body\.graficos-ocultos \.grafico-bloco \{ display: none; \}/);
+    assert.doesNotMatch(css, /body\.graficos-ocultos\s+\.indicadores/);
+    const resumo = html.slice(html.indexOf('<section class="resumo"'), html.indexOf("</section>", html.indexOf('<section class="resumo"')));
+    assert.match(resumo, /<dl class="indicadores">/);
     assert.match(app, /preferenciasMenu\.ocultarAoIniciar/);
     assert.match(app, /preferenciasMenu\.ultimoPeriodo/);
     assert.match(serviceWorker, /const CACHE = PREFIXO_CACHE \+ "v\d+"/);

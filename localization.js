@@ -81,7 +81,7 @@ const FRASES = [
     ["Padrão", "Default", "Estándar", "Par défaut", "Standard", "標準"],
     ["Compacta", "Compact", "Compacta", "Compacte", "Kompakt", "コンパクト"],
     ["Confortável", "Comfortable", "Cómoda", "Confortable", "Komfortabel", "ゆったり"],
-    ["Mostrar gráficos e indicadores", "Show charts and indicators", "Mostrar gráficos e indicadores", "Afficher les graphiques et indicateurs", "Diagramme und Kennzahlen anzeigen", "グラフと指標を表示"],
+    ["Mostrar gráficos", "Show charts", "Mostrar gráficos", "Afficher les graphiques", "Diagramme anzeigen", "グラフを表示"],
     ["Botão de opções", "Options button", "Botón de opciones", "Bouton des options", "Optionen-Schaltfläche", "オプションボタン"],
     ["Posição", "Position", "Posición", "Position", "Position", "位置"],
     ["Centro", "Center", "Centro", "Centre", "Mitte", "中央"],

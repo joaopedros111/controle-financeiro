@@ -19,6 +19,7 @@ test("traduções localizam frases da interface e preservam o português como pa
     assert.equal(textoTraduzido("Janeiro", "es"), "Enero");
     assert.equal(textoTraduzido("Ocultar valores financeiros", "ja"), "金額を非表示");
     assert.equal(textoTraduzido("Idioma e moeda", "pt-BR"), "Idioma e moeda");
+    assert.equal(textoTraduzido("Mostrar gráficos", "en"), "Show charts");
     assert.equal(textoTraduzido("Rótulo personalizado", "fr"), "Rótulo personalizado");
     assert.equal(textoTraduzido("Exibir Entradas na tela inicial", "en"), "Show Income on the home screen");
     assert.equal(textoTraduzido("Gerenciar categorias", "en"), "Manage categories");
