@@ -611,26 +611,64 @@ body.valores-ocultos .barra,
 body.valores-ocultos .grafico-barras { visibility: hidden; }
 body.valores-ocultos #grafico-rosca { background: conic-gradient(var(--borda) 0deg 360deg) !important; }
 body.graficos-ocultos .grafico-bloco { display: none; }
-body[data-densidade="muito-compacta"] .bloco { padding: 10px 10px; }
-body[data-densidade="muito-compacta"] .despesa,
-body[data-densidade="muito-compacta"] .receita { padding-top: 6px; padding-bottom: 6px; }
-body[data-densidade="compacta"] .bloco { padding: 14px 12px; }
-body[data-densidade="compacta"] .despesa,
-body[data-densidade="compacta"] .receita { padding-top: 8px; padding-bottom: 8px; }
-body[data-densidade="confortavel"] .bloco { padding: 24px 20px; }
-body[data-densidade="confortavel"] .despesa,
-body[data-densidade="confortavel"] .receita { padding-top: 16px; padding-bottom: 16px; }
-body[data-densidade="muito-confortavel"] .bloco { padding: 28px 24px; }
-body[data-densidade="muito-confortavel"] .despesa,
-body[data-densidade="muito-confortavel"] .receita { padding-top: 20px; padding-bottom: 20px; }
-body[data-densidade="muito-compacta"] #dialogo-ajustes .ajustes-secao { gap: 5px; }
-body[data-densidade="muito-compacta"] #dialogo-ajustes .ajustes-secao + .ajustes-secao { margin-top: 12px; padding-top: 10px; }
-body[data-densidade="compacta"] #dialogo-ajustes .ajustes-secao { gap: 7px; }
-body[data-densidade="compacta"] #dialogo-ajustes .ajustes-secao + .ajustes-secao { margin-top: 16px; padding-top: 14px; }
-body[data-densidade="confortavel"] #dialogo-ajustes .ajustes-secao { gap: 13px; }
-body[data-densidade="confortavel"] #dialogo-ajustes .ajustes-secao + .ajustes-secao { margin-top: 24px; padding-top: 20px; }
-body[data-densidade="muito-confortavel"] #dialogo-ajustes .ajustes-secao { gap: 16px; }
-body[data-densidade="muito-confortavel"] #dialogo-ajustes .ajustes-secao + .ajustes-secao { margin-top: 28px; padding-top: 24px; }
+main.container { gap: var(--densidade-container-gap, 12px); }
+body .bloco {
+    padding: var(--densidade-bloco-vertical, 28px) var(--densidade-bloco-horizontal, 24px);
+}
+body .bloco-topo { gap: var(--densidade-cabecalho-gap, 12px); }
+body .bloco > .bloco-topo:not(.grafico-topo) {
+    margin-bottom: var(--densidade-cabecalho-margem, 14px);
+}
+#lista-despesas { gap: var(--densidade-lista-gap, 12px); }
+body .receita,
+body .despesa {
+    gap: var(--densidade-lancamento-gap, 10px);
+    padding-top: var(--densidade-lancamento-vertical, 20px);
+    padding-bottom: var(--densidade-lancamento-vertical, 20px);
+}
+.despesa-grupo-itens {
+    padding-right: var(--densidade-itens-despesa-horizontal, 12px);
+    padding-left: var(--densidade-itens-despesa-horizontal, 12px);
+}
+body .panorama-graficos { gap: var(--densidade-panorama-gap, 14px); }
+body .grafico-categorias-conteudo { gap: var(--densidade-panorama-conteudo-gap, 18px); }
+body .grafico-categoria-item {
+    column-gap: var(--densidade-legenda-categoria-gap, 8px);
+    padding: var(--densidade-legenda-categoria-padding, 7px) 2px;
+}
+body .grafico-categoria-nome { gap: var(--densidade-nome-categoria-gap, 7px); }
+body #dialogo-ajustes .ajustes-corpo > .bloco-topo {
+    margin-bottom: var(--densidade-opcoes-topo-margem, 20px);
+}
+body #dialogo-ajustes .ajustes-secao { gap: var(--densidade-opcoes-secao-gap, 16px); }
+body #dialogo-ajustes .ajustes-secao + .ajustes-secao {
+    margin-top: var(--densidade-opcoes-grupo-margem, 28px);
+    padding-top: var(--densidade-opcoes-grupo-padding, 24px);
+}
+body #dialogo-ajustes .ajuste-linha {
+    gap: var(--densidade-opcoes-linha-gap, 12px);
+    padding: var(--densidade-opcoes-linha-padding, 12px);
+}
+body #dialogo-ajustes .ajuste-controle { gap: var(--densidade-opcoes-controle-gap, 8px); }
+@media (max-width: 600px) {
+    body .receita,
+    body .despesa { gap: var(--densidade-lancamento-gap-mobile, 7px); }
+    body .grafico-categorias-conteudo { gap: var(--densidade-panorama-conteudo-gap-mobile, 8px); }
+    body .grafico-categoria-item {
+        column-gap: var(--densidade-legenda-categoria-gap-mobile, 4px);
+        padding: var(--densidade-legenda-categoria-padding-mobile, 5px) 0;
+    }
+    body .grafico-categoria-nome { gap: var(--densidade-nome-categoria-gap-mobile, 5px); }
+}
+@media (max-width: 380px) {
+    body .panorama-graficos { gap: var(--densidade-panorama-gap-mobile, 10px); }
+}
+@media (max-width: 480px) {
+    body #dialogo-ajustes .ajuste-linha {
+        gap: var(--densidade-opcoes-linha-gap-mobile, 8px);
+        padding: var(--densidade-opcoes-linha-padding-mobile, 10px);
+    }
+}
 
     .resumo-titulo {
         margin: 0 0 10px;
@@ -670,7 +708,20 @@ body[data-densidade="muito-confortavel"] #dialogo-ajustes .ajustes-secao + .ajus
             color: var(--vermelho);
             font-weight: 700;
         }
+
     }
+
+    .densidade-controle { min-height: 72px; }
+    .densidade-controle input[type="range"] { min-height: 44px; margin: 0; cursor: pointer; }
+    .densidade-controle output { margin-left: 6px; font-variant-numeric: tabular-nums; }
+    .ajuste-controle.ajuste-alternancia { min-height: 44px; }
+    .densidade-extremos {
+        display: flex;
+        justify-content: space-between;
+        gap: 8px;
+        font-size: .72rem;
+    }
+    .densidade-extremos span:last-child { text-align: right; }
 
     .indicadores {
         display: grid;

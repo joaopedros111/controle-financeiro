@@ -1,6 +1,6 @@
 import { criarRecuperacaoFinanceira, storage } from "./storage.js";
 import { CATEGORIAS_PADRAO, CATEGORIA_FIXA, normalizarEstado as normalizarEstadoCore, normalizarValorMonetario, validarBackup, validarTotaisMonetarios, migrarDadosLegados, calcularExpressao, somarCentavos, gerarCsv, agruparDespesasPorCategoria, agruparLancamentosComOrcamento, renomearCategoriaOrcamentos, removerCategoriaOrcamentos } from "./finance-core.js";
-import { apresentarValorFinanceiro, normalizarPreferenciasMenu, resolverTelaInicial } from "./preferences.js";
+import { apresentarValorFinanceiro, calcularEspacamentosDensidade, normalizarPreferenciasMenu, resolverTelaInicial } from "./preferences.js";
 import { criarConfirmacaoAtualizacao, criarVerificadorAutomatico, instalarAtualizacao, lerVersaoControlador, lerVersaoInstalada, lerVersaoPublicada, verificarComConfirmacao } from "./update-manager.js";
 import { aplicarIdioma, formatarMoeda as formatarMoedaLocalizada, LOCALES } from "./localization.js";
 
@@ -52,6 +52,7 @@ const ui = {
     idiomaInterface: $("idioma-interface"),
     moedaInterface: $("moeda-interface"),
     densidadeInterface: $("densidade-interface"),
+    valorDensidadeInterface: $("valor-densidade-interface"),
     mostrarGraficos: $("mostrar-graficos"),
     mostrarDespesas: $("mostrar-despesas-mes"),
     mostrarEntradas: $("mostrar-entradas"),
@@ -3073,7 +3074,13 @@ function aplicarPrivacidade() {
     ui.alternarValores.setAttribute("aria-pressed", String(valoresOcultos));
 }
 function aplicarPreferenciasVisuais() {
-    document.body.dataset.densidade = preferenciasMenu.densidade;
+    const espacamentos = calcularEspacamentosDensidade(preferenciasMenu.densidade);
+    Object.entries(espacamentos).forEach(([variavel, valor]) => {
+        document.body.style.setProperty(variavel, valor);
+    });
+    ui.densidadeInterface.value = String(preferenciasMenu.densidade);
+    ui.valorDensidadeInterface.value = `${preferenciasMenu.densidade}%`;
+    ui.densidadeInterface.setAttribute("aria-valuetext", `${preferenciasMenu.densidade}%`);
     document.body.classList.toggle("graficos-ocultos", !preferenciasMenu.mostrarGraficos);
 }
 function aplicarVisibilidadeSecoes() {
@@ -3180,7 +3187,11 @@ ui.tamanhoBotaoMenu.addEventListener("input", () => {
     aplicarPreferenciasMenu();
     salvarPreferenciasMenu();
 });
-ui.densidadeInterface.addEventListener("change", () => { preferenciasMenu.densidade = ui.densidadeInterface.value; aplicarPreferenciasVisuais(); salvarPreferenciasMenu(); });
+ui.densidadeInterface.addEventListener("input", () => {
+    preferenciasMenu.densidade = Number(ui.densidadeInterface.value);
+    aplicarPreferenciasVisuais();
+    salvarPreferenciasMenu();
+});
 ui.mostrarGraficos.addEventListener("change", () => { preferenciasMenu.mostrarGraficos = ui.mostrarGraficos.checked; aplicarPreferenciasVisuais(); salvarPreferenciasMenu(); });
 ui.mostrarDespesas.addEventListener("change", () => {
     preferenciasMenu.mostrarDespesas = ui.mostrarDespesas.checked;

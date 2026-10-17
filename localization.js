@@ -78,6 +78,8 @@ const FRASES = [
     ["Escuro, Claro, Rosa, Selva ou Pangolim", "Dark, Light, Pink, Jungle, or Pangolin", "Oscuro, Claro, Rosa, Selva o Pangolín", "Sombre, Clair, Rose, Jungle ou Pangolin", "Dunkel, Hell, Rosa, Dschungel oder Pangolin", "ダーク、ライト、ピンク、ジャングル、センザンコウ"],
     ["Alterar", "Change", "Cambiar", "Changer", "Ändern", "変更"],
     ["Densidade da interface", "Interface density", "Densidad de la interfaz", "Densité de l’interface", "Oberflächendichte", "画面密度"],
+    ["Máxima compactação", "Maximum compactness", "Máxima compactación", "Compacité maximale", "Maximale Kompaktheit", "最大限のコンパクト"],
+    ["Muito confortável", "Very comfortable", "Muy cómoda", "Très confortable", "Sehr komfortabel", "とてもゆったり"],
     ["Padrão", "Default", "Estándar", "Par défaut", "Standard", "標準"],
     ["Compacta", "Compact", "Compacta", "Compacte", "Kompakt", "コンパクト"],
     ["Confortável", "Comfortable", "Cómoda", "Confortable", "Komfortabel", "ゆったり"],

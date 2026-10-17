@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { apresentarValorFinanceiro, normalizarPreferenciasMenu, resolverTelaInicial } from "../preferences.js";
+import { apresentarValorFinanceiro, calcularEspacamentosDensidade, normalizarPreferenciasMenu, resolverTelaInicial } from "../preferences.js";
 import { criarArmazenamento } from "../storage.js";
 
 test("preferências antigas ou inválidas mantêm defaults sem quebrar opções existentes", () => {
@@ -13,7 +13,7 @@ test("preferências antigas ou inválidas mantêm defaults sem quebrar opções 
     assert.equal(preferencia.posicao, "centro");
     assert.equal(preferencia.transparencia, 80);
     assert.equal(preferencia.x, null);
-    assert.equal(preferencia.densidade, "padrao");
+    assert.equal(preferencia.densidade, 50);
     assert.equal(preferencia.telaInicial, "resumo");
     assert.equal(preferencia.ultimoPeriodo, null);
     assert.equal(preferencia.escopoCsv, "mes");
@@ -21,13 +21,42 @@ test("preferências antigas ou inválidas mantêm defaults sem quebrar opções 
     assert.equal(preferencia.ocultarAoIniciar, true);
 });
 
-test("normaliza e preserva os cinco níveis de densidade da interface", () => {
-    for (const densidade of [
-        "muito-compacta", "compacta", "padrao", "confortavel", "muito-confortavel"
+test("densidade contínua normaliza limites e mapeia os níveis antigos", () => {
+    assert.equal(normalizarPreferenciasMenu({}).densidade, 50);
+    assert.equal(normalizarPreferenciasMenu({ densidade: -10 }).densidade, 0);
+    assert.equal(normalizarPreferenciasMenu({ densidade: 130 }).densidade, 100);
+    assert.equal(normalizarPreferenciasMenu({ densidade: 62.7 }).densidade, 63);
+    assert.equal(normalizarPreferenciasMenu({ densidade: "inválida" }).densidade, 50);
+    for (const [legada, posicao] of [
+        ["muito-compacta", 0], ["compacta", 25], ["padrao", 50],
+        ["confortavel", 75], ["muito-confortavel", 100]
     ]) {
-        assert.equal(normalizarPreferenciasMenu({ densidade }).densidade, densidade);
+        assert.equal(normalizarPreferenciasMenu({ densidade: legada }).densidade, posicao);
     }
-    assert.equal(normalizarPreferenciasMenu({ densidade: "desconhecida" }).densidade, "padrao");
+});
+
+test("escala de densidade varia progressivamente e preserva os valores do extremo confortável", () => {
+    const minimo = calcularEspacamentosDensidade(0);
+    const meio = calcularEspacamentosDensidade(50);
+    const maximo = calcularEspacamentosDensidade(100);
+
+    assert.equal(minimo["--densidade-bloco-vertical"], "8px");
+    assert.equal(maximo["--densidade-bloco-vertical"], "28px");
+    assert.equal(maximo["--densidade-bloco-horizontal"], "24px");
+    assert.equal(maximo["--densidade-lancamento-vertical"], "20px");
+    assert.equal(maximo["--densidade-opcoes-secao-gap"], "16px");
+    assert.equal(maximo["--densidade-opcoes-grupo-margem"], "28px");
+    assert.equal(maximo["--densidade-opcoes-grupo-padding"], "24px");
+    assert.equal(maximo["--densidade-opcoes-linha-padding"], "12px");
+    assert.equal(maximo["--densidade-opcoes-linha-padding-mobile"], "10px");
+    assert.equal(maximo["--densidade-panorama-gap"], "14px");
+    assert.equal(maximo["--densidade-panorama-gap-mobile"], "10px");
+    assert.equal(maximo["--densidade-panorama-conteudo-gap"], "18px");
+    assert.equal(maximo["--densidade-panorama-conteudo-gap-mobile"], "8px");
+    assert.equal(maximo["--densidade-legenda-categoria-padding"], "7px");
+    assert.equal(maximo["--densidade-legenda-categoria-padding-mobile"], "5px");
+    assert.ok(Number.parseFloat(minimo["--densidade-container-gap"]) < Number.parseFloat(meio["--densidade-container-gap"]));
+    assert.ok(Number.parseFloat(meio["--densidade-container-gap"]) < Number.parseFloat(maximo["--densidade-container-gap"]));
 });
 
 test("seções da tela inicial ficam visíveis por padrão em preferências existentes", () => {
@@ -63,13 +92,28 @@ test("preferências de visibilidade são independentes e persistem após recarre
     assert.equal(restauradas.mostrarPlanejamento, false);
     assert.equal(restauradas.mostrarDespesas, true);
     assert.equal(restauradas.mostrarEntradas, false);
-    assert.equal(restauradas.densidade, "confortavel");
+    assert.equal(restauradas.densidade, 75);
     assert.equal(restauradas.mostrarGraficos, false);
     assert.equal(restauradas.telaInicial, "graficos");
     assert.deepEqual(
         normalizarPreferenciasMenu({ mostrarPlanejamento: false }),
         { ...normalizarPreferenciasMenu({}), mostrarPlanejamento: false }
     );
+});
+
+test("posição personalizada do slider de densidade persiste após recarregar", () => {
+    const dados = new Map();
+    const local = {
+        getItem: (chave) => dados.get(chave) ?? null,
+        setItem: (chave, valor) => dados.set(chave, String(valor)),
+        removeItem: (chave) => dados.delete(chave)
+    };
+    const chave = "controleFinanceiro:preferencias-menu";
+    const preferencias = normalizarPreferenciasMenu({ densidade: 37 });
+
+    assert.equal(preferencias.densidade, 37);
+    assert.equal(criarArmazenamento(local).escreverJson(chave, preferencias), true);
+    assert.equal(normalizarPreferenciasMenu(criarArmazenamento(local).lerJson(chave)).densidade, 37);
 });
 
 test("preferência válida de posição, transparência, tela e período é preservada", () => {
@@ -89,7 +133,7 @@ test("preferência válida de posição, transparência, tela e período é pres
     assert.equal(preferencia.posicao, "arrastavel");
     assert.equal(preferencia.transparencia, 34);
     assert.equal(preferencia.x, 50);
-    assert.equal(preferencia.densidade, "compacta");
+    assert.equal(preferencia.densidade, 25);
     assert.equal(preferencia.telaInicial, "lancamentos");
     assert.equal(preferencia.ultimoPeriodo, "2026-09");
     assert.equal(preferencia.escopoCsv, "todos");
@@ -169,7 +213,7 @@ test("preferências existentes permanecem intactas ao normalizar a tela inicial"
         assert.equal(criarArmazenamento(local).escreverJson(chave, antes), true);
 
         const depois = normalizarPreferenciasMenu(criarArmazenamento(local).lerJson(chave));
-        assert.equal(depois.densidade, "compacta");
+        assert.equal(depois.densidade, 25);
         assert.equal(depois.mostrarGraficos, false);
         assert.equal(depois.ocultarAoIniciar, true);
         assert.equal(depois.telaInicial, "graficos");
@@ -178,7 +222,7 @@ test("preferências existentes permanecem intactas ao normalizar a tela inicial"
         assert.equal(depois.versaoPublicada, "1.1.0");
     });
     assert.equal(preferencias.ocultarAoIniciar, true);
-    assert.equal(preferencias.densidade, "compacta");
+    assert.equal(preferencias.densidade, 25);
     assert.equal(preferencias.mostrarGraficos, false);
     assert.equal(preferencias.referenciaMes, "ultimo");
     assert.equal(preferencias.ultimoPeriodo, "2026-09");
@@ -212,7 +256,7 @@ test("preferência de início oculto persiste após recarregar e preserva as dem
 
     const recarregado = normalizarPreferenciasMenu(criarArmazenamento(local).lerJson(chave));
     assert.equal(recarregado.ocultarAoIniciar, true);
-    assert.equal(recarregado.densidade, "compacta");
+    assert.equal(recarregado.densidade, 25);
     assert.equal(recarregado.mostrarGraficos, false);
     assert.equal(recarregado.referenciaMes, "ultimo");
     assert.equal(recarregado.ultimoPeriodo, "2026-09");
@@ -251,6 +295,6 @@ test("ocultação financeira também mascara gasto, limite e restante do orçame
 test("preferências antigas ou incompletas mantêm valores visíveis por padrão", () => {
     const antigas = normalizarPreferenciasMenu({ densidade: "confortavel" });
     assert.equal(antigas.ocultarAoIniciar, false);
-    assert.equal(antigas.densidade, "confortavel");
+    assert.equal(antigas.densidade, 75);
     assert.equal(antigas.transparencia, 45);
 });

@@ -1,6 +1,6 @@
 const PADRAO = {
     posicao: "centro", transparencia: 45, tamanhoBotao: 58, x: null, y: null,
-    densidade: "padrao", mostrarGraficos: true, telaInicial: "resumo",
+    densidade: 50, mostrarGraficos: true, telaInicial: "resumo",
     mostrarPlanejamento: true, mostrarDespesas: true, mostrarEntradas: true,
     ultimaTelaUtilizada: null,
     referenciaMes: "atual", ultimoPeriodo: null, ocultarAoIniciar: false,
@@ -9,6 +9,54 @@ const PADRAO = {
     ultimaVerificacao: "Não registrada.", resultadoVerificacao: "Não verificada.",
     versaoPublicada: "Não verificada."
 };
+
+const DENSIDADES_ANTIGAS = {
+    "muito-compacta": 0,
+    compacta: 25,
+    padrao: 50,
+    confortavel: 75,
+    "muito-confortavel": 100
+};
+
+const ESCALA_ESPACAMENTOS_DENSIDADE = {
+    "--densidade-container-gap": [4, 12],
+    "--densidade-bloco-vertical": [8, 28],
+    "--densidade-bloco-horizontal": [8, 24],
+    "--densidade-cabecalho-gap": [4, 12],
+    "--densidade-cabecalho-margem": [6, 14],
+    "--densidade-lista-gap": [4, 12],
+    "--densidade-lancamento-vertical": [4, 20],
+    "--densidade-lancamento-gap": [4, 10],
+    "--densidade-lancamento-gap-mobile": [4, 7],
+    "--densidade-itens-despesa-horizontal": [4, 12],
+    "--densidade-panorama-gap": [6, 14],
+    "--densidade-panorama-gap-mobile": [4, 10],
+    "--densidade-panorama-conteudo-gap": [6, 18],
+    "--densidade-panorama-conteudo-gap-mobile": [4, 8],
+    "--densidade-legenda-categoria-padding": [3, 7],
+    "--densidade-legenda-categoria-padding-mobile": [3, 5],
+    "--densidade-legenda-categoria-gap": [4, 8],
+    "--densidade-legenda-categoria-gap-mobile": [2, 4],
+    "--densidade-nome-categoria-gap": [3, 7],
+    "--densidade-nome-categoria-gap-mobile": [3, 5],
+    "--densidade-opcoes-topo-margem": [8, 20],
+    "--densidade-opcoes-secao-gap": [4, 16],
+    "--densidade-opcoes-grupo-margem": [12, 28],
+    "--densidade-opcoes-grupo-padding": [12, 24],
+    "--densidade-opcoes-linha-padding": [7, 12],
+    "--densidade-opcoes-linha-gap": [6, 12],
+    "--densidade-opcoes-linha-padding-mobile": [6, 10],
+    "--densidade-opcoes-linha-gap-mobile": [6, 8],
+    "--densidade-opcoes-controle-gap": [4, 8]
+};
+
+export function calcularEspacamentosDensidade(densidade) {
+    const valor = Number.isFinite(densidade) ? Math.max(0, Math.min(100, densidade)) : PADRAO.densidade;
+    return Object.fromEntries(Object.entries(ESCALA_ESPACAMENTOS_DENSIDADE).map(([variavel, [minimo, maximo]]) => [
+        variavel,
+        `${Number((minimo + (maximo - minimo) * valor / 100).toFixed(2))}px`
+    ]));
+}
 
 export function normalizarPreferenciasMenu(salvas) {
     const preferencias = { ...PADRAO, ...(salvas && typeof salvas === "object" && !Array.isArray(salvas) ? salvas : {}) };
@@ -19,9 +67,11 @@ export function normalizarPreferenciasMenu(salvas) {
     preferencias.tamanhoBotao = Number.isFinite(tamanhoBotao)
         ? Math.max(44, Math.min(76, Math.round(tamanhoBotao)))
         : PADRAO.tamanhoBotao;
-    if (!["muito-compacta", "compacta", "padrao", "confortavel", "muito-confortavel"].includes(preferencias.densidade)) {
-        preferencias.densidade = PADRAO.densidade;
-    }
+    if (typeof preferencias.densidade === "string") {
+        preferencias.densidade = DENSIDADES_ANTIGAS[preferencias.densidade] ?? PADRAO.densidade;
+    } else if (typeof preferencias.densidade === "number" && Number.isFinite(preferencias.densidade)) {
+        preferencias.densidade = Math.round(Math.max(0, Math.min(100, preferencias.densidade)));
+    } else preferencias.densidade = PADRAO.densidade;
     if (preferencias.telaInicial === "receitas" || preferencias.telaInicial === "despesas") {
         preferencias.telaInicial = "lancamentos";
     }

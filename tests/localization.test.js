@@ -19,6 +19,8 @@ test("traduções localizam frases da interface e preservam o português como pa
     assert.equal(textoTraduzido("Janeiro", "es"), "Enero");
     assert.equal(textoTraduzido("Ocultar valores financeiros", "ja"), "金額を非表示");
     assert.equal(textoTraduzido("Idioma e moeda", "pt-BR"), "Idioma e moeda");
+    assert.equal(textoTraduzido("Máxima compactação", "en"), "Maximum compactness");
+    assert.equal(textoTraduzido("Muito confortável", "ja"), "とてもゆったり");
     assert.equal(textoTraduzido("Mostrar gráficos", "en"), "Show charts");
     assert.equal(textoTraduzido("Rótulo personalizado", "fr"), "Rótulo personalizado");
     assert.equal(textoTraduzido("Exibir Entradas na tela inicial", "en"), "Show Income on the home screen");
@@ -68,7 +70,7 @@ test("idioma e moeda persistem sem alterar outras preferências antigas", () => 
     assert.equal(depois.idioma, "ja");
     assert.equal(depois.moeda, "JPY");
     assert.equal(depois.ocultarAoIniciar, true);
-    assert.equal(depois.densidade, "compacta");
+    assert.equal(depois.densidade, 25);
     assert.equal(depois.tema, "pangolim");
 });
 

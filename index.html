@@ -222,15 +222,13 @@
                 <div><strong>Tema</strong><span>Escuro, Claro, Rosa, Selva ou Pangolim</span></div>
                 <button id="alternar-tema" class="btn btn-secundario tema-botao" type="button" aria-label="Tema atual: Claro. Mudar para Escuro." title="Tema atual: Claro. Mudar para Escuro.">☀️ <span>Claro</span></button>
             </div>
-            <label class="ajuste-linha ajuste-controle" for="densidade-interface">
-                <span>Densidade da interface</span>
-                <select id="densidade-interface">
-                    <option value="muito-compacta">Muito compacta</option>
-                    <option value="compacta">Compacta</option>
-                    <option value="padrao">Padrão</option>
-                    <option value="confortavel">Confortável</option>
-                    <option value="muito-confortavel">Muito confortável</option>
-                </select>
+            <label class="ajuste-linha ajuste-controle densidade-controle" for="densidade-interface">
+                <span>Densidade da interface <output id="valor-densidade-interface" for="densidade-interface" aria-live="polite">50%</output></span>
+                <input id="densidade-interface" type="range" min="0" max="100" step="1" value="50" aria-valuetext="50%" aria-describedby="densidade-extremos">
+                <span id="densidade-extremos" class="densidade-extremos">
+                    <span>Máxima compactação</span>
+                    <span>Muito confortável</span>
+                </span>
             </label>
             <label class="ajuste-linha ajuste-controle ajuste-alternancia" for="mostrar-graficos">
                 <span>Mostrar gráficos</span>

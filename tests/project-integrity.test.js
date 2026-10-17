@@ -99,12 +99,15 @@ test("controles das preferências incrementais têm implementação e cache atua
     const [html, app, css, serviceWorker] = await Promise.all([
         read("index.html"), read("app.js"), read("style.css"), read("sw.js")
     ]);
-    for (const id of ["densidade-interface", "mostrar-graficos", "tela-inicial", "referencia-mes", "ocultar-ao-iniciar", "alternar-valores", "escopo-csv", "diagnostico-dados"]) {
+    for (const id of ["densidade-interface", "valor-densidade-interface", "mostrar-graficos", "tela-inicial", "referencia-mes", "ocultar-ao-iniciar", "alternar-valores", "escopo-csv", "diagnostico-dados"]) {
         assert.match(html, new RegExp(`id="${id}"`), `controle ${id} ausente`);
         assert.ok(app.includes(`$("${id}")`), `controle ${id} sem conexão com o app`);
     }
     assert.match(html, /for="mostrar-graficos">\s*<span>Mostrar gráficos<\/span>/);
-    assert.match(css, /data-densidade="compacta"/);
+    assert.match(html, /id="densidade-interface" type="range" min="0" max="100" step="1"/);
+    assert.match(app, /calcularEspacamentosDensidade\(preferenciasMenu\.densidade\)/);
+    assert.match(app, /ui\.densidadeInterface\.addEventListener\("input"/);
+    assert.match(app, /salvarPreferenciasMenu\(\)/);
     assert.match(css, /body\.graficos-ocultos \.grafico-bloco \{ display: none; \}/);
     assert.doesNotMatch(css, /body\.graficos-ocultos\s+\.indicadores/);
     const resumo = html.slice(html.indexOf('<section class="resumo"'), html.indexOf("</section>", html.indexOf('<section class="resumo"')));
@@ -115,28 +118,33 @@ test("controles das preferências incrementais têm implementação e cache atua
     assert.equal((serviceWorker.match(/"\.\/preferences\.js"/g) || []).length, 1, "preferences.js deve ser precacheado uma vez");
 });
 
-test("densidade oferece cinco níveis ordenados e estilos progressivos para novos extremos", async () => {
-    const [html, preferences, styles] = await Promise.all([
-        read("index.html"), read("preferences.js"), read("style.css")
+test("densidade usa slider progressivo, mapeia preferências antigas e preserva o extremo confortável", async () => {
+    const [html, preferences, styles, app] = await Promise.all([
+        read("index.html"), read("preferences.js"), read("style.css"), read("app.js")
     ]);
-    const controle = html.match(/<select id="densidade-interface">([\s\S]*?)<\/select>/);
-    assert.ok(controle, "seletor de densidade ausente");
-    const opcoes = [...controle[1].matchAll(/<option value="([^"]+)">([^<]+)<\/option>/g)]
-        .map(([, value, label]) => [value, label]);
-    assert.deepEqual(opcoes, [
-        ["muito-compacta", "Muito compacta"],
-        ["compacta", "Compacta"],
-        ["padrao", "Padrão"],
-        ["confortavel", "Confortável"],
-        ["muito-confortavel", "Muito confortável"]
-    ]);
-    for (const valor of ["muito-compacta", "compacta", "padrao", "confortavel", "muito-confortavel"]) {
-        assert.ok(preferences.includes(`"${valor}"`), `${valor} não é aceito pelas preferências`);
-    }
-    assert.match(styles, /body\[data-densidade="muito-compacta"\] \.bloco/);
-    assert.match(styles, /body\[data-densidade="muito-confortavel"\] \.bloco/);
-    assert.match(styles, /body\[data-densidade="muito-compacta"\] #dialogo-ajustes/);
-    assert.match(styles, /body\[data-densidade="muito-confortavel"\] #dialogo-ajustes/);
+    assert.match(html, /<label class="ajuste-linha ajuste-controle densidade-controle" for="densidade-interface">/);
+    assert.match(html, /<output id="valor-densidade-interface" for="densidade-interface" aria-live="polite">50%<\/output>/);
+    assert.match(html, /id="densidade-interface" type="range" min="0" max="100" step="1" value="50" aria-valuetext="50%" aria-describedby="densidade-extremos"/);
+    assert.match(html, /id="densidade-extremos" class="densidade-extremos"[\s\S]*Máxima compactação[\s\S]*Muito confortável/);
+    for (const [valor, esperado] of [
+        ["muito-compacta", 0], ["compacta", 25], ["padrao", 50],
+        ["confortavel", 75], ["muito-confortavel", 100]
+]) assert.match(
+    preferences,
+    new RegExp(`["']?${valor}["']?:\\s*${esperado}`)
+);
+    assert.match(preferences, /densidade: 50/);
+    assert.match(preferences, /export function calcularEspacamentosDensidade/);
+    assert.match(styles, /padding: var\(--densidade-bloco-vertical, 28px\) var\(--densidade-bloco-horizontal, 24px\)/);
+    assert.match(styles, /padding-top: var\(--densidade-lancamento-vertical, 20px\)/);
+    assert.match(styles, /gap: var\(--densidade-opcoes-secao-gap, 16px\)/);
+    assert.match(styles, /margin-top: var\(--densidade-opcoes-grupo-margem, 28px\)/);
+    assert.match(styles, /padding-top: var\(--densidade-opcoes-grupo-padding, 24px\)/);
+    assert.match(styles, /body \.panorama-graficos \{ gap: var\(--densidade-panorama-gap, 14px\); \}/);
+    assert.match(styles, /body \.grafico-categoria-item \{[\s\S]*padding: var\(--densidade-legenda-categoria-padding, 7px\) 2px/);
+    assert.match(styles, /input\[type="range"\] \{ min-height: 44px; margin: 0; cursor: pointer; \}/);
+    assert.doesNotMatch(styles, /densidade-oculta|densidade.*display:\s*none|densidade.*visibility:\s*hidden/);
+    assert.match(app, /ui\.densidadeInterface\.setAttribute\("aria-valuetext", `\$\{preferenciasMenu\.densidade\}%`\)/);
 });
 
 test("idioma e moeda são preferências persistentes, formatam a apresentação e entram no precache", async () => {
@@ -474,8 +482,7 @@ test("visibilidade altera somente apresentação e tem controles persistentes in
     assert.match(controls, /ajuste-controle\.ajuste-alternancia/);
     assert.match(controls, /@media \(max-width: 480px\)/);
     assert.match(controls, /\.ajustes-secao \{ display: grid; gap: 10px; \}/);
-    assert.match(layout, /body\[data-densidade="compacta"\] #dialogo-ajustes \.ajustes-secao \{ gap: 7px; \}/);
-    assert.match(layout, /body\[data-densidade="confortavel"\] #dialogo-ajustes \.ajustes-secao \{ gap: 13px; \}/);
+    assert.match(layout, /--densidade-opcoes-secao-gap/);
     assert.match(controls, /\.ajuste-controle select \{ width: 100%; min-width: 0;/);
 
     const handlers = app.slice(app.indexOf('ui.mostrarDespesas.addEventListener'), app.indexOf('ui.telaInicial.addEventListener'));
