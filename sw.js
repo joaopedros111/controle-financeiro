@@ -1,5 +1,6 @@
 const PREFIXO_CACHE = "controle-financeiro-pwa-cache-";
-const CACHE = PREFIXO_CACHE + "v15";
+const CACHE = PREFIXO_CACHE + "v16";
+const VERSAO_SERVICE_WORKER = "1.1.7";
 const CACHE_ANTIGO = "controle-financeiro-v5";
 const ARQUIVOS = [
     "./",
@@ -38,7 +39,21 @@ self.addEventListener("activate", (event) => {
 });
 
 self.addEventListener("message", (event) => {
-    if (event.data?.tipo === "ATIVAR_ATUALIZACAO") event.waitUntil(self.skipWaiting());
+    const resposta = event.ports?.[0];
+    if (event.data?.tipo === "OBTER_VERSAO") {
+        resposta?.postMessage({ tipo: "VERSAO_SERVICE_WORKER", versao: VERSAO_SERVICE_WORKER });
+        return;
+    }
+    if (event.data?.tipo !== "ATIVAR_ATUALIZACAO") return;
+    if (event.data.versao !== VERSAO_SERVICE_WORKER) {
+        resposta?.postMessage({ tipo: "ATUALIZACAO_RECUSADA", versao: VERSAO_SERVICE_WORKER });
+        return;
+    }
+    event.waitUntil(self.skipWaiting().then(() => {
+        resposta?.postMessage({ tipo: "ATUALIZACAO_ACEITA", versao: VERSAO_SERVICE_WORKER });
+    }).catch(() => {
+        resposta?.postMessage({ tipo: "ATUALIZACAO_RECUSADA", versao: VERSAO_SERVICE_WORKER });
+    }));
 });
 
 self.addEventListener("fetch", (event) => {

@@ -56,12 +56,109 @@ export async function verificarComConfirmacao({ instalada, publicada, confirmar,
     return "atualizado-agora";
 }
 
-function esperarInstalacao(worker, registro, timeoutMs) {
+export function criarConfirmacaoAtualizacao(confirmar) {
+    let versaoAdiada = null;
+    return {
+        foiAdiada: (publicada) => publicada === versaoAdiada,
+        confirmar(instalada, publicada, automatica = false) {
+            if (automatica && publicada === versaoAdiada) return false;
+            const aceita = confirmar(instalada, publicada);
+            versaoAdiada = aceita ? null : publicada;
+            return aceita;
+        }
+    };
+}
+
+export function criarVerificadorAutomatico(verificar, {
+    agora = Date.now,
+    intervaloMinimoMs = 60000
+} = {}) {
+    let verificacaoAtiva = null;
+    let ultimaVerificacaoBemSucedida = null;
+
+    return () => {
+        if (verificacaoAtiva) return verificacaoAtiva;
+        const instante = agora();
+        if (ultimaVerificacaoBemSucedida !== null
+            && instante - ultimaVerificacaoBemSucedida < intervaloMinimoMs) {
+            return Promise.resolve("ignorada");
+        }
+
+        verificacaoAtiva = Promise.resolve()
+            .then(verificar)
+            .then((resultado) => {
+                if (!["falha", "offline", "em-andamento"].includes(resultado)) {
+                    ultimaVerificacaoBemSucedida = agora();
+                }
+                return resultado;
+            })
+            .finally(() => {
+                verificacaoAtiva = null;
+            });
+        return verificacaoAtiva;
+    };
+}
+
+function comTimeout(promessa, timeoutMs, mensagem) {
+    let temporizador;
+    return Promise.race([
+        promessa,
+        new Promise((_, reject) => {
+            temporizador = setTimeout(() => reject(new Error(mensagem)), timeoutMs);
+        })
+    ]).finally(() => clearTimeout(temporizador));
+}
+
+function enviarMensagemWorker(worker, mensagem, tipoResposta, timeoutMs) {
     return new Promise((resolve, reject) => {
-        const temporizador = setTimeout(() => terminar(new Error("A instalação da atualização demorou demais.")), timeoutMs);
+        if (typeof MessageChannel === "undefined") {
+            reject(new Error("Este navegador não permite confirmar a identidade do Service Worker."));
+            return;
+        }
+        const canal = new MessageChannel();
+        const temporizador = setTimeout(() => terminar(new Error("O Service Worker não confirmou a solicitação dentro do prazo.")), timeoutMs);
+        const terminar = (erro, resposta) => {
+            clearTimeout(temporizador);
+            canal.port1.close();
+            if (erro) reject(erro);
+            else resolve(resposta);
+        };
+        canal.port1.onmessage = (evento) => {
+            const resposta = evento.data;
+            if (!resposta || resposta.tipo !== tipoResposta) {
+                terminar(new Error("O Service Worker respondeu com uma identidade inválida."));
+            } else {
+                terminar(null, resposta);
+            }
+        };
+        canal.port1.onmessageerror = () => terminar(new Error("Não foi possível ler a resposta do Service Worker."));
+        try {
+            worker.postMessage(mensagem, [canal.port2]);
+        } catch (erro) {
+            terminar(new Error(`Não foi possível consultar o Service Worker: ${erro.message || "erro desconhecido"}.`));
+        }
+    });
+}
+
+async function lerIdentidadeWorker(worker, timeoutMs) {
+    const resposta = await enviarMensagemWorker(
+        worker,
+        { tipo: "OBTER_VERSAO" },
+        "VERSAO_SERVICE_WORKER",
+        timeoutMs
+    );
+    if (!versaoValida(resposta.versao)) {
+        throw new Error("O Service Worker não informou uma versão válida.");
+    }
+    return resposta.versao;
+}
+
+function esperarInstalacao(worker, timeoutMs) {
+    return new Promise((resolve, reject) => {
+        let temporizador;
         const verificar = () => {
-            if (worker.state === "installed") terminar(null, registro.waiting || worker);
-            else if (worker.state === "redundant") terminar(new Error("A instalação da atualização falhou."));
+            if (worker.state === "installed" || worker.state === "activated") terminar(null, worker);
+            else if (worker.state === "redundant") terminar(new Error("A instalação da atualização falhou e o worker foi descartado."));
         };
         const terminar = (erro, resultado) => {
             clearTimeout(temporizador);
@@ -69,39 +166,86 @@ function esperarInstalacao(worker, registro, timeoutMs) {
             if (erro) reject(erro);
             else resolve(resultado);
         };
+        temporizador = setTimeout(() => terminar(new Error("A instalação da atualização demorou demais.")), timeoutMs);
         worker.addEventListener("statechange", verificar);
         verificar();
     });
 }
 
-export async function instalarAtualizacao(registro, serviceWorkers, timeoutMs = 60000) {
-    let worker = registro.waiting;
-    if (!worker) {
-        const atualizacao = registro.update();
-        await atualizacao;
-        worker = registro.waiting || registro.installing;
-    }
-    if (!worker) throw new Error("O Service Worker não encontrou uma nova versão para instalar. Verifique se a versão e o cache foram publicados juntos.");
-    if (worker.state !== "installed" && worker.state !== "activated") {
-        worker = await esperarInstalacao(worker, registro, timeoutMs);
-    }
-    if (worker.state === "activated" && serviceWorkers.controller === worker) return;
-
-    const controladorAnterior = serviceWorkers.controller;
-    let temporizador;
-    const controladorNovo = new Promise((resolve, reject) => {
-        const aoMudar = () => {
-            if (serviceWorkers.controller && serviceWorkers.controller !== controladorAnterior) terminar();
-        };
-        const terminar = (erro) => {
+function esperarControlador(serviceWorkers, controladorAnterior, timeoutMs) {
+    return new Promise((resolve, reject) => {
+        let temporizador;
+        const terminar = (erro, controlador) => {
             clearTimeout(temporizador);
             serviceWorkers.removeEventListener("controllerchange", aoMudar);
             if (erro) reject(erro);
-            else resolve();
+            else resolve(controlador);
         };
-        temporizador = setTimeout(() => terminar(new Error("A nova versão foi instalada, mas ainda não assumiu o controle desta página.")), timeoutMs);
+        const aoMudar = () => {
+            const controlador = serviceWorkers.controller;
+            if (controlador && controlador !== controladorAnterior) terminar(null, controlador);
+        };
+        temporizador = setTimeout(() => terminar(
+            new Error("A nova versão foi ativada, mas ainda não controla esta página."),
+            null
+        ), timeoutMs);
         serviceWorkers.addEventListener("controllerchange", aoMudar);
+        aoMudar();
     });
-    worker.postMessage({ tipo: "ATIVAR_ATUALIZACAO" });
-    await controladorNovo;
+}
+
+export async function instalarAtualizacao(registro, serviceWorkers, versaoEsperada, timeoutMs = 60000) {
+    if (!registro || typeof registro.update !== "function") {
+        throw new Error("O registro do Service Worker não está disponível para atualização.");
+    }
+    if (!serviceWorkers || typeof serviceWorkers.addEventListener !== "function"
+        || typeof serviceWorkers.removeEventListener !== "function") {
+        throw new Error("O navegador não disponibilizou o controlador do Service Worker.");
+    }
+    if (!versaoValida(versaoEsperada)) throw new Error("A versão esperada da atualização é inválida.");
+
+    const controladorAnterior = serviceWorkers.controller || null;
+    await comTimeout(
+        registro.update(),
+        timeoutMs,
+        "A verificação do Service Worker demorou demais."
+    );
+
+    let workerInstalado = registro.installing;
+    if (workerInstalado) workerInstalado = await esperarInstalacao(workerInstalado, timeoutMs);
+    const worker = workerInstalado || registro.waiting;
+    if (!worker) {
+        const controladorAtual = serviceWorkers.controller || null;
+        const versaoControlador = controladorAtual
+            ? await lerIdentidadeWorker(controladorAtual, timeoutMs)
+            : null;
+        if (versaoControlador === versaoEsperada) return versaoControlador;
+        throw new Error("Não foi encontrada uma instalação do Service Worker para a versão esperada.");
+    }
+    if (worker.state !== "installed" && worker.state !== "activated") {
+        throw new Error("O Service Worker candidato ainda não terminou a instalação.");
+    }
+
+    const versaoWorker = await lerIdentidadeWorker(worker, timeoutMs);
+    if (versaoWorker !== versaoEsperada) {
+        throw new Error(`O Service Worker aguardando é da versão ${versaoWorker}, não da versão esperada ${versaoEsperada}. Tente novamente quando a instalação mais recente terminar.`);
+    }
+    if (serviceWorkers.controller === worker) return versaoEsperada;
+
+    const resposta = await enviarMensagemWorker(
+        worker,
+        { tipo: "ATIVAR_ATUALIZACAO", versao: versaoEsperada },
+        "ATUALIZACAO_ACEITA",
+        timeoutMs
+    );
+    if (resposta.versao !== versaoEsperada) {
+        throw new Error("O Service Worker recusou a ativação da versão esperada.");
+    }
+
+    const controlador = await esperarControlador(serviceWorkers, controladorAnterior, timeoutMs);
+    const versaoControlador = await lerIdentidadeWorker(controlador, timeoutMs);
+    if (versaoControlador !== versaoEsperada) {
+        throw new Error(`A versão ${versaoControlador} assumiu o controle; a versão esperada era ${versaoEsperada}.`);
+    }
+    return versaoControlador;
 }

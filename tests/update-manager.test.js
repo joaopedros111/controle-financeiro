@@ -1,6 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+    criarConfirmacaoAtualizacao,
+    criarVerificadorAutomatico,
     compararVersoes,
     instalarAtualizacao,
     lerVersaoInstalada,
@@ -8,6 +10,62 @@ import {
     versaoValida,
     verificarComConfirmacao
 } from "../update-manager.js";
+
+test("confirmação automática não repete aviso adiado da mesma versão e manual pode reabrir", () => {
+    const solicitacoes = [];
+    const confirmar = criarConfirmacaoAtualizacao((instalada, publicada) => {
+        solicitacoes.push([instalada, publicada]);
+        return false;
+    });
+
+    assert.equal(confirmar.confirmar("1.1.6", "1.2.0", true), false);
+    assert.equal(confirmar.foiAdiada("1.2.0"), true);
+    assert.equal(confirmar.confirmar("1.1.6", "1.2.0", true), false);
+    assert.equal(solicitacoes.length, 1);
+    assert.equal(confirmar.confirmar("1.1.6", "1.2.0", false), false);
+    assert.equal(solicitacoes.length, 2);
+    assert.equal(confirmar.confirmar("1.1.6", "1.3.0", true), false);
+    assert.equal(solicitacoes.length, 3);
+});
+
+test("verificador automático compartilha consulta em andamento e limita verificações bem-sucedidas", async () => {
+    let agora = 1000;
+    let chamadas = 0;
+    let concluir;
+    const verificar = criarVerificadorAutomatico(
+        () => {
+            chamadas += 1;
+            return new Promise((resolve) => { concluir = resolve; });
+        },
+        { agora: () => agora, intervaloMinimoMs: 60000 }
+    );
+
+    const primeira = verificar();
+    const concorrente = verificar();
+    assert.strictEqual(concorrente, primeira);
+    await Promise.resolve();
+    assert.equal(chamadas, 1);
+    concluir("atualizado");
+    assert.equal(await primeira, "atualizado");
+    assert.equal(await verificar(), "ignorada");
+
+    agora += 60000;
+    assert.equal(await verificar(), "atualizado");
+    assert.equal(chamadas, 2);
+});
+
+test("verificador automático permite nova tentativa após falha ou ausência de conexão", async () => {
+    let chamadas = 0;
+    const verificar = criarVerificadorAutomatico(async () => {
+        chamadas += 1;
+        return chamadas === 1 ? "offline" : chamadas === 2 ? "falha" : "atualizado";
+    }, { intervaloMinimoMs: 60000 });
+
+    assert.equal(await verificar(), "offline");
+    assert.equal(await verificar(), "falha");
+    assert.equal(await verificar(), "atualizado");
+    assert.equal(chamadas, 3);
+});
 
 test("versões usam MAJOR.MINOR.PATCH e são comparadas numericamente", () => {
     assert.equal(versaoValida("1.1.0"), true);
@@ -100,46 +158,210 @@ test("cancelar atualização não instala nem ativa o novo Service Worker", asyn
     assert.equal(atualizou, false);
 });
 
-test("aceitar atualização espera instalação, ativa o worker aguardando e aguarda controllerchange", async () => {
-    const listeners = new Map();
-    const containerListeners = new Set();
-    const controladorAntigo = {};
-    const registro = { waiting: null, installing: null };
-    let mensagemRecebida;
-    const container = {
-        controller: controladorAntigo,
-        addEventListener: (nome, listener) => containerListeners.add(listener),
-        removeEventListener: (nome, listener) => containerListeners.delete(listener)
+function criarServiceWorkers(controlador = null) {
+    const listeners = new Set();
+    return {
+        controller: controlador,
+        addEventListener: (nome, listener) => {
+            if (nome === "controllerchange") listeners.add(listener);
+        },
+        removeEventListener: (nome, listener) => {
+            if (nome === "controllerchange") listeners.delete(listener);
+        },
+        alterarControlador(novo) {
+            this.controller = novo;
+            listeners.forEach((listener) => listener());
+        },
+        get listenersAtivos() { return listeners.size; }
     };
-    const worker = {
-        state: "installing",
-        addEventListener: (nome, listener) => listeners.set(nome, listener),
-        removeEventListener: (nome) => listeners.delete(nome),
-        postMessage: (mensagem) => {
-            mensagemRecebida = mensagem;
-            worker.state = "activated";
-            registro.waiting = null;
-            registro.installing = null;
-            container.controller = worker;
-            containerListeners.forEach((listener) => listener());
+}
+
+function criarWorker(versao, { state = "installed", aoAtivar = null } = {}) {
+    const listeners = new Set();
+    return {
+        version: versao,
+        state,
+        addEventListener: (nome, listener) => {
+            if (nome === "statechange") listeners.add(listener);
+        },
+        removeEventListener: (nome, listener) => {
+            if (nome === "statechange") listeners.delete(listener);
+        },
+        alterarEstado(novo) {
+            this.state = novo;
+            listeners.forEach((listener) => listener());
+        },
+        postMessage(mensagem, portas = []) {
+            const porta = portas[0];
+            if (mensagem.tipo === "OBTER_VERSAO") {
+                porta.postMessage({ tipo: "VERSAO_SERVICE_WORKER", versao });
+                return;
+            }
+            if (mensagem.tipo === "ATIVAR_ATUALIZACAO") aoAtivar?.(this, mensagem, porta);
         }
     };
-    registro.installing = worker;
-    registro.update = async () => {
-        setTimeout(() => {
-            worker.state = "installed";
-            registro.waiting = worker;
-            listeners.get("statechange")?.();
-        }, 0);
+}
+
+test("atualiza o registro antes de escolher worker e ativa a versão nova apesar do waiting antigo", async () => {
+    const ordem = [];
+    const antigo = criarWorker("1.1.6");
+    const container = criarServiceWorkers(criarWorker("1.1.5", { state: "activated" }));
+    const novo = criarWorker("1.1.7", {
+        state: "installing",
+        aoAtivar(worker, mensagem, porta) {
+            ordem.push("ativar-nova");
+            assert.equal(mensagem.versao, "1.1.7");
+            worker.alterarEstado("activated");
+            porta.postMessage({ tipo: "ATUALIZACAO_ACEITA", versao: "1.1.7" });
+            container.alterarControlador(worker);
+        }
+    });
+    const registro = {
+        waiting: antigo,
+        installing: null,
+        async update() {
+            ordem.push("update");
+            this.installing = novo;
+            setTimeout(() => {
+                this.installing = null;
+                this.waiting = novo;
+                novo.alterarEstado("installed");
+                ordem.push("instalado");
+            }, 0);
+        }
     };
 
-    await instalarAtualizacao(registro, container, 1000);
-    assert.deepEqual(mensagemRecebida, { tipo: "ATIVAR_ATUALIZACAO" });
-    assert.equal(container.controller, worker);
-    assert.equal(containerListeners.size, 0);
+    const versao = await instalarAtualizacao(registro, container, "1.1.7", 1000);
+    assert.equal(versao, "1.1.7");
+    assert.ok(ordem.indexOf("update") < ordem.indexOf("ativar-nova"));
+    assert.equal(container.controller, novo);
+    assert.equal(container.listenersAtivos, 0);
 });
 
-test("erro de instalação é propagado e não simula sucesso de atualização", async () => {
-    const registro = { waiting: null, installing: null, update: async () => {} };
-    await assert.rejects(instalarAtualizacao(registro, {}, 100), /não encontrou uma nova versão/);
+test("aceita a versão esperada que já controla a página após update mesmo sem waiting ou installing", async () => {
+    const controlador = criarWorker("1.1.7", { state: "activated" });
+    const container = criarServiceWorkers();
+    const registro = {
+        waiting: null,
+        installing: null,
+        async update() {
+            container.alterarControlador(controlador);
+        }
+    };
+
+    assert.equal(await instalarAtualizacao(registro, container, "1.1.7", 1000), "1.1.7");
+});
+
+test("recusa worker waiting antigo se update não entregar a versão esperada", async () => {
+    let ativacoes = 0;
+    const antigo = criarWorker("1.1.6", {
+        aoAtivar() { ativacoes += 1; }
+    });
+    const registro = { waiting: antigo, installing: null, update: async () => {} };
+    const container = criarServiceWorkers(criarWorker("1.1.5", { state: "activated" }));
+
+    await assert.rejects(
+        instalarAtualizacao(registro, container, "1.1.7", 1000),
+        /versão 1\.1\.6.*versão esperada 1\.1\.7/
+    );
+    assert.equal(ativacoes, 0);
+    assert.equal(container.listenersAtivos, 0);
+});
+
+test("permite nova tentativa após falha por identidade incompatível", async () => {
+    const container = criarServiceWorkers(criarWorker("1.1.5", { state: "activated" }));
+    const antigo = criarWorker("1.1.6");
+    const atual = criarWorker("1.1.7", {
+        aoAtivar(worker, mensagem, porta) {
+            porta.postMessage({ tipo: "ATUALIZACAO_ACEITA", versao: mensagem.versao });
+            container.alterarControlador(worker);
+        }
+    });
+    let verificacoes = 0;
+    const registro = {
+        waiting: antigo,
+        installing: null,
+        async update() { verificacoes += 1; }
+    };
+
+    await assert.rejects(
+        instalarAtualizacao(registro, container, "1.1.7", 1000),
+        /versão 1\.1\.6.*versão esperada 1\.1\.7/
+    );
+    registro.waiting = atual;
+    assert.equal(await instalarAtualizacao(registro, container, "1.1.7", 1000), "1.1.7");
+    assert.equal(verificacoes, 2);
+    assert.equal(container.listenersAtivos, 0);
+});
+
+test("falha com segurança se a instalação não terminar dentro do timeout", async () => {
+    const instalando = criarWorker("1.1.7", { state: "installing" });
+    const registro = { waiting: null, installing: instalando, update: async () => {} };
+    const container = criarServiceWorkers();
+    await assert.rejects(
+        instalarAtualizacao(registro, container, "1.1.7", 5),
+        /instalação da atualização demorou demais/
+    );
+    assert.equal(container.listenersAtivos, 0);
+});
+
+test("falha se controllerchange não ocorrer mesmo após confirmação do worker", async () => {
+    const controlador = criarWorker("1.1.7", {
+        aoAtivar(worker, mensagem, porta) {
+            porta.postMessage({ tipo: "ATUALIZACAO_ACEITA", versao: mensagem.versao });
+        }
+    });
+    const container = criarServiceWorkers(criarWorker("1.1.5", { state: "activated" }));
+    const registro = { waiting: controlador, installing: null, update: async () => {} };
+
+    await assert.rejects(
+        instalarAtualizacao(registro, container, "1.1.7", 5),
+        /ainda não controla esta página/
+    );
+    assert.equal(container.listenersAtivos, 0);
+});
+
+test("falha de confirmação do worker não deixa listener de controllerchange ativo", async () => {
+    const worker = criarWorker("1.1.7", {
+        aoAtivar(_worker, _mensagem, porta) {
+            porta.postMessage({ tipo: "ATUALIZACAO_RECUSADA", versao: "1.1.7" });
+        }
+    });
+    const container = criarServiceWorkers(criarWorker("1.1.5", { state: "activated" }));
+    const registro = { waiting: worker, installing: null, update: async () => {} };
+
+    await assert.rejects(
+        instalarAtualizacao(registro, container, "1.1.7", 1000),
+        /identidade inválida/
+    );
+    assert.equal(container.listenersAtivos, 0);
+});
+
+test("propaga falha do registro e rejeita ausência de worker ou do container", async () => {
+    const container = criarServiceWorkers();
+    await assert.rejects(
+        instalarAtualizacao({ update: async () => { throw new Error("rede"); } }, container, "1.1.7"),
+        /rede/
+    );
+    await assert.rejects(instalarAtualizacao(null, container, "1.1.7"), /registro.*não está disponível/);
+    await assert.rejects(
+        instalarAtualizacao({ update: async () => {} }, null, "1.1.7"),
+        /controlador do Service Worker/
+    );
+    await assert.rejects(
+        instalarAtualizacao({ waiting: null, installing: null, update: async () => {} }, container, "1.1.7"),
+        /Não foi encontrada uma instalação/
+    );
+});
+
+test("timeout da verificação do registro não ativa um worker pendente", async () => {
+    let ativacoes = 0;
+    const waiting = criarWorker("1.1.7", { aoAtivar() { ativacoes += 1; } });
+    const registro = {
+        waiting,
+        installing: null,
+        update: () => new Promise(() => {})
+    };
+    await assert.rejects(instalarAtualizacao(registro, criarServiceWorkers(), "1.1.7", 5), /verificação do Service Worker demorou demais/);
+    assert.equal(ativacoes, 0);
 });

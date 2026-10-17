@@ -3,9 +3,38 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { relative, sep } from "node:path";
+import { versaoValida } from "../update-manager.js";
 
 const root = new URL("../", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
+
+function validarConsistenciaRelease(conteudoMetadados, codigoServiceWorker) {
+    assert.equal(typeof conteudoMetadados, "string", "version.json está ausente");
+    const metadados = JSON.parse(conteudoMetadados);
+    assert.equal(metadados.name, "Controle Financeiro");
+    assert.ok(versaoValida(metadados.version), "version.json contém versão inválida");
+
+    const identidade = codigoServiceWorker.match(/const VERSAO_SERVICE_WORKER = "([^"]+)";/);
+    assert.ok(identidade, "identidade de build ausente no Service Worker");
+    assert.equal(identidade[1], metadados.version, "identidade do Service Worker diverge de version.json");
+
+    const prefixoCache = codigoServiceWorker.match(/const PREFIXO_CACHE = "([^"]+)";/);
+    const sufixoCache = codigoServiceWorker.match(/const CACHE = PREFIXO_CACHE \+ "(v[1-9]\d*)";/);
+    assert.ok(prefixoCache?.[1], "prefixo do cache ausente");
+    assert.ok(sufixoCache, "identificador do cache não segue o padrão PREFIXO_CACHE + vN");
+
+    return {
+        cache: `${prefixoCache[1]}${sufixoCache[1]}`,
+        prefixoCache: prefixoCache[1]
+    };
+}
+
+function lerRecursosPrecache(codigoServiceWorker) {
+    const lista = codigoServiceWorker.match(/const ARQUIVOS = \[([\s\S]*?)\];/);
+    assert.ok(lista, "lista ARQUIVOS do precache ausente");
+    return [...lista[1].matchAll(/"([^"]+)"/g)].map((match) => match[1]);
+}
 
 test("referências estáticas do app apontam para IDs existentes e únicos", async () => {
     const [html, app] = await Promise.all([read("index.html"), read("app.js")]);
@@ -17,19 +46,52 @@ test("referências estáticas do app apontam para IDs existentes e únicos", asy
 });
 
 test("módulos e estilos usados pela página estão incluídos no cache offline", async () => {
-    const [html, serviceWorker] = await Promise.all([read("index.html"), read("sw.js")]);
-    const arquivos = [
-        ...[...html.matchAll(/<link[^>]+href="([^"]+\.(?:css|json))"/g)].map((match) => match[1]),
-        ...[...html.matchAll(/<script[^>]+src="([^"]+\.js)"/g)].map((match) => match[1]),
-        "finance-core.js",
-        "storage.js",
-        "update-manager.js",
-        "localization.js",
-        "version.json"
-    ].map((path) => path.startsWith("./") ? path : "./" + path);
-    for (const arquivo of arquivos) {
-        assert.ok(serviceWorker.includes(`"${arquivo}"`), `${arquivo} não consta no precache`);
-        assert.ok(existsSync(fileURLToPath(new URL(arquivo, root))), `${arquivo} não existe`);
+    const [html, serviceWorker, manifest] = await Promise.all([
+        read("index.html"), read("sw.js"), read("manifest.json")
+    ]);
+    const scope = new URL("https://example.test/finance/");
+    const precache = new Set(lerRecursosPrecache(serviceWorker));
+    const arquivosEssenciais = [
+        ...[...html.matchAll(/<link[^>]+href="([^"]+)"/g)].map((match) => match[1]),
+        ...[...html.matchAll(/<script[^>]+src="([^"]+)"/g)].map((match) => match[1]),
+        ...JSON.parse(manifest).icons.map((icone) => icone.src)
+    ];
+
+    const pendentes = ["app.js"];
+    const visitados = new Set();
+    while (pendentes.length) {
+        const arquivo = pendentes.pop();
+        if (visitados.has(arquivo)) continue;
+        visitados.add(arquivo);
+        const codigo = await read(arquivo);
+        for (const [, , dependencia] of codigo.matchAll(/(?:\bfrom\s+|\bimport\s*\(\s*|\bimport\s+)(["'])(\.\/[^"']+)\1/g)) {
+            const caminho = fileURLToPath(new URL(dependencia, new URL(arquivo, root)));
+            pendentes.push(relative(fileURLToPath(root), caminho).split(sep).join("/"));
+        }
+    }
+    arquivosEssenciais.push(...visitados);
+
+    for (const recurso of arquivosEssenciais) {
+        const caminhoPrecache = recurso.startsWith("./") ? recurso : `./${recurso}`;
+        assert.ok(precache.has(caminhoPrecache), `${caminhoPrecache} não consta no precache`);
+        assert.ok(
+            new URL(caminhoPrecache, scope).pathname.startsWith(scope.pathname),
+            `${caminhoPrecache} escapa do escopo do app publicado em subdiretório`
+        );
+        assert.ok(
+            existsSync(fileURLToPath(new URL(caminhoPrecache, root))),
+            `${caminhoPrecache} não existe no projeto`
+        );
+    }
+    for (const recurso of precache) {
+        assert.ok(
+            new URL(recurso, scope).pathname.startsWith(scope.pathname),
+            `${recurso} do precache escapa do escopo do app`
+        );
+        assert.ok(
+            existsSync(fileURLToPath(new URL(recurso, root))),
+            `${recurso} do precache não existe no projeto`
+        );
     }
 });
 
@@ -45,7 +107,7 @@ test("controles das preferências incrementais têm implementação e cache atua
     assert.match(css, /graficos-ocultos/);
     assert.match(app, /preferenciasMenu\.ocultarAoIniciar/);
     assert.match(app, /preferenciasMenu\.ultimoPeriodo/);
-    assert.match(serviceWorker, /const CACHE = PREFIXO_CACHE \+ "v15"/);
+    assert.match(serviceWorker, /const CACHE = PREFIXO_CACHE \+ "v\d+"/);
     assert.equal((serviceWorker.match(/"\.\/preferences\.js"/g) || []).length, 1, "preferences.js deve ser precacheado uma vez");
 });
 
@@ -70,9 +132,8 @@ test("versão instalada e publicada usam metadados semver relativos e não cache
     const [metadata, html, app, serviceWorker] = await Promise.all([
         read("version.json"), read("index.html"), read("app.js"), read("sw.js")
     ]);
-    const version = JSON.parse(metadata);
-    assert.equal(version.name, "Controle Financeiro");
-    assert.match(version.version, /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/);
+    const release = validarConsistenciaRelease(metadata, serviceWorker);
+    assert.match(release.cache.slice(release.prefixoCache.length), /^v\d+$/);
     for (const id of [
         "versao-instalada", "versao-publicada", "data-verificacao-atualizacao",
         "resultado-verificacao-atualizacao", "status-atualizacao"
@@ -84,11 +145,72 @@ test("versão instalada e publicada usam metadados semver relativos e não cache
     assert.match(app, /botao\.disabled = true;[\s\S]*botao\.textContent = "Verificando…"/);
     assert.match(app, /window\.confirm\([\s\S]*Versão instalada:[\s\S]*Versão disponível:/);
     assert.match(app, /resultado === "cancelado"/);
-    assert.match(app, /instalarAtualizacao\(registro, navigator\.serviceWorker\)/);
-    assert.match(serviceWorker, /"\.\/version\.json"/);
-    assert.match(serviceWorker, /"\.\/update-manager\.js"/);
+    assert.match(app, /await instalarAtualizacao\([\s\S]*publicada\.version\)/);
+    assert.match(app, /if \(versaoAtivada !== publicada\.version\)/);
+    assert.match(app, /Nova versão instalada e controlando esta página/);
+    assert.ok(lerRecursosPrecache(serviceWorker).includes("./version.json"));
+    assert.ok(lerRecursosPrecache(serviceWorker).includes("./update-manager.js"));
     assert.match(serviceWorker, /searchParams\.has\("_verificacao"\)/);
     assert.match(serviceWorker, /fetch\(requisicao, \{ cache: "no-store" \}\)/);
+});
+
+test("verificações do release detectam metadados ausentes, inválidos e incompatíveis", async () => {
+    const serviceWorker = await read("sw.js");
+    const metadadosValidos = await read("version.json");
+    assert.throws(() => validarConsistenciaRelease(null, serviceWorker), /version\.json está ausente/);
+    assert.throws(() => validarConsistenciaRelease("{", serviceWorker), SyntaxError);
+    assert.throws(
+        () => validarConsistenciaRelease('{"name":"Controle Financeiro","version":"inválida"}', serviceWorker),
+        /versão inválida/
+    );
+    assert.throws(
+        () => validarConsistenciaRelease(
+            '{"name":"Controle Financeiro","version":"9.9.9"}',
+            serviceWorker
+        ),
+        /diverge de version\.json/
+    );
+    assert.throws(
+        () => validarConsistenciaRelease(
+            metadadosValidos,
+            serviceWorker.replace(/const CACHE = PREFIXO_CACHE \+ "v\d+";/, 'const CACHE = "cache-sem-versão";')
+        ),
+        /não segue o padrão/
+    );
+});
+
+test("protocolo de identidade e ativação está presente nos dois lados", async () => {
+    const [serviceWorker, manager] = await Promise.all([read("sw.js"), read("update-manager.js")]);
+    for (const tipo of ["OBTER_VERSAO", "VERSAO_SERVICE_WORKER", "ATIVAR_ATUALIZACAO", "ATUALIZACAO_ACEITA"]) {
+        assert.ok(serviceWorker.includes(tipo), `Service Worker não implementa ${tipo}`);
+        assert.ok(manager.includes(tipo), `gerenciador não implementa ${tipo}`);
+    }
+});
+
+test("a aplicação só recarrega depois de confirmar a identidade ativa e não duplica recargas", async () => {
+    const app = await read("app.js");
+    const inicioVerificacao = app.indexOf("async function verificarAtualizacao");
+    const fimVerificacao = app.indexOf("const verificarAtualizacaoAutomaticamente", inicioVerificacao);
+    const fluxoVerificacao = app.slice(inicioVerificacao, fimVerificacao);
+    const confirmacaoIdentidade = app.indexOf("if (versaoAtivada !== publicada.version)");
+    const recarga = app.indexOf("window.location.reload()");
+    assert.doesNotMatch(fluxoVerificacao, /storage\.(?:salvar|limpar)|localStorage|indexedDB/);
+    assert.ok(confirmacaoIdentidade >= 0, "a versão ativa precisa ser comparada com a versão aceita");
+    assert.ok(recarga > confirmacaoIdentidade, "a recarga deve ocorrer apenas após confirmar a versão ativa");
+    assert.equal((app.match(/window\.location\.reload\(\)/g) || []).length, 1);
+});
+
+test("verificação automática roda ao iniciar, retornar ao app e recuperar conexão", async () => {
+    const app = await read("app.js");
+    assert.match(app, /criarVerificadorAutomatico\(\s*\(\) => verificarAtualizacao\(\{ automatico: true \}\)/);
+    assert.match(app, /document\.addEventListener\("visibilitychange", \(\) => \{\s*if \(document\.visibilityState === "visible"\) solicitarVerificacaoAutomatica\(\)/);
+    assert.match(app, /window\.addEventListener\("pageshow", \(evento\) => \{\s*if \(evento\.persisted\) solicitarVerificacaoAutomatica\(\)/);
+    assert.match(app, /window\.addEventListener\("online", solicitarVerificacaoAutomatica\)/);
+    assert.match(app, /document\.readyState === "complete"\) solicitarVerificacaoAutomatica\(\)/);
+    assert.match(app, /if \(!navigator\.onLine\) return;\s*verificarAtualizacaoAutomaticamente\(\)/);
+    assert.match(app, /automatico && confirmacaoAtualizacao\.foiAdiada\(publicada\.version\)/);
+    assert.match(app, /confirmacaoAtualizacao\.confirmar\(versaoAtual, versaoNova, automatico\)/);
+    assert.match(app, /ui\.atualizarApp\.addEventListener\("click", \(\) => \{ void verificarAtualizacao\(\); \}\)/);
 });
 
 test("controle de tamanho é conectado e botões de opções contrastam com o fundo", async () => {
