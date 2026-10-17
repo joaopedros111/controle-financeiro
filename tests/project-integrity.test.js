@@ -489,8 +489,8 @@ test("despesas renderizam por categoria mantendo linhas e eventos delegados", as
     const render = app.slice(app.indexOf("function renderDespesas"), app.indexOf("function atualizarResumo"));
     const eventos = app.slice(app.indexOf('ui.listaDespesas.addEventListener("change"'), app.indexOf("function aposMudarCategorias"));
 
-    assert.match(core, /export function agruparLancamentosPorCategoria/);
-    assert.match(render, /agruparLancamentosPorCategoria\(despesas\)/);
+    assert.match(core, /export function agruparLancamentosComOrcamento/);
+    assert.match(render, /agruparLancamentosComOrcamento\(despesas, estado\.categorias, estado\.orcamentos\)/);
     assert.match(render, /grupo\.despesas\.map\(criarLinhaDespesa\)/);
     assert.match(render, /grupo\.totalCentavos \/ 100/);
     assert.match(render, /class: "despesa-grupo-categoria", text: grupo\.categoria/);
