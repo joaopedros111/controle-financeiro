@@ -215,6 +215,7 @@ test("planejamento contém o orçamento uma única vez e mantém opções de cat
     assert.match(app, /formatarMoeda\(gasto\)/);
     assert.match(app, /formatarMoeda\(item\.limiteCentavos \/ 100\)/);
     assert.match(app, /formatarMoeda\(item\.restanteCentavos \/ 100\)/);
+    assert.match(app, /Excesso: \$\{formatarMoeda\(Math\.abs\(item\.restanteCentavos\) \/ 100\)\} · \$\{formatarPercentual\(percentual\)\} consumido/);
     assert.match(app, /estado\.orcamentos\.padrao/);
     assert.match(core, /return \{ padrao, meses: \{\} \}/);
     assert.match(app, /campo\.type = valoresOcultos \? "password" : "number"/);

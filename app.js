@@ -980,7 +980,7 @@ function renderOrcamentoPorCategoria() {
                     class: "orcamento-restante orcamento-excesso",
                     text: percentualIndeterminado
                         ? `Excesso: ${formatarMoeda(Math.abs(item.restanteCentavos) / 100)} · limite zero`
-                        : `Excesso: ${formatarMoeda(Math.abs(item.restanteCentavos) / 100)} · ${formatarPercentual(percentual)} do limite`
+                        : `Excesso: ${formatarMoeda(Math.abs(item.restanteCentavos) / 100)} · ${formatarPercentual(percentual)} consumido`
                 })
                 : criarEl("p", { class: "orcamento-restante", text: `Restante: ${formatarMoeda(item.restanteCentavos / 100)} · ${formatarPercentual(percentual)} consumido` }));
         }
