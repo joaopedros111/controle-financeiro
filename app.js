@@ -83,8 +83,6 @@ const ui = {
 
 
 
-    saldoRotulo: $("saldo-rotulo"),
-
     saldoValor: $("saldo-valor"),
     alternarVisibilidadeResumo: $("alternar-visibilidade-resumo"),
 
@@ -1043,10 +1041,6 @@ function atualizarResumo(persistir = true) {
     ui.saldoValor.textContent = formatarMoeda(saldo);
 
     ui.saldoValor.classList.toggle("negativo", saldo < 0);
-
-    ui.saldoRotulo.textContent = "Saldo do mês";
-
-
 
     ui.totalReceitas.textContent = formatarMoeda(receita);
 

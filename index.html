@@ -67,22 +67,10 @@
     <button id="alternar-visibilidade-resumo" class="btn btn-icone resumo-visibilidade" type="button" aria-label="Ocultar valores financeiros do resumo" title="Ocultar valores financeiros do resumo" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg></button>
     </div>
 
-    <p class="saldo-rotulo" id="saldo-rotulo">
-        Saldo do mês
-    </p>
-
-    <p class="saldo-valor" id="saldo-valor">
-        R$ 0,00
-    </p>
-
     <div class="barra" id="barra">
         <div class="barra-pago" id="barra-pago"></div>
         <div class="barra-pendente" id="barra-pendente"></div>
     </div>
-
-    <p class="barra-texto" id="texto-comprometido">
-        Informe suas receitas para ver quanto da renda está comprometido.
-    </p>
 
     <dl class="indicadores">
 
@@ -97,16 +85,20 @@
         </div>
 
         <div>
-            <dt>Já pago</dt>
-            <dd id="valor-pago">R$ 0,00</dd>
+            <dt>Saldo total</dt>
+            <dd id="saldo-valor" class="saldo-valor">R$ 0,00</dd>
         </div>
 
         <div>
-            <dt>A pagar</dt>
+            <dt>Falta pagar</dt>
             <dd id="valor-pendente">R$ 0,00</dd>
         </div>
 
     </dl>
+
+    <p class="barra-texto" id="texto-comprometido">
+        Informe suas receitas para ver quanto da renda está comprometido.
+    </p>
 
 </section>
 

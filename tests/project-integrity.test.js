@@ -406,6 +406,35 @@ test("resumo, despesas e entradas permanecem sem uma seção separada de planeja
     assert.equal((html.match(/class="bloco-seta"/g) || []).length, 2);
 });
 
+test("resumo do mês mostra quatro indicadores e o comprometimento abaixo da grade", async () => {
+    const [html, app, css] = await Promise.all([
+        read("index.html"), read("app.js"), read("style.css")
+    ]);
+    const inicio = html.indexOf('<section class="resumo"');
+    const fim = html.indexOf("</section>", inicio);
+    const resumo = html.slice(inicio, fim);
+    const posicaoGrade = resumo.indexOf('<dl class="indicadores">');
+    const fimGrade = resumo.indexOf("</dl>", posicaoGrade);
+    const posicaoComprometimento = resumo.indexOf('id="texto-comprometido"');
+
+    assert.doesNotMatch(resumo, /Saldo do mês|id="saldo-rotulo"|Já pago|<dt>A pagar<\/dt>/);
+    for (const rotulo of ["Entradas", "Despesas", "Saldo total", "Falta pagar"]) {
+        assert.ok(resumo.includes(`<dt>${rotulo}</dt>`), `${rotulo} ausente do resumo`);
+    }
+    assert.equal((resumo.match(/<dt>/g) || []).length, 4);
+    assert.match(resumo, /<dt>Entradas<\/dt>[\s\S]*?<dd id="total-receitas">/);
+    assert.match(resumo, /<dt>Despesas<\/dt>[\s\S]*?<dd id="total-despesas">/);
+    assert.match(resumo, /<dt>Saldo total<\/dt>[\s\S]*?<dd id="saldo-valor"/);
+    assert.match(resumo, /<dt>Falta pagar<\/dt>[\s\S]*?<dd id="valor-pendente">/);
+    assert.ok(posicaoGrade >= 0 && fimGrade > posicaoGrade && posicaoComprometimento > fimGrade);
+    assert.match(app, /const saldo = \(receitaCentavos - despesaCentavos\) \/ 100/);
+    assert.match(app, /ui\.saldoValor\.textContent = formatarMoeda\(saldo\)/);
+    assert.match(app, /ui\.valorPendente\.textContent = formatarMoeda\(pendente\)/);
+    assert.match(app, /const pctDespesa = receita > 0 \? \(despesa \/ receita\) \* 100 : 0/);
+    assert.match(css, /\.indicadores \{\s*display: grid;\s*grid-template-columns: repeat\(2, minmax\(0, 1fr\)\)/);
+    assert.match(css, /\.barra-texto\s*\{\s*margin: 12px 0 0/);
+});
+
 test("gerenciamento de categorias e limites usa controles consistentes no menu Opções", async () => {
     const html = await read("index.html");
     const ajustes = html.slice(html.indexOf('<dialog id="dialogo-ajustes"'), html.indexOf("</dialog>", html.indexOf('<dialog id="dialogo-ajustes"')));

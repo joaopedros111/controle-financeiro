@@ -642,24 +642,7 @@ body[data-densidade="muito-confortavel"] #dialogo-ajustes .ajustes-secao + .ajus
         color: var(--texto-secundario);
     }
 
-    .saldo-rotulo {
-        margin: 0;
-        font-size: .88rem;
-        color: var(--texto-secundario);
-    }
-
-    .saldo-valor {
-        margin: 4px 0 16px;
-        font-size: 2.2rem;
-        font-weight: 800;
-        letter-spacing: -.04em;
-        line-height: 1;
-        font-variant-numeric: tabular-nums;
-
-        &.negativo {
-            color: var(--vermelho);
-        }
-    }
+    .saldo-valor.negativo { color: var(--vermelho); }
 
     .barra {
         display: flex;
@@ -680,7 +663,7 @@ body[data-densidade="muito-confortavel"] #dialogo-ajustes .ajustes-secao + .ajus
     .barra-pendente { background: var(--ambar); }
 
     .barra-texto {
-        margin: 0 0 16px;
+        margin: 12px 0 0;
         font-size: .84rem;
         color: var(--texto-secundario);
 
@@ -1414,7 +1397,6 @@ body[data-densidade="muito-confortavel"] #dialogo-ajustes .ajustes-secao + .ajus
         background: linear-gradient(90deg, var(--primaria), #39b9ad);
     }
     .resumo-titulo { letter-spacing: .14em; }
-    .saldo-valor { letter-spacing: -.055em; }
     .indicadores > div { border: 1px solid color-mix(in srgb, var(--borda) 76%, transparent); }
 
     .bloco {
