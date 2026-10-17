@@ -17,6 +17,12 @@ Aplicativo web responsivo e instalável para acompanhar entradas, despesas, cate
 - `manifest.json` e `icons/`: instalação e ícones do PWA.
 - `tests/`: testes automatizados da camada de dados, armazenamento e calculadora.
 
+Os valores monetários são normalizados para o centavo mais próximo usando a representação decimal do número; frações exatamente no meio são arredondadas para cima. Isso evita que a representação binária de valores como `1.005` mude o arredondamento esperado. Entradas negativas, não finitas ou acima do limite monetário de `2^44` unidades são rejeitadas na validação e na importação. Esse teto mantém os centavos como inteiros exatos e, mesmo na borda máxima, a resolução do `Number` é menor que um centavo, permitindo converter o valor de volta sem perder centavos. A soma das receitas e, separadamente, das despesas de cada mês também precisa respeitar o teto. Cálculos de totais, orçamentos e gráficos acima do limite geram erro explícito; o app impede salvar ou exportar somas mensais inválidas, em vez de exibir ou persistir totais imprecisos.
+
+O cálculo decimal usa `BigInt`; portanto, o PWA requer uma engine JavaScript com suporte a `BigInt`. O projeto não declara uma matriz de navegadores nem uma política de versões mínimas de navegador. Definir e testar formalmente essa matriz permanece pendente.
+
+Se dados financeiros armazenados não puderem ser lidos ou validados, o app bloqueia a gravação automática para não substituir o conteúdo original. Quando o texto bruto está acessível, é possível baixá-lo como cópia preservada; a substituição do estado só ocorre após selecionar e confirmar a restauração de um backup válido. A indisponibilidade do armazenamento, sem dados inacessíveis detectados, continua usando o fallback temporário em memória e é informada ao usuário.
+
 O menu **Opções** mantém as preferências no armazenamento centralizado já existente. Em **Aparência e visualização**, permite escolher um dos cinco temas (Claro é o padrão para quem ainda não escolheu um tema), densidade da interface, gráficos/indicadores e visibilidade independente de Planejamento, Despesas do mês e Entradas, além de configurar a privacidade visual dos valores. As três seções de lançamentos permanecem visíveis por padrão em instalações existentes. As demais opções incluem seção inicial, mês de referência, idioma, moeda de apresentação e diagnóstico local. A interface oferece Português (Brasil), Inglês, Espanhol, Francês, Alemão e Japonês. A moeda pode ser exibida em BRL, USD, EUR ou JPY; essa escolha altera somente a formatação, não converte os valores guardados nem suas moedas de origem. A tela inicial pode abrir o resumo, lançamentos, gráficos ou a última seção utilizada; o último destino válido é mantido entre inicializações. A opção **Lançamentos** abre as listas existentes de despesas e receitas. O CSV exporta o mês selecionado ou todos os meses que já tenham registros.
 
 A versão instalada e publicada é declarada somente em `version.json`, no formato `MAJOR.MINOR.PATCH`. A verificação consulta esse arquivo por caminho relativo à aplicação, com cache HTTP desativado e bypass explícito do cache do Service Worker para a consulta publicada. Para cada publicação, atualize `version.json` e incremente a versão do cache em `sw.js`; assim, os novos recursos são pré-carregados antes de a atualização ser oferecida. Um Service Worker novo fica aguardando até o usuário aceitar; cancelar mantém a versão atual em execução. Sem rede, a versão instalada continua disponível pelo precache, mas a versão publicada não pode ser verificada.
@@ -39,10 +45,11 @@ Abra `http://localhost:8000`. Para instalar o PWA em outros dispositivos, publiq
 
 ## Testes
 
-Requer Node.js 20 ou mais recente. Execute:
+Requer Node.js 20 ou mais recente. Para executar os testes e a verificação sintática definidos no projeto:
 
 ```sh
 node --test
+npm run check
 ```
 
 ## Dados e migração

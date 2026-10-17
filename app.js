@@ -1,5 +1,5 @@
-import { storage } from "./storage.js";
-import { CATEGORIAS_PADRAO, CATEGORIA_FIXA, normalizarEstado as normalizarEstadoCore, validarBackup, migrarDadosLegados, calcularExpressao, somarCentavos, gerarCsv, calcularOrcamentosPorCategoria, ordenarOrcamentosComGastos, renomearCategoriaOrcamentos, removerCategoriaOrcamentos } from "./finance-core.js";
+import { criarRecuperacaoFinanceira, storage } from "./storage.js";
+import { CATEGORIAS_PADRAO, CATEGORIA_FIXA, normalizarEstado as normalizarEstadoCore, normalizarValorMonetario, validarBackup, validarTotaisMonetarios, migrarDadosLegados, calcularExpressao, somarCentavos, gerarCsv, calcularOrcamentosPorCategoria, agruparDespesasPorCategoria, ordenarOrcamentosComGastos, renomearCategoriaOrcamentos, removerCategoriaOrcamentos } from "./finance-core.js";
 import { apresentarValorFinanceiro, normalizarPreferenciasMenu, resolverTelaInicial } from "./preferences.js";
 import { instalarAtualizacao, lerVersaoInstalada, lerVersaoPublicada, verificarComConfirmacao } from "./update-manager.js";
 import { aplicarIdioma, formatarMoeda as formatarMoedaLocalizada, LOCALES } from "./localization.js";
@@ -379,6 +379,26 @@ function chaveMes(ano, mes) {
 
 
 
+const recuperacaoFinanceira = criarRecuperacaoFinanceira(storage);
+
+function registrarFonteFinanceiraProtegida(chave, bruto = null) {
+    recuperacaoFinanceira.proteger(chave, bruto);
+}
+
+function lerEstadoPersistido(chave) {
+    const resultado = storage.lerJsonResultado(chave, { protegerInvalido: true });
+    if (resultado.estado === "invalido" || resultado.estado === "erro") {
+        registrarFonteFinanceiraProtegida(chave, resultado.bruto);
+        return { estado: "invalido", valor: null };
+    }
+    if (resultado.estado === "valido"
+        && !validarBackup(resultado.valor, { permitirTextoNumerico: true })) {
+        registrarFonteFinanceiraProtegida(chave, resultado.bruto);
+        return { estado: "invalido", valor: null };
+    }
+    return resultado;
+}
+
 function normalizarEstado(bruto) {
     return normalizarEstadoCore(bruto, uid);
 }
@@ -391,13 +411,55 @@ let avisoArmazenamentoTemporarioExibido = false;
 // O formato legado não guardava o ano; mantém a associação ao ano atual.
 function migrarLegado() {
     const registrosPorMes = {};
+    const fontesLidas = [];
     for (let mes = 1; mes <= 12; mes += 1) {
-        const texto = storage.ler(PREFIXO_LEGADO + mes);
-        if (!texto) continue;
-        try { registrosPorMes[mes] = JSON.parse(texto); } catch (_) { /* ignora mês legado corrompido */ }
+        const chave = PREFIXO_LEGADO + mes;
+        const resultado = storage.lerJsonResultado(chave, { protegerInvalido: true });
+        if (resultado.estado === "ausente" || resultado.estado === "indisponivel") continue;
+        if (resultado.estado !== "valido" || !resultado.valor
+            || typeof resultado.valor !== "object" || Array.isArray(resultado.valor)) {
+            registrarFonteFinanceiraProtegida(chave, resultado.bruto);
+            continue;
+        }
+        const dados = resultado.valor;
+        const categoriasValidas = dados.categorias === undefined
+            || (Array.isArray(dados.categorias)
+                && dados.categorias.every((categoria) => typeof categoria === "string"));
+        const despesasValidas = dados.despesas === undefined
+            || (Array.isArray(dados.despesas) && dados.despesas.every((despesa) =>
+                despesa && typeof despesa === "object" && !Array.isArray(despesa)
+                && typeof despesa.nome === "string" && despesa.nome.trim()
+                && despesa.nome.length <= 80 && normalizarValorMonetario(despesa.valor) !== null));
+        const renda = dados.renda === undefined ? undefined : Number(dados.renda);
+        const rendaValida = dados.renda === undefined
+            || normalizarValorMonetario(renda) !== null;
+        if (!categoriasValidas || !despesasValidas || !rendaValida) {
+            registrarFonteFinanceiraProtegida(chave, resultado.bruto);
+            continue;
+        }
+        registrosPorMes[mes] = {
+            ...dados,
+            renda: renda === undefined ? undefined : normalizarValorMonetario(renda),
+            despesas: (dados.despesas || []).map((despesa) => ({
+                ...despesa,
+                valor: normalizarValorMonetario(despesa.valor)
+            }))
+        };
+        fontesLidas.push({ chave, bruto: resultado.bruto });
     }
+    if (recuperacaoFinanceira.protegido) return null;
     const legado = migrarDadosLegados(registrosPorMes, new Date().getFullYear());
-    if (legado) migracaoLegadaPendente = true;
+    if (legado) {
+        const quantidadeLegada = Object.values(registrosPorMes)
+            .reduce((total, dados) => total + (dados.despesas?.length || 0), 0);
+        const quantidadeNormalizada = Object.values(normalizarEstado(legado).meses)
+            .reduce((total, dados) => total + dados.despesas.length, 0);
+        if (quantidadeNormalizada !== quantidadeLegada || !validarBackup(legado)) {
+            fontesLidas.forEach(({ chave, bruto }) => registrarFonteFinanceiraProtegida(chave, bruto));
+            return null;
+        }
+        migracaoLegadaPendente = true;
+    }
     return legado;
 }
 
@@ -407,50 +469,33 @@ function carregarEstado() {
 
     try {
 
-        const salvo = storage.lerJson(CHAVE_ESTADO);
+        const salvo = lerEstadoPersistido(CHAVE_ESTADO);
+        if (salvo.estado === "invalido") return normalizarEstado(null);
+        if (salvo.estado === "valido") return normalizarEstado(salvo.valor);
 
-
-
-        if (salvo) {
-
-            return normalizarEstado(salvo);
-
-        }
-
-        const estadoV2 = storage.lerJson(CHAVE_ESTADO_V2);
-        if (estadoV2 && typeof estadoV2 === "object" && estadoV2.meses) {
+        const estadoV2 = lerEstadoPersistido(CHAVE_ESTADO_V2);
+        if (estadoV2.estado === "invalido") return normalizarEstado(null);
+        if (estadoV2.estado === "valido") {
             migracaoEstadoV2Pendente = true;
-            return normalizarEstado(estadoV2);
+            return normalizarEstado(estadoV2.valor);
         }
 
-        const storageAntigo = storage.lerJson(CHAVE_ESTADO_STORAGE_ANTIGO);
-        if (storageAntigo && typeof storageAntigo === "object" && storageAntigo.meses) {
+        const storageAntigo = lerEstadoPersistido(CHAVE_ESTADO_STORAGE_ANTIGO);
+        if (storageAntigo.estado === "invalido") return normalizarEstado(null);
+        if (storageAntigo.estado === "valido") {
             dadosStorageAntigoPendentes = true;
-            return normalizarEstado(storageAntigo);
+            return normalizarEstado(storageAntigo.valor);
         }
-
-
 
         const legado = migrarLegado();
-
-
-
-        if (legado) {
-
-            return normalizarEstado(legado);
-
-        }
+        if (recuperacaoFinanceira.protegido) return normalizarEstado(null);
+        if (legado) return normalizarEstado(legado);
 
     } catch (erro) {
-
         console.error("Erro ao carregar os dados:", erro);
-
+        registrarFonteFinanceiraProtegida(CHAVE_ESTADO);
     }
-
-
-
     return normalizarEstado(null);
-
 }
 
 
@@ -488,6 +533,11 @@ function estadoParaSalvar() {
 
 
 function salvar() {
+    if (recuperacaoFinanceira.protegido) return;
+    if (!validarTotaisMonetarios(estadoParaSalvar())) {
+        avisar("Os totais mensais excedem o limite monetário seguro. Ajuste os lançamentos antes de salvar.");
+        return;
+    }
 
     try {
         if (!storage.escreverJson(CHAVE_ESTADO, estadoParaSalvar())) avisarArmazenamentoTemporario();
@@ -983,14 +1033,13 @@ function atualizarOrcamentos() {
 
 function lerLimiteOrcamento(campo) {
     const texto = campo?.value.trim() || "";
-    const valor = Number(texto);
-    const centavos = Math.round(valor * 100);
-    if (!texto || !Number.isFinite(valor) || valor < 0 || !Number.isSafeInteger(centavos)) {
+    const valor = normalizarValorMonetario(texto);
+    if (!texto || valor === null) {
         avisar("Informe um limite válido igual ou maior que zero.");
         campo?.focus();
         return null;
     }
-    return centavos / 100;
+    return valor;
 }
 
 function definirLimiteOrcamento(mapa, categoria, limite) {
@@ -1012,9 +1061,18 @@ function atualizarResumo(persistir = true) {
 
 
 
-    const receitaCentavos = somarCentavos(mes.receitas.map((r) => numero(r.valor)));
-    const despesaCentavos = somarCentavos(mes.despesas.map((d) => numero(d.valor)));
-    const pagoCentavos = somarCentavos(mes.despesas.filter((d) => d.pago).map((d) => numero(d.valor)));
+    let receitaCentavos;
+    let despesaCentavos;
+    let pagoCentavos;
+    try {
+        receitaCentavos = somarCentavos(mes.receitas.map((r) => numero(r.valor)));
+        despesaCentavos = somarCentavos(mes.despesas.map((d) => numero(d.valor)));
+        pagoCentavos = somarCentavos(mes.despesas.filter((d) => d.pago).map((d) => numero(d.valor)));
+    } catch (erro) {
+        if (!(erro instanceof RangeError)) throw erro;
+        avisar("Os totais deste mês excedem o limite monetário seguro. Ajuste os lançamentos para atualizar o resumo.");
+        return;
+    }
     const receita = receitaCentavos / 100;
     const despesa = despesaCentavos / 100;
     const pago = pagoCentavos / 100;
@@ -1168,13 +1226,8 @@ function renderGraficoCategorias() {
     const legenda = $("legenda-grafico-categorias");
     if (!rosquinha || !legenda) return;
 
-    const totaisCentavos = {};
-    obterMes().despesas.forEach((despesa) => {
-        const valor = Math.round(numero(despesa.valor) * 100);
-        if (valor > 0) totaisCentavos[despesa.categoria] = (totaisCentavos[despesa.categoria] || 0) + valor;
-    });
-    const itens = Object.entries(totaisCentavos).map(([nome, centavos]) => [nome, centavos / 100]).sort((a, b) => b[1] - a[1]);
-    const total = itens.reduce((soma, [, valor]) => soma + Math.round(valor * 100), 0) / 100;
+    const itens = agruparDespesasPorCategoria(obterMes().despesas).sort((a, b) => b[1] - a[1]);
+    const total = somarCentavos(itens.map(([, valor]) => valor)) / 100;
     const rotuloMes = new Intl.DateTimeFormat(LOCALES[idiomaAtual] || "pt-BR", {
         month: "long",
         year: "numeric"
@@ -1406,9 +1459,8 @@ function salvarReceita() {
 
 
     const valorDigitado = ui.receitaValor.value.trim();
-    const valor = Math.round(Number(valorDigitado) * 100) / 100;
-
-    if (!valorDigitado || !Number.isFinite(valor) || valor <= 0) {
+    const valor = normalizarValorMonetario(valorDigitado);
+    if (!valorDigitado || valor === null || valor <= 0) {
         avisar("Informe um valor maior que zero para a entrada.");
         ui.receitaValor.focus();
         return;
@@ -1833,9 +1885,8 @@ function salvarDespesa() {
 
 
     const valorDigitado = ui.despesaValor.value.trim();
-    const valor = Math.round(Number(valorDigitado) * 100) / 100;
-
-    if (!valorDigitado || !Number.isFinite(valor) || valor <= 0) {
+    const valor = normalizarValorMonetario(valorDigitado);
+    if (!valorDigitado || valor === null || valor <= 0) {
         avisar("Informe um valor maior que zero para a despesa.");
         ui.despesaValor.focus();
         return;
@@ -2825,27 +2876,35 @@ function exportarCsv() {
 
 
 function exportarBackup() {
+    const exportado = recuperacaoFinanceira.exportarBackup(() => {
+        if (!validarTotaisMonetarios(estadoParaSalvar())) {
+            avisar("Os totais mensais excedem o limite monetário seguro. Ajuste os lançamentos antes de exportar.");
+            return false;
+        }
+        const agoraLocal = new Date();
+        const hoje = [agoraLocal.getFullYear(), String(agoraLocal.getMonth() + 1).padStart(2, "0"), String(agoraLocal.getDate()).padStart(2, "0")].join("-");
+        baixarArquivo(
+            JSON.stringify(estadoParaSalvar(), null, 2),
+            "controle-financeiro-backup-" + hoje + ".json",
+            "application/json"
+        );
+        registrarOperacaoDados("Backup JSON gerado em " + new Date().toLocaleString("pt-BR") + ".");
+        avisar("Backup salvo.");
+        return true;
+    });
+    if (!exportado && recuperacaoFinanceira.protegido) {
+        avisar("O backup normal está bloqueado porque os dados financeiros precisam ser recuperados. Baixe a cópia preservada ou restaure um backup válido.");
+    }
+    return exportado;
+}
 
-
-
-    const agoraLocal = new Date();
-    const hoje = [agoraLocal.getFullYear(), String(agoraLocal.getMonth() + 1).padStart(2, "0"), String(agoraLocal.getDate()).padStart(2, "0")].join("-");
-
-
-
-    baixarArquivo(
-
-        JSON.stringify(estadoParaSalvar(), null, 2),
-
-        "controle-financeiro-backup-" + hoje + ".json",
-
-        "application/json"
-
-    );
-
-    registrarOperacaoDados("Backup JSON gerado em " + new Date().toLocaleString("pt-BR") + ".");
-    avisar("Backup salvo.");
-
+function exportarCopiaDadosProtegidos() {
+    const conteudo = JSON.stringify({
+        aviso: "Cópia bruta preservada para recuperação manual; nenhum dado foi alterado.",
+        fontes: recuperacaoFinanceira.fontes().map(({ chave, bruto }) => ({ chave, bruto }))
+    }, null, 2);
+    baixarArquivo(conteudo, "controle-financeiro-dados-preservados.json", "application/json");
+    avisar("Cópia bruta dos dados preservados gerada.");
 }
 
 
@@ -2866,19 +2925,13 @@ function importarBackup(arquivo) {
 
 
 
-        let novo;
+        let bruto;
 
 
 
         try {
 
-            const bruto = JSON.parse(String(leitor.result));
-
-
-
-            if (!validarBackup(bruto)) throw new Error("estrutura do backup inválida");
-
-            novo = normalizarEstado(bruto);
+            bruto = JSON.parse(String(leitor.result));
 
         } catch (erro) {
 
@@ -2890,26 +2943,33 @@ function importarBackup(arquivo) {
 
 
 
-        if (!confirm("Restaurar o backup? Todos os dados atuais serão substituídos.")) {
-
+        const resultado = recuperacaoFinanceira.restaurar({
+            chave: CHAVE_ESTADO,
+            backup: bruto,
+            validar: validarBackup,
+            normalizar: (backup) => {
+                const novo = normalizarEstado(backup);
+                novo.tema = novo.tema || estado.tema;
+                return novo;
+            },
+            confirmar: () => confirm("Restaurar o backup? Todos os dados atuais serão substituídos.")
+        });
+        if (resultado.estado === "invalido") {
+            avisar("Arquivo inválido. Escolha um backup gerado por este aplicativo.");
             return;
-
         }
+        if (resultado.estado === "cancelado") return;
 
-
-
-        novo.tema = novo.tema || estado.tema;
-
-        estado = novo;
-
+        estado = resultado.dados;
         ultimaRemocao = null;
+        renderTudo(false);
 
 
-
-        renderTudo();
 
         registrarOperacaoDados("Backup restaurado em " + new Date().toLocaleString("pt-BR") + ".");
-        avisar("Backup restaurado.");
+        avisar(resultado.persistido
+            ? "Backup restaurado."
+            : "Backup restaurado, mas o armazenamento persistente falhou; os dados podem se perder ao fechar o app.");
 
     };
 
@@ -2982,7 +3042,10 @@ function atualizarDiagnostico() {
     const armazenamento = storage.persistente
         ? "Armazenamento persistente disponível."
         : "Armazenamento em memória: os dados podem se perder ao recarregar ou fechar o app.";
-    ui.diagnosticoDados.textContent = `${receitas + despesas} lançamentos (${receitas} receitas, ${despesas} despesas) · ${categorias} categorias · ${armazenamento}`;
+    const recuperacao = recuperacaoFinanceira.protegido
+        ? " Dados existentes não foram alterados; gravação automática bloqueada."
+        : "";
+    ui.diagnosticoDados.textContent = `${receitas + despesas} lançamentos (${receitas} receitas, ${despesas} despesas) · ${categorias} categorias · ${armazenamento}${recuperacao}`;
     ui.ultimaOperacaoDados.textContent = preferenciasMenu.ultimaOperacao;
     ui.versaoInstalada.textContent = versaoInstalada;
     ui.versaoPublicada.textContent = preferenciasMenu.versaoPublicada;
@@ -3427,4 +3490,15 @@ if (!storage.persistente || avisoArmazenamentoTemporarioExibido) {
     avisoArmazenamentoTemporarioExibido = true;
     avisosInicializacao.push("O armazenamento persistente está indisponível; os dados podem se perder ao fechar o app.");
 }
-if (avisosInicializacao.length) avisar(avisosInicializacao.join(" "));
+if (recuperacaoFinanceira.protegido) {
+    const possuiCopiaBruta = recuperacaoFinanceira.fontes().some((fonte) => typeof fonte.bruto === "string");
+    avisar(
+        "Dados financeiros existentes não puderam ser validados. A gravação automática foi bloqueada; restaure um backup válido em Opções.",
+        {
+            rotulo: possuiCopiaBruta ? "Baixar cópia preservada" : "Restaurar backup",
+            executar: possuiCopiaBruta ? exportarCopiaDadosProtegidos : () => ui.arquivoBackup.click()
+        }
+    );
+} else if (avisosInicializacao.length) {
+    avisar(avisosInicializacao.join(" "));
+}

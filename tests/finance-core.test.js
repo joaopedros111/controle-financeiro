@@ -1,12 +1,116 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { calcularExpressao, calcularOrcamentosPorCategoria, escaparCelulaCsv, gerarCsv, migrarDadosLegados, normalizarEstado, ordenarOrcamentosComGastos, removerCategoriaOrcamentos, renomearCategoriaOrcamentos, somarCentavos, validarBackup } from "../finance-core.js";
+import { agruparDespesasPorCategoria, calcularExpressao, calcularOrcamentosPorCategoria, escaparCelulaCsv, gerarCsv, LIMITE_MONETARIO_SEGURO, migrarDadosLegados, normalizarEstado, normalizarValorMonetario, ordenarOrcamentosComGastos, removerCategoriaOrcamentos, renomearCategoriaOrcamentos, somarCentavos, validarBackup, validarTotaisMonetarios } from "../finance-core.js";
 
 test("backup válido é aceito e meses fora do calendário são recusados", () => {
     const backup = { categorias: ["Moradia"], meses: { "2026-10": { receitas: [{ id: "r1", nome: "Salário", valor: 1200 }], despesas: [] } } };
     assert.equal(validarBackup(backup), true);
     assert.equal(validarBackup({ ...backup, meses: { "2026-13": { receitas: [], despesas: [] } } }), false);
     assert.equal(validarBackup({ ...backup, meses: { "2101-01": { receitas: [], despesas: [] } } }), false);
+});
+
+test("valores monetários arredondam para centavos e respeitam o limite conversível com segurança", () => {
+    assert.equal(normalizarValorMonetario(12), 12);
+    assert.equal(normalizarValorMonetario("12.34"), 12.34);
+    assert.equal(normalizarValorMonetario(0), 0);
+    assert.equal(normalizarValorMonetario(0.105), 0.11);
+    assert.equal(normalizarValorMonetario(1.004), 1);
+    assert.equal(normalizarValorMonetario(1.005), 1.01);
+    assert.equal(normalizarValorMonetario(LIMITE_MONETARIO_SEGURO), LIMITE_MONETARIO_SEGURO);
+    const centavoAbaixoDoLimite = normalizarValorMonetario("17592186044415.99");
+    assert.equal(
+        somarCentavos([centavoAbaixoDoLimite]),
+        Number(BigInt(LIMITE_MONETARIO_SEGURO) * 100n - 1n)
+    );
+
+    for (const valor of [-1, NaN, Infinity, -Infinity, LIMITE_MONETARIO_SEGURO + 1, "1e309", ""]) {
+        assert.equal(normalizarValorMonetario(valor), null);
+    }
+    for (const centavos of [1, 29, 101, 123456789, Math.round(LIMITE_MONETARIO_SEGURO * 100) - 1]) {
+        const valor = centavos / 100;
+        assert.equal(somarCentavos([valor]), centavos);
+        assert.equal(normalizarValorMonetario(valor), valor);
+    }
+});
+
+test("backups rejeitam valores monetários negativos, não finitos e fora da faixa segura", () => {
+    const backupComValor = (valor) => ({
+        meses: { "2026-10": { receitas: [{ nome: "Entrada", valor }], despesas: [] } }
+    });
+
+    for (const valor of [0, 12.34, 0.105]) assert.equal(validarBackup(backupComValor(valor)), true);
+    for (const valor of [-1, NaN, Infinity, -Infinity, LIMITE_MONETARIO_SEGURO + 1]) {
+        assert.equal(validarBackup(backupComValor(valor)), false);
+    }
+    assert.equal(validarBackup(backupComValor("12.34")), false);
+    assert.equal(validarBackup(backupComValor("12.34"), { permitirTextoNumerico: true }), true);
+    assert.equal(normalizarEstado(backupComValor("12.34")).meses["2026-10"].receitas[0].valor, 12.34);
+});
+
+test("normalização não converte lançamentos inválidos em valores imprecisos", () => {
+    const estado = normalizarEstado({
+        meses: {
+            "2026-10": {
+                receitas: [
+                    { nome: "Válida", valor: 0.105 },
+                    { nome: "Fora da faixa", valor: LIMITE_MONETARIO_SEGURO + 1 },
+                    { nome: "Infinita", valor: Infinity }
+                ],
+                despesas: []
+            }
+        }
+    }, (() => { let id = 0; return () => `id-${++id}`; })());
+
+    assert.deepEqual(estado.meses["2026-10"].receitas.map((receita) => receita.valor), [0.11]);
+});
+
+test("somas, gráficos e orçamentos sinalizam totais acima do limite seguro", () => {
+    assert.throws(
+        () => somarCentavos([LIMITE_MONETARIO_SEGURO, 0.01]),
+        { name: "RangeError" }
+    );
+    assert.throws(
+        () => agruparDespesasPorCategoria([
+            { categoria: "Casa", valor: LIMITE_MONETARIO_SEGURO },
+            { categoria: "Casa", valor: 0.01 }
+        ]),
+        { name: "RangeError" }
+    );
+    assert.throws(
+        () => calcularOrcamentosPorCategoria([], [
+            { categoria: "Casa", valor: LIMITE_MONETARIO_SEGURO },
+            { categoria: "Casa", valor: 0.01 }
+        ], { padrao: {} }),
+        { name: "RangeError" }
+    );
+    assert.throws(
+        () => somarCentavos([
+            LIMITE_MONETARIO_SEGURO / 2,
+            LIMITE_MONETARIO_SEGURO / 2,
+            0.01
+        ]),
+        { name: "RangeError" }
+    );
+    assert.equal(validarBackup({
+        meses: {
+            "2026-10": {
+                receitas: [],
+                despesas: [
+                    { nome: "Primeira", valor: LIMITE_MONETARIO_SEGURO / 2 },
+                    { nome: "Segunda", valor: LIMITE_MONETARIO_SEGURO / 2 },
+                    { nome: "Terceira", valor: 0.01 }
+                ]
+            }
+        }
+    }), false);
+    assert.equal(validarTotaisMonetarios({
+        meses: {
+            "2026-10": {
+                receitas: [{ valor: LIMITE_MONETARIO_SEGURO }],
+                despesas: [{ valor: LIMITE_MONETARIO_SEGURO }]
+            }
+        }
+    }), true);
 });
 
 test("modelo v3 adiciona orçamentos e migra estados e backups v2 sem orçamento", () => {
@@ -49,6 +153,31 @@ test("orçamento calcula gastos por categoria a partir das despesas do mês sele
     assert.equal(outubro.find((item) => item.categoria === "Alimentação").gastoCentavos, 42000);
     assert.equal(outubro.find((item) => item.categoria === "Moradia").gastoCentavos, 80000);
     assert.equal(novembro.find((item) => item.categoria === "Alimentação").gastoCentavos, 5000);
+});
+
+test("gráfico agrupa corretamente categorias especiais e comuns", () => {
+    const itens = agruparDespesasPorCategoria([
+        { categoria: "__proto__", valor: 10.25 },
+        { categoria: "constructor", valor: 20 },
+        { categoria: "__proto__", valor: 0.75 },
+        { categoria: "Casa", valor: 5 }
+    ]);
+
+    assert.deepEqual(itens, [
+        ["__proto__", 11],
+        ["constructor", 20],
+        ["Casa", 5]
+    ]);
+});
+
+test("orçamentos e somas usam o mesmo arredondamento monetário preciso", () => {
+    const itens = calcularOrcamentosPorCategoria(["Casa"], [
+        { categoria: "Casa", valor: 1.005 }
+    ], { padrao: { Casa: 1.005 }, meses: {} });
+
+    assert.equal(itens[0].gastoCentavos, 101);
+    assert.equal(itens[0].limiteCentavos, 101);
+    assert.equal(somarCentavos([1.005]), 101);
 });
 
 test("resumo mostra somente categorias com despesas e ordena pelo maior gasto", () => {

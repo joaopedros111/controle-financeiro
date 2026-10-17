@@ -45,7 +45,7 @@ test("controles das preferências incrementais têm implementação e cache atua
     assert.match(css, /graficos-ocultos/);
     assert.match(app, /preferenciasMenu\.ocultarAoIniciar/);
     assert.match(app, /preferenciasMenu\.ultimoPeriodo/);
-    assert.match(serviceWorker, /const CACHE = PREFIXO_CACHE \+ "v13"/);
+    assert.match(serviceWorker, /const CACHE = PREFIXO_CACHE \+ "v15"/);
     assert.equal((serviceWorker.match(/"\.\/preferences\.js"/g) || []).length, 1, "preferences.js deve ser precacheado uma vez");
 });
 
@@ -319,4 +319,20 @@ test("seções de despesas e entradas usam botões Adicionar e ícones recolhív
     const css = await read("style.css");
     assert.match(css, /\.bloco-retrair \{[^}]*width: 38px;[^}]*height: 38px;/);
     assert.match(css, /\.bloco-seta \{[^}]*width: 21px;[^}]*height: 21px;/);
+});
+
+test("gráfico por categoria usa agregação segura também no renderizador", async () => {
+    const [app, core] = await Promise.all([read("app.js"), read("finance-core.js")]);
+    assert.match(app, /agruparDespesasPorCategoria\(obterMes\(\)\.despesas\)/);
+    assert.match(core, /const totaisCentavos = Object\.create\(null\)/);
+});
+
+test("estado financeiro não é salvo automaticamente após leitura inválida", async () => {
+    const app = await read("app.js");
+    const storage = await read("storage.js");
+    assert.match(app, /lerJsonResultado\(chave, \{ protegerInvalido: true \}\)/);
+    assert.match(app, /resultado\.estado === "valido"[\s\S]*?validarBackup\(resultado\.valor, \{ permitirTextoNumerico: true \}\)/);
+    assert.match(app, /if \(recuperacaoFinanceira\.protegido\) return/);
+    assert.match(app, /recuperacaoFinanceira\.restaurar\(\{/);
+    assert.match(storage, /dadosProtegidos\.has\(chave\) && !substituirProtegido/);
 });

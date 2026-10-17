@@ -22,6 +22,11 @@ test("traduções localizam frases da interface e preservam o português como pa
     assert.equal(textoTraduzido("Rótulo personalizado", "fr"), "Rótulo personalizado");
     assert.equal(textoTraduzido("Expandir planejamento", "en"), "Expand planning");
     assert.equal(textoTraduzido("Exibir Entradas na tela inicial", "en"), "Show Income on the home screen");
+    assert.equal(textoTraduzido("Baixar cópia preservada", "en"), "Download preserved copy");
+    assert.equal(
+        textoTraduzido("Dados financeiros existentes não puderam ser validados. A gravação automática foi bloqueada; restaure um backup válido em Opções.", "en"),
+        "Existing financial data could not be validated. Automatic saving is blocked; restore a valid backup in Options."
+    );
     assert.equal(textoTraduzido("Selva", "pt-BR"), "Selva");
     assert.equal(textoTraduzido("Aparência e visualização", "en"), "Appearance and display");
 });

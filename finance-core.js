@@ -6,28 +6,68 @@ export const CATEGORIAS_PADRAO = [
 export const CATEGORIA_FIXA = "Outros";
 const ANO_MINIMO = 2000;
 const ANO_MAXIMO = 2100;
+export const LIMITE_MONETARIO_SEGURO = 2 ** 44;
+const LIMITE_CENTAVOS_SEGURO = BigInt(LIMITE_MONETARIO_SEGURO) * 100n;
 
 const gerarId = () => globalThis.crypto?.randomUUID?.()
     || Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
 
+function centavosMonetarios(valor) {
+    const texto = typeof valor === "number" ? valor.toString()
+        : typeof valor === "string" ? valor.trim() : "";
+    if (!texto || !Number.isFinite(Number(texto)) || Number(texto) < 0) return null;
+    if (/^[+-]?0+(?:\.0*)?(?:e[+-]?\d+)?$/i.test(texto)) return 0;
+
+    const partes = texto.match(/^\+?(\d*)(?:\.(\d*))?(?:e([+-]?\d+))?$/i);
+    if (!partes) return null;
+    const inteiros = partes[1] || "";
+    const fracao = partes[2] || "";
+    const digitos = (inteiros + fracao).replace(/^0+/, "");
+    if (!digitos) return 0;
+    const coeficiente = BigInt(digitos);
+    const escala = fracao.length - Number(partes[3] || 0) - 2;
+    let centavos;
+    if (escala <= 0) {
+        const casasAdicionais = -escala;
+        if (digitos.length + casasAdicionais > LIMITE_CENTAVOS_SEGURO.toString().length) return null;
+        centavos = coeficiente * 10n ** BigInt(casasAdicionais);
+    } else {
+        if (escala > digitos.length + 1) return 0;
+        const divisor = 10n ** BigInt(escala);
+        centavos = coeficiente / divisor;
+        if ((coeficiente % divisor) * 2n >= divisor) centavos += 1n;
+    }
+    if (centavos > LIMITE_CENTAVOS_SEGURO) return null;
+    return Number(centavos);
+}
+
+export function normalizarValorMonetario(valor) {
+    const centavos = centavosMonetarios(valor);
+    return centavos === null ? null : centavos / 100;
+}
+
+function somarCentavosSeguros(total, centavos) {
+    const soma = total + centavos;
+    if (soma > LIMITE_CENTAVOS_SEGURO) {
+        throw new RangeError(`O total financeiro excede o limite seguro de ${LIMITE_MONETARIO_SEGURO} por conjunto.`);
+    }
+    return soma;
+}
+
 function valorValido(valor) {
-    return typeof valor === "number" && Number.isFinite(valor) && valor >= 0;
+    return typeof valor === "number" && centavosMonetarios(valor) !== null;
 }
 
 function limiteOrcamentoValido(valor) {
-    return valorValido(valor) && Number.isSafeInteger(Math.round(valor * 100));
+    return typeof valor === "number" && centavosMonetarios(valor) !== null;
 }
 
 function limiteOrcamentoNormalizavel(valor) {
-    const numero = typeof valor === "number" ? valor
-        : typeof valor === "string" && valor.trim() ? Number(valor) : NaN;
-    return Number.isFinite(numero) && numero >= 0 && Number.isSafeInteger(Math.round(numero * 100));
+    return centavosMonetarios(valor) !== null;
 }
 
 function valorNormalizavel(valor) {
-    if (typeof valor === "number") return valorValido(valor);
-    if (typeof valor !== "string" || !valor.trim()) return false;
-    return valorValido(Number(valor));
+    return normalizarValorMonetario(valor) !== null;
 }
 
 function listaValida(lista) {
@@ -37,23 +77,24 @@ function listaValida(lista) {
     );
 }
 
-function mapaOrcamentosValido(mapa) {
+function mapaOrcamentosValido(mapa, permitirTextoNumerico = false) {
     return mapa && typeof mapa === "object" && !Array.isArray(mapa)
         && Object.entries(mapa).every(([categoria, limite]) =>
-            categoria.trim() !== "" && categoria.length <= 40 && limiteOrcamentoValido(limite)
+            categoria.trim() !== "" && categoria.length <= 40
+            && (permitirTextoNumerico ? limiteOrcamentoNormalizavel(limite) : limiteOrcamentoValido(limite))
         );
 }
 
-function orcamentosValidos(orcamentos) {
+function orcamentosValidos(orcamentos, permitirTextoNumerico = false) {
     if (!orcamentos || typeof orcamentos !== "object" || Array.isArray(orcamentos)) return false;
-    if (orcamentos.padrao !== undefined && !mapaOrcamentosValido(orcamentos.padrao)) return false;
+    if (orcamentos.padrao !== undefined && !mapaOrcamentosValido(orcamentos.padrao, permitirTextoNumerico)) return false;
     if (orcamentos.meses === undefined) return true;
     if (!orcamentos.meses || typeof orcamentos.meses !== "object" || Array.isArray(orcamentos.meses)) return false;
     return Object.entries(orcamentos.meses).every(([chave, mapa]) => {
         const ano = Number(chave.slice(0, 4));
         return /^\d{4}-(0[1-9]|1[0-2])$/.test(chave)
             && ano >= ANO_MINIMO && ano <= ANO_MAXIMO
-            && mapaOrcamentosValido(mapa);
+            && mapaOrcamentosValido(mapa, permitirTextoNumerico);
     });
 }
 
@@ -62,7 +103,7 @@ function normalizarMapaOrcamentos(mapa) {
     return Object.fromEntries(Object.entries(mapa)
         .filter(([categoria, limite]) => typeof categoria === "string" && categoria.trim()
             && categoria.length <= 40 && limiteOrcamentoNormalizavel(limite))
-        .map(([categoria, limite]) => [categoria.trim(), Math.round(Number(limite) * 100) / 100]));
+        .map(([categoria, limite]) => [categoria.trim(), centavosMonetarios(limite) / 100]));
 }
 
 function normalizarOrcamentos(bruto) {
@@ -76,7 +117,7 @@ function definirLimiteOrcamento(mapa, categoria, limite) {
     });
 }
 
-export function validarBackup(bruto) {
+export function validarBackup(bruto, { permitirTextoNumerico = false } = {}) {
     if (!bruto || typeof bruto !== "object" || Array.isArray(bruto)
         || !bruto.meses || typeof bruto.meses !== "object" || Array.isArray(bruto.meses)) return false;
 
@@ -89,7 +130,7 @@ export function validarBackup(bruto) {
     };
 
     if (bruto.versao !== undefined && ![2, 3].includes(bruto.versao)) return false;
-    if (bruto.orcamentos !== undefined && !orcamentosValidos(bruto.orcamentos)) return false;
+    if (bruto.orcamentos !== undefined && !orcamentosValidos(bruto.orcamentos, permitirTextoNumerico)) return false;
     if (bruto.tema !== undefined && bruto.tema !== null
         && !["claro", "escuro", "rosa", "pangolim", "floresta"].includes(bruto.tema)) return false;
     if (bruto.categorias !== undefined && (!Array.isArray(bruto.categorias)
@@ -105,7 +146,11 @@ export function validarBackup(bruto) {
             for (const item of registros) {
                 if (!item || typeof item !== "object" || Array.isArray(item)
                     || typeof item.nome !== "string" || !item.nome.trim() || item.nome.length > 80
-                    || !valorValido(item.valor) || !idValido(item)) return false;
+                    || !(permitirTextoNumerico
+                        ? valorNormalizavel(item.valor)
+                        : valorValido(item.valor))
+                    || (!permitirTextoNumerico && typeof item.valor !== "number")
+                    || !idValido(item)) return false;
                 if (campo === "despesas" && item.categoria !== undefined && typeof item.categoria !== "string") return false;
                 if (campo === "despesas" && item.pago !== undefined && typeof item.pago !== "boolean") return false;
                 if (campo === "despesas" && item.fixa !== undefined && typeof item.fixa !== "boolean") return false;
@@ -116,8 +161,25 @@ export function validarBackup(bruto) {
                 }
             }
         }
+        if (!validarTotaisMonetarios({ meses: { [chave]: mes } })) return false;
         return true;
     });
+}
+
+export function validarTotaisMonetarios(estado) {
+    if (!estado?.meses || typeof estado.meses !== "object" || Array.isArray(estado.meses)) return false;
+    try {
+        return Object.values(estado.meses).every((mes) => {
+            if (!mes || typeof mes !== "object" || Array.isArray(mes)) return false;
+            const receitas = mes.receitas === undefined ? [] : mes.receitas;
+            const despesas = mes.despesas === undefined ? [] : mes.despesas;
+            return Array.isArray(receitas) && Array.isArray(despesas)
+                && somarCentavos(receitas.map((item) => item.valor)) <= LIMITE_CENTAVOS_SEGURO
+                && somarCentavos(despesas.map((item) => item.valor)) <= LIMITE_CENTAVOS_SEGURO;
+        });
+    } catch {
+        return false;
+    }
 }
 
 export function normalizarEstado(bruto, criarId = gerarId) {
@@ -145,7 +207,7 @@ export function normalizarEstado(bruto, criarId = gerarId) {
         while (ids.has(id)) id = criarId();
         ids.add(id);
         const nome = typeof item.nome === "string" ? item.nome.trim() : "";
-        const registro = { id, nome, valor: Math.round(Number(item.valor) * 100) / 100 };
+        const registro = { id, nome, valor: normalizarValorMonetario(item.valor) };
         if (tipo === "despesa") {
             const atual = Number(item.parcela?.atual);
             const total = Number(item.parcela?.total);
@@ -208,9 +270,9 @@ export function calcularOrcamentosPorCategoria(categorias, despesas, orcamentos)
     (Array.isArray(despesas) ? despesas : []).forEach((despesa) => {
         if (!despesa || typeof despesa.categoria !== "string") return;
         const categoria = despesa.categoria.trim();
-        const valor = Number(despesa.valor);
-        if (!categoria || !Number.isFinite(valor) || valor < 0) return;
-        gastos.set(categoria, (gastos.get(categoria) || 0) + Math.round(valor * 100));
+        const centavos = centavosMonetarios(despesa.valor);
+        if (!categoria || centavos === null) return;
+        gastos.set(categoria, somarCentavosSeguros(gastos.get(categoria) || 0, centavos));
     });
 
     const padrao = orcamentos?.padrao || {};
@@ -225,8 +287,7 @@ export function calcularOrcamentosPorCategoria(categorias, despesas, orcamentos)
         const temLimitePadrao = Object.prototype.hasOwnProperty.call(padrao, categoria);
         const valorLimite = temLimitePadrao ? padrao[categoria] : null;
         const limiteCentavos = valorLimite !== null && valorLimite !== undefined
-            && Number.isFinite(Number(valorLimite)) && Number(valorLimite) >= 0
-            ? Math.round(Number(valorLimite) * 100)
+            ? centavosMonetarios(valorLimite)
             : null;
         return {
             categoria,
@@ -240,6 +301,21 @@ export function calcularOrcamentosPorCategoria(categorias, despesas, orcamentos)
                     : (gastoCentavos / limiteCentavos) * 100
         };
     });
+}
+
+export function agruparDespesasPorCategoria(despesas) {
+    const totaisCentavos = Object.create(null);
+    (Array.isArray(despesas) ? despesas : []).forEach((despesa) => {
+        if (!despesa || typeof despesa.categoria !== "string") return;
+        const centavos = centavosMonetarios(despesa.valor);
+        if (centavos === null) return;
+        if (centavos <= 0) return;
+        totaisCentavos[despesa.categoria] = somarCentavosSeguros(
+            totaisCentavos[despesa.categoria] || 0,
+            centavos
+        );
+    });
+    return Object.entries(totaisCentavos).map(([categoria, centavos]) => [categoria, centavos / 100]);
 }
 
 export function ordenarOrcamentosComGastos(itens) {
@@ -275,8 +351,11 @@ export function migrarDadosLegados(registrosPorMes, ano) {
 
 export function somarCentavos(valores) {
     return valores.reduce((total, valor) => {
-        const numero = Number(valor);
-        return Number.isFinite(numero) ? total + Math.round(numero * 100) : total;
+        const centavos = centavosMonetarios(valor);
+        if (centavos === null) {
+            throw new RangeError("Não é possível somar um valor financeiro inválido.");
+        }
+        return somarCentavosSeguros(total, centavos);
     }, 0);
 }
 
