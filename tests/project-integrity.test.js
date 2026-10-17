@@ -357,6 +357,7 @@ test("orçamento foi removido da tela inicial e o gerenciamento fica em Opções
     ]);
     assert.doesNotMatch(html, /secao-planejamento|lista-planejamento-orcamentos|vazio-planejamento-orcamentos|ORÇAMENTO POR CATEGORIA/);
     const opcoes = html.slice(html.indexOf('<dialog id="dialogo-ajustes"'), html.indexOf("</dialog>", html.indexOf('<dialog id="dialogo-ajustes"')));
+    assert.match(opcoes, /<div class="bloco-topo">[\s\S]*?<\/div>\s*<section class="ajustes-secao" aria-labelledby="titulo-categorias-orcamentos">/);
     assert.match(opcoes, /aria-labelledby="titulo-categorias-orcamentos"/);
     assert.match(opcoes, /id="abrir-categorias-orcamento"[^>]*>Gerenciar categorias/);
     assert.match(opcoes, /id="abrir-limites-orcamento"[^>]*>Configurar limites de orçamento/);
