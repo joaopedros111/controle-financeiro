@@ -27,18 +27,22 @@
     .ajustes-botao:hover { background: color-mix(in srgb, var(--primaria-hover) var(--menu-transparencia, 55%), transparent); }
     .ajustes-botao svg { width: clamp(20px, 4vw, 28px); height: clamp(20px, 4vw, 28px); }
     .ajustes-corpo > .bloco-topo { margin-bottom: 20px; }
+    .ajustes-secao { display: grid; gap: 10px; }
     .ajustes-secao + .ajustes-secao { margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--borda); }
-    .ajustes-secao h3 { margin: 0 0 10px; color: var(--texto-secundario); font-size: .72rem; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
-    .ajuste-linha { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px; border: 1px solid var(--borda); border-radius: 15px; background: var(--superficie-suave); }
+    .ajustes-secao h3 { margin: 0 0 2px; color: var(--texto-secundario); font-size: .72rem; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
+    .ajuste-linha { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-width: 0; padding: 12px; border: 1px solid var(--borda); border-radius: 15px; background: var(--superficie-suave); }
     .ajuste-linha > div { display: grid; gap: 2px; }
     .ajuste-linha strong { font-size: .9rem; }
     .ajuste-linha span { color: var(--texto-secundario); font-size: .78rem; }
     .ajuste-linha .tema-botao { flex: 0 0 auto; width: auto; min-width: 104px; height: 42px; min-height: 42px; gap: 6px; padding: 0 12px; font-size: .85rem; }
     .ajuste-linha .tema-botao span { color: inherit; font-size: inherit; }
     .ajustes-secao .acoes { margin-top: 0; }
-    .ajustes-secao .nota { margin-top: 12px; }
+    .ajustes-secao .nota { margin: 0; }
     .ajuste-controle { display: grid; grid-template-columns: 1fr; align-items: stretch; gap: 8px; }
-    .ajuste-controle select { min-height: 40px; border: 1px solid var(--borda); border-radius: 10px; padding: 0 10px; color: var(--texto); background: var(--superficie); }
+    .ajuste-controle > span { min-width: 0; line-height: 1.4; }
+    .ajuste-controle select { width: 100%; min-width: 0; min-height: 40px; border: 1px solid var(--borda); border-radius: 10px; padding: 0 10px; color: var(--texto); background: var(--superficie); }
+    .ajuste-controle.ajuste-alternancia { display: flex; align-items: center; }
+    .ajuste-controle.ajuste-alternancia input[type="checkbox"] { flex: 0 0 auto; width: 20px; height: 20px; accent-color: var(--primaria); }
     .ajuste-controle input[type="range"] { width: 100%; accent-color: var(--primaria); }
     .ajuste-controle output { color: var(--texto-secundario); }
     #dialogo-ajustes .btn-secundario { background: var(--superficie-suave); }
@@ -47,7 +51,7 @@
     .orcamento-resumo-topo { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
     .orcamento-resumo-topo h3 { font-size: .98rem; }
     .orcamento-resumo-acoes { display: flex; align-items: center; gap: 6px; }
-    .orcamento-resumo-topo #gerenciar-orcamentos { min-height: 38px; padding: 7px 12px; font-size: .8rem; }
+    .planejamento .bloco-titulo-retratil > div { display: grid; gap: 2px; }
     .lista-resumo-orcamentos { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
     .orcamento-item { display: grid; gap: 5px; padding: 10px 12px; border: 1px solid var(--borda); border-radius: 13px; background: var(--superficie-suave); }
     .orcamento-item-topo { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
@@ -82,6 +86,9 @@
     .orcamento-acoes .btn { flex: 1 1 auto; min-height: 38px; padding: 6px 9px; font-size: .74rem; white-space: normal; }
     .orcamento-acoes .btn:disabled { opacity: .5; cursor: not-allowed; }
     @media (max-width: 480px) {
+        .ajuste-linha { gap: 8px; padding: 10px; }
+        .ajuste-linha > div { min-width: 0; }
+        .ajuste-controle.ajuste-alternancia { align-items: flex-start; }
         .orcamento-edicao { grid-template-columns: 1fr; }
         .orcamento-acoes .btn { min-width: 120px; }
         #dialogo-orcamentos { width: 100%; }

@@ -20,6 +20,10 @@ test("traduções localizam frases da interface e preservam o português como pa
     assert.equal(textoTraduzido("Ocultar valores financeiros", "ja"), "金額を非表示");
     assert.equal(textoTraduzido("Idioma e moeda", "pt-BR"), "Idioma e moeda");
     assert.equal(textoTraduzido("Rótulo personalizado", "fr"), "Rótulo personalizado");
+    assert.equal(textoTraduzido("Expandir planejamento", "en"), "Expand planning");
+    assert.equal(textoTraduzido("Exibir Entradas na tela inicial", "en"), "Show Income on the home screen");
+    assert.equal(textoTraduzido("Selva", "pt-BR"), "Selva");
+    assert.equal(textoTraduzido("Aparência e visualização", "en"), "Appearance and display");
 });
 
 test("status dinâmico do Service Worker e do armazenamento acompanha o idioma da interface", () => {

@@ -1,5 +1,5 @@
 const PREFIXO_CACHE = "controle-financeiro-pwa-cache-";
-const CACHE = PREFIXO_CACHE + "v9";
+const CACHE = PREFIXO_CACHE + "v13";
 const CACHE_ANTIGO = "controle-financeiro-v5";
 const ARQUIVOS = [
     "./",

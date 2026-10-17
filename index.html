@@ -108,25 +108,6 @@
 
     </dl>
 
-    <section class="orcamento-resumo" aria-labelledby="titulo-orcamento-resumo">
-        <div class="orcamento-resumo-topo">
-            <div>
-                <span class="grafico-sobretitulo">PLANEJAMENTO</span>
-                <h3 id="titulo-orcamento-resumo">Orçamento por categoria</h3>
-            </div>
-            <div class="orcamento-resumo-acoes">
-                <button class="bloco-retrair" type="button" aria-expanded="true" aria-controls="conteudo-resumo-orcamentos" aria-label="Recolher orçamento por categoria">
-                    <svg class="bloco-seta" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m7 10 5 5 5-5"/></svg>
-                </button>
-                <button id="gerenciar-orcamentos" class="btn btn-secundario" type="button">Configurar</button>
-            </div>
-        </div>
-        <div id="conteudo-resumo-orcamentos">
-            <ul id="lista-resumo-orcamentos" class="lista-resumo-orcamentos" aria-label="Gastos e limites por categoria"></ul>
-            <p id="vazio-resumo-orcamentos" class="orcamento-vazio" hidden>Adicione despesas neste mês para acompanhar o orçamento por categoria.</p>
-        </div>
-    </section>
-
 </section>
 
 <section class="bloco grafico-bloco" aria-labelledby="titulo-grafico">
@@ -168,10 +149,28 @@
     </div>
 </section>
 
+<section id="secao-planejamento" class="bloco planejamento" aria-labelledby="titulo-planejamento">
+    <div class="bloco-topo">
+        <div class="bloco-titulo-retratil">
+            <div>
+                <span class="grafico-sobretitulo">ORÇAMENTO POR CATEGORIA</span>
+                <h2 id="titulo-planejamento">Planejamento</h2>
+            </div>
+            <button class="bloco-retrair" type="button" aria-expanded="true" aria-controls="conteudo-planejamento" aria-label="Recolher planejamento">
+                <svg class="bloco-seta" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m7 10 5 5 5-5"/></svg>
+            </button>
+        </div>
+        <button id="gerenciar-orcamentos" class="btn btn-primario" type="button">Configurar</button>
+    </div>
+    <div id="conteudo-planejamento">
+        <ul id="lista-planejamento-orcamentos" class="lista-resumo-orcamentos" aria-label="Gastos e limites por categoria"></ul>
+        <p id="vazio-planejamento-orcamentos" class="orcamento-vazio" hidden>Adicione despesas neste mês para acompanhar o orçamento por categoria.</p>
+    </div>
+</section>
 
         <!-- Despesas -->
 
-<section class="bloco despesas" aria-labelledby="titulo-despesas">
+<section id="secao-despesas" class="bloco despesas" aria-labelledby="titulo-despesas">
     <div class="bloco-topo">
         <div class="bloco-titulo-retratil">
             <h2 id="titulo-despesas">Despesas do mês</h2>
@@ -198,7 +197,7 @@
 
 <!-- Entradas -->
 
-<section class="bloco" aria-labelledby="titulo-receitas">
+<section id="secao-entradas" class="bloco" aria-labelledby="titulo-receitas">
     <div class="bloco-topo">
         <div class="bloco-titulo-retratil">
             <h2 id="titulo-receitas">Entradas</h2>
@@ -240,10 +239,10 @@
             <button id="fechar-ajustes" class="btn btn-icone" type="button" aria-label="Fechar ajustes">×</button>
         </div>
         <section class="ajustes-secao" aria-labelledby="titulo-aparencia">
-            <h3 id="titulo-aparencia">Aparência</h3>
+            <h3 id="titulo-aparencia">Aparência e visualização</h3>
             <div class="ajuste-linha">
-                <div><strong>Tema</strong><span>Claro, escuro, rosa, pangolim ou floresta</span></div>
-                <button id="alternar-tema" class="btn btn-secundario tema-botao" type="button" aria-label="Alternar tema" title="Alternar tema">☀️ <span>Alterar</span></button>
+                <div><strong>Tema</strong><span>Escuro, Claro, Rosa, Selva ou Pangolim</span></div>
+                <button id="alternar-tema" class="btn btn-secundario tema-botao" type="button" aria-label="Tema atual: Claro. Mudar para Escuro." title="Tema atual: Claro. Mudar para Escuro.">☀️ <span>Claro</span></button>
             </div>
             <label class="ajuste-linha ajuste-controle" for="densidade-interface">
                 <span>Densidade da interface</span>
@@ -257,6 +256,23 @@
                 <span>Mostrar gráficos e indicadores</span>
                 <input id="mostrar-graficos" type="checkbox" checked>
             </label>
+            <label class="ajuste-linha ajuste-controle ajuste-alternancia" for="mostrar-planejamento">
+                <span>Exibir Planejamento na tela inicial</span>
+                <input id="mostrar-planejamento" type="checkbox" checked>
+            </label>
+            <label class="ajuste-linha ajuste-controle ajuste-alternancia" for="mostrar-despesas-mes">
+                <span>Exibir Despesas do mês na tela inicial</span>
+                <input id="mostrar-despesas-mes" type="checkbox" checked>
+            </label>
+            <label class="ajuste-linha ajuste-controle ajuste-alternancia" for="mostrar-entradas">
+                <span>Exibir Entradas na tela inicial</span>
+                <input id="mostrar-entradas" type="checkbox" checked>
+            </label>
+            <label class="ajuste-linha ajuste-controle ajuste-alternancia" for="ocultar-ao-iniciar">
+                <span>Iniciar com valores ocultos</span>
+                <input id="ocultar-ao-iniciar" type="checkbox">
+            </label>
+            <button id="alternar-valores" class="btn btn-secundario ajustes-categorias-botao" type="button" aria-pressed="false">Ocultar valores financeiros</button>
         </section>
         <section class="ajustes-secao" aria-labelledby="titulo-botao-menu">
             <h3 id="titulo-botao-menu">Botão de opções</h3>
@@ -321,14 +337,6 @@
                 </select>
             </label>
             <p class="nota">O dia inicial do período financeiro não está disponível: os cálculos atuais usam meses do calendário.</p>
-        </section>
-        <section class="ajustes-secao" aria-labelledby="titulo-privacidade">
-            <h3 id="titulo-privacidade">Privacidade e visualização</h3>
-            <label class="ajuste-linha ajuste-controle" for="ocultar-ao-iniciar">
-                <span>Iniciar com valores ocultos</span>
-                <input id="ocultar-ao-iniciar" type="checkbox">
-            </label>
-            <button id="alternar-valores" class="btn btn-secundario ajustes-categorias-botao" type="button" aria-pressed="false">Ocultar valores financeiros</button>
         </section>
         <section class="ajustes-secao" aria-labelledby="titulo-ferramentas">
             <h3 id="titulo-ferramentas">Dados e segurança</h3>

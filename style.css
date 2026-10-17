@@ -618,6 +618,10 @@ body[data-densidade="compacta"] .receita { padding-top: 8px; padding-bottom: 8px
 body[data-densidade="confortavel"] .bloco { padding: 24px 20px; }
 body[data-densidade="confortavel"] .despesa,
 body[data-densidade="confortavel"] .receita { padding-top: 16px; padding-bottom: 16px; }
+body[data-densidade="compacta"] #dialogo-ajustes .ajustes-secao { gap: 7px; }
+body[data-densidade="compacta"] #dialogo-ajustes .ajustes-secao + .ajustes-secao { margin-top: 16px; padding-top: 14px; }
+body[data-densidade="confortavel"] #dialogo-ajustes .ajustes-secao { gap: 13px; }
+body[data-densidade="confortavel"] #dialogo-ajustes .ajustes-secao + .ajustes-secao { margin-top: 24px; padding-top: 20px; }
 
     .resumo-titulo {
         margin: 0 0 10px;

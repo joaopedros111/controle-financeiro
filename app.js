@@ -53,6 +53,9 @@ const ui = {
     moedaInterface: $("moeda-interface"),
     densidadeInterface: $("densidade-interface"),
     mostrarGraficos: $("mostrar-graficos"),
+    mostrarPlanejamento: $("mostrar-planejamento"),
+    mostrarDespesas: $("mostrar-despesas-mes"),
+    mostrarEntradas: $("mostrar-entradas"),
     telaInicial: $("tela-inicial"),
     referenciaMes: $("referencia-mes"),
     ocultarAoIniciar: $("ocultar-ao-iniciar"),
@@ -183,8 +186,8 @@ const ui = {
     totalRotulo: $("total-rotulo"),
 
     totalValor: $("total-valor"),
-    listaResumoOrcamentos: $("lista-resumo-orcamentos"),
-    vazioResumoOrcamentos: $("vazio-resumo-orcamentos"),
+    listaPlanejamentoOrcamentos: $("lista-planejamento-orcamentos"),
+    vazioPlanejamentoOrcamentos: $("vazio-planejamento-orcamentos"),
 
 
 
@@ -602,14 +605,8 @@ function renderTema() {
 
 
 
-    const escuroNoSistema = window.matchMedia
-
-        && window.matchMedia("(prefers-color-scheme: dark)").matches;
-
-
-
-    const tema = estado.tema || (escuroNoSistema ? "escuro" : "claro");
-    const nomesTema = { claro: "Claro", escuro: "Escuro", rosa: "Rosa", pangolim: "Pangolim", floresta: "Floresta" };
+    const tema = estado.tema || "claro";
+    const nomesTema = { claro: "Claro", escuro: "Escuro", rosa: "Rosa", pangolim: "Pangolim", floresta: "Selva" };
     const ordemTemas = ["claro", "escuro", "rosa", "pangolim", "floresta"];
     const proximoTema = ordemTemas[(ordemTemas.indexOf(tema) + 1) % ordemTemas.length];
 
@@ -625,7 +622,7 @@ function renderTema() {
 
     ui.tema.replaceChildren(
         criarEl("span", { text: ({ escuro: "🌙", rosa: "🌸", pangolim: "🐾", floresta: "🌲" })[tema] || "☀️" }),
-        criarEl("span", { text: "Alterar" })
+        criarEl("span", { text: nomesTema[tema] })
     );
     ui.tema.setAttribute("aria-label", "Tema atual: " + nomesTema[tema] + ". Mudar para " + nomesTema[proximoTema] + ".");
 
@@ -893,7 +890,6 @@ function somar(lista) {
 }
 
 function renderOrcamentoPorCategoria() {
-    if (!ui.listaResumoOrcamentos) return;
     const chave = chaveMes(periodo.ano, periodo.mes);
     const mes = estado.meses[chave] || { despesas: [] };
     const itens = ordenarOrcamentosComGastos(calcularOrcamentosPorCategoria(
@@ -901,7 +897,7 @@ function renderOrcamentoPorCategoria() {
         mes.despesas,
         estado.orcamentos
     ));
-    ui.listaResumoOrcamentos.replaceChildren(...itens.map((item) => {
+    ui.listaPlanejamentoOrcamentos.replaceChildren(...itens.map((item) => {
         const linha = criarEl("li", {
             class: "orcamento-item" + (item.limiteCentavos !== null && item.gastoCentavos > item.limiteCentavos ? " acima-do-orcamento" : "")
         });
@@ -940,7 +936,7 @@ function renderOrcamentoPorCategoria() {
         }
         return linha;
     }));
-    ui.vazioResumoOrcamentos.hidden = itens.length > 0;
+    ui.vazioPlanejamentoOrcamentos.hidden = itens.length > 0;
 }
 
 function renderListaOrcamentos() {
@@ -3060,15 +3056,26 @@ function aplicarPreferenciasVisuais() {
     document.body.dataset.densidade = preferenciasMenu.densidade;
     document.body.classList.toggle("graficos-ocultos", !preferenciasMenu.mostrarGraficos);
 }
+function aplicarVisibilidadeSecoes() {
+    $("secao-planejamento").hidden = !preferenciasMenu.mostrarPlanejamento;
+    $("secao-despesas").hidden = !preferenciasMenu.mostrarDespesas;
+    $("secao-entradas").hidden = !preferenciasMenu.mostrarEntradas;
+}
 function abrirSecaoInicial() {
-    const tela = resolverTelaInicial(preferenciasMenu);
+    const telaSolicitada = resolverTelaInicial(preferenciasMenu);
+    const lancamentosVisiveis = preferenciasMenu.mostrarDespesas || preferenciasMenu.mostrarEntradas;
+    const tela = telaSolicitada === "lancamentos" && !lancamentosVisiveis ? "resumo" : telaSolicitada;
     const alvos = {
         resumo: document.querySelector(".resumo"),
-        lancamentos: document.querySelector("#titulo-despesas")?.closest(".bloco"),
+        lancamentos: document.querySelector(preferenciasMenu.mostrarDespesas ? "#titulo-despesas" : "#titulo-receitas")?.closest(".bloco"),
         graficos: document.querySelector(".grafico-bloco")
     };
     if (tela === "lancamentos") {
-        ["despesas", "receitas"].forEach((tipo) => {
+        const tiposVisiveis = [
+            ...(preferenciasMenu.mostrarDespesas ? ["despesas"] : []),
+            ...(preferenciasMenu.mostrarEntradas ? ["receitas"] : [])
+        ];
+        tiposVisiveis.forEach((tipo) => {
             const botao = document.querySelector(`[aria-controls="conteudo-${tipo}"]`);
             if (botao?.getAttribute("aria-expanded") !== "true") botao?.click();
         });
@@ -3111,10 +3118,14 @@ function aplicarPreferenciasMenu() {
     ui.valorTamanhoBotaoMenu.value = preferenciasMenu.tamanhoBotao + " px";
     ui.densidadeInterface.value = preferenciasMenu.densidade;
     ui.mostrarGraficos.checked = preferenciasMenu.mostrarGraficos;
+    ui.mostrarPlanejamento.checked = preferenciasMenu.mostrarPlanejamento;
+    ui.mostrarDespesas.checked = preferenciasMenu.mostrarDespesas;
+    ui.mostrarEntradas.checked = preferenciasMenu.mostrarEntradas;
     ui.telaInicial.value = preferenciasMenu.telaInicial;
     ui.referenciaMes.value = preferenciasMenu.referenciaMes;
     ui.ocultarAoIniciar.checked = preferenciasMenu.ocultarAoIniciar;
     ui.escopoCsv.value = preferenciasMenu.escopoCsv;
+    aplicarVisibilidadeSecoes();
     if (preferenciasMenu.posicao === "arrastavel" && Number.isFinite(preferenciasMenu.x) && Number.isFinite(preferenciasMenu.y)) {
         ui.abrirAjustes.style.left = preferenciasMenu.x + "px";
         ui.abrirAjustes.style.top = preferenciasMenu.y + "px";
@@ -3153,6 +3164,21 @@ ui.tamanhoBotaoMenu.addEventListener("input", () => {
 });
 ui.densidadeInterface.addEventListener("change", () => { preferenciasMenu.densidade = ui.densidadeInterface.value; aplicarPreferenciasVisuais(); salvarPreferenciasMenu(); });
 ui.mostrarGraficos.addEventListener("change", () => { preferenciasMenu.mostrarGraficos = ui.mostrarGraficos.checked; aplicarPreferenciasVisuais(); salvarPreferenciasMenu(); });
+ui.mostrarPlanejamento.addEventListener("change", () => {
+    preferenciasMenu.mostrarPlanejamento = ui.mostrarPlanejamento.checked;
+    aplicarVisibilidadeSecoes();
+    salvarPreferenciasMenu();
+});
+ui.mostrarDespesas.addEventListener("change", () => {
+    preferenciasMenu.mostrarDespesas = ui.mostrarDespesas.checked;
+    aplicarVisibilidadeSecoes();
+    salvarPreferenciasMenu();
+});
+ui.mostrarEntradas.addEventListener("change", () => {
+    preferenciasMenu.mostrarEntradas = ui.mostrarEntradas.checked;
+    aplicarVisibilidadeSecoes();
+    salvarPreferenciasMenu();
+});
 ui.telaInicial.addEventListener("change", () => {
     preferenciasMenu.telaInicial = ui.telaInicial.value;
     salvarPreferenciasMenu();

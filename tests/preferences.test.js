@@ -21,6 +21,48 @@ test("preferências antigas ou inválidas mantêm defaults sem quebrar opções 
     assert.equal(preferencia.ocultarAoIniciar, true);
 });
 
+test("seções da tela inicial ficam visíveis por padrão em preferências existentes", () => {
+    const padrao = normalizarPreferenciasMenu({});
+    assert.equal(padrao.mostrarPlanejamento, true);
+    assert.equal(padrao.mostrarDespesas, true);
+    assert.equal(padrao.mostrarEntradas, true);
+    assert.deepEqual(normalizarPreferenciasMenu({
+        mostrarPlanejamento: "false",
+        mostrarDespesas: null
+    }), padrao);
+});
+
+test("preferências de visibilidade são independentes e persistem após recarregar", () => {
+    const dados = new Map();
+    const local = {
+        getItem: (chave) => dados.get(chave) ?? null,
+        setItem: (chave, valor) => dados.set(chave, String(valor)),
+        removeItem: (chave) => dados.delete(chave)
+    };
+    const chave = "controleFinanceiro:preferencias-menu";
+    const preferencias = normalizarPreferenciasMenu({
+        mostrarPlanejamento: false,
+        mostrarDespesas: true,
+        mostrarEntradas: false,
+        densidade: "confortavel",
+        mostrarGraficos: false,
+        telaInicial: "graficos"
+    });
+    assert.equal(criarArmazenamento(local).escreverJson(chave, preferencias), true);
+
+    const restauradas = normalizarPreferenciasMenu(criarArmazenamento(local).lerJson(chave));
+    assert.equal(restauradas.mostrarPlanejamento, false);
+    assert.equal(restauradas.mostrarDespesas, true);
+    assert.equal(restauradas.mostrarEntradas, false);
+    assert.equal(restauradas.densidade, "confortavel");
+    assert.equal(restauradas.mostrarGraficos, false);
+    assert.equal(restauradas.telaInicial, "graficos");
+    assert.deepEqual(
+        normalizarPreferenciasMenu({ mostrarPlanejamento: false }),
+        { ...normalizarPreferenciasMenu({}), mostrarPlanejamento: false }
+    );
+});
+
 test("preferência válida de posição, transparência, tela e período é preservada", () => {
     const preferencia = normalizarPreferenciasMenu({
         posicao: "arrastavel", transparencia: 34, x: 50, y: 90,
