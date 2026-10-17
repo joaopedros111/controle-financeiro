@@ -111,6 +111,30 @@ test("controles das preferências incrementais têm implementação e cache atua
     assert.equal((serviceWorker.match(/"\.\/preferences\.js"/g) || []).length, 1, "preferences.js deve ser precacheado uma vez");
 });
 
+test("densidade oferece cinco níveis ordenados e estilos progressivos para novos extremos", async () => {
+    const [html, preferences, styles] = await Promise.all([
+        read("index.html"), read("preferences.js"), read("style.css")
+    ]);
+    const controle = html.match(/<select id="densidade-interface">([\s\S]*?)<\/select>/);
+    assert.ok(controle, "seletor de densidade ausente");
+    const opcoes = [...controle[1].matchAll(/<option value="([^"]+)">([^<]+)<\/option>/g)]
+        .map(([, value, label]) => [value, label]);
+    assert.deepEqual(opcoes, [
+        ["muito-compacta", "Muito compacta"],
+        ["compacta", "Compacta"],
+        ["padrao", "Padrão"],
+        ["confortavel", "Confortável"],
+        ["muito-confortavel", "Muito confortável"]
+    ]);
+    for (const valor of ["muito-compacta", "compacta", "padrao", "confortavel", "muito-confortavel"]) {
+        assert.ok(preferences.includes(`"${valor}"`), `${valor} não é aceito pelas preferências`);
+    }
+    assert.match(styles, /body\[data-densidade="muito-compacta"\] \.bloco/);
+    assert.match(styles, /body\[data-densidade="muito-confortavel"\] \.bloco/);
+    assert.match(styles, /body\[data-densidade="muito-compacta"\] #dialogo-ajustes/);
+    assert.match(styles, /body\[data-densidade="muito-confortavel"\] #dialogo-ajustes/);
+});
+
 test("idioma e moeda são preferências persistentes, formatam a apresentação e entram no precache", async () => {
     const [html, app, preferences, localization, serviceWorker] = await Promise.all([
         read("index.html"), read("app.js"), read("preferences.js"),

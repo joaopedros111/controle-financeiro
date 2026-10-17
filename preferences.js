@@ -19,7 +19,9 @@ export function normalizarPreferenciasMenu(salvas) {
     preferencias.tamanhoBotao = Number.isFinite(tamanhoBotao)
         ? Math.max(44, Math.min(76, Math.round(tamanhoBotao)))
         : PADRAO.tamanhoBotao;
-    if (!["compacta", "padrao", "confortavel"].includes(preferencias.densidade)) preferencias.densidade = PADRAO.densidade;
+    if (!["muito-compacta", "compacta", "padrao", "confortavel", "muito-confortavel"].includes(preferencias.densidade)) {
+        preferencias.densidade = PADRAO.densidade;
+    }
     if (preferencias.telaInicial === "receitas" || preferencias.telaInicial === "despesas") {
         preferencias.telaInicial = "lancamentos";
     }

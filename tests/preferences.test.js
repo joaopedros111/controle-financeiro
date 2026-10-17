@@ -21,6 +21,15 @@ test("preferências antigas ou inválidas mantêm defaults sem quebrar opções 
     assert.equal(preferencia.ocultarAoIniciar, true);
 });
 
+test("normaliza e preserva os cinco níveis de densidade da interface", () => {
+    for (const densidade of [
+        "muito-compacta", "compacta", "padrao", "confortavel", "muito-confortavel"
+    ]) {
+        assert.equal(normalizarPreferenciasMenu({ densidade }).densidade, densidade);
+    }
+    assert.equal(normalizarPreferenciasMenu({ densidade: "desconhecida" }).densidade, "padrao");
+});
+
 test("seções da tela inicial ficam visíveis por padrão em preferências existentes", () => {
     const padrao = normalizarPreferenciasMenu({});
     assert.equal(padrao.mostrarPlanejamento, true);

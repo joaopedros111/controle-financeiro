@@ -612,16 +612,26 @@ body.valores-ocultos .grafico-barras { visibility: hidden; }
 body.valores-ocultos #grafico-rosca { background: conic-gradient(var(--borda) 0deg 360deg) !important; }
 body.graficos-ocultos .grafico-bloco { display: none; }
 body.graficos-ocultos .indicadores { display: none; }
+body[data-densidade="muito-compacta"] .bloco { padding: 10px 10px; }
+body[data-densidade="muito-compacta"] .despesa,
+body[data-densidade="muito-compacta"] .receita { padding-top: 6px; padding-bottom: 6px; }
 body[data-densidade="compacta"] .bloco { padding: 14px 12px; }
 body[data-densidade="compacta"] .despesa,
 body[data-densidade="compacta"] .receita { padding-top: 8px; padding-bottom: 8px; }
 body[data-densidade="confortavel"] .bloco { padding: 24px 20px; }
 body[data-densidade="confortavel"] .despesa,
 body[data-densidade="confortavel"] .receita { padding-top: 16px; padding-bottom: 16px; }
+body[data-densidade="muito-confortavel"] .bloco { padding: 28px 24px; }
+body[data-densidade="muito-confortavel"] .despesa,
+body[data-densidade="muito-confortavel"] .receita { padding-top: 20px; padding-bottom: 20px; }
+body[data-densidade="muito-compacta"] #dialogo-ajustes .ajustes-secao { gap: 5px; }
+body[data-densidade="muito-compacta"] #dialogo-ajustes .ajustes-secao + .ajustes-secao { margin-top: 12px; padding-top: 10px; }
 body[data-densidade="compacta"] #dialogo-ajustes .ajustes-secao { gap: 7px; }
 body[data-densidade="compacta"] #dialogo-ajustes .ajustes-secao + .ajustes-secao { margin-top: 16px; padding-top: 14px; }
 body[data-densidade="confortavel"] #dialogo-ajustes .ajustes-secao { gap: 13px; }
 body[data-densidade="confortavel"] #dialogo-ajustes .ajustes-secao + .ajustes-secao { margin-top: 24px; padding-top: 20px; }
+body[data-densidade="muito-confortavel"] #dialogo-ajustes .ajustes-secao { gap: 16px; }
+body[data-densidade="muito-confortavel"] #dialogo-ajustes .ajustes-secao + .ajustes-secao { margin-top: 28px; padding-top: 24px; }
 
     .resumo-titulo {
         margin: 0 0 10px;
