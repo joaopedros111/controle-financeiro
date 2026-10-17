@@ -98,8 +98,6 @@ const ui = {
 
     totalDespesas: $("total-despesas"),
 
-    valorPago: $("valor-pago"),
-
     valorPendente: $("valor-pendente"),
 
 
@@ -1045,8 +1043,6 @@ function atualizarResumo(persistir = true) {
     ui.totalReceitas.textContent = formatarMoeda(receita);
 
     ui.totalDespesas.textContent = formatarMoeda(despesa);
-
-    ui.valorPago.textContent = formatarMoeda(pago);
 
     ui.valorPendente.textContent = formatarMoeda(pendente);
 

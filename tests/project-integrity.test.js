@@ -281,7 +281,7 @@ test("valores monetários usam formatação centralizada nas listas, resumos e g
     assert.match(app, /valoresOcultos = preferenciasMenu\.ocultarAoIniciar/);
     assert.match(app, /renderTudo\(false\)/);
     for (const seletor of [
-        "saldo-valor", "total-receitas", "total-despesas", "valor-pago", "valor-pendente",
+        "saldo-valor", "total-receitas", "total-despesas", "valor-pendente",
         "total-receitas-lista", "total-valor", "total-grafico-categorias",
         "grafico-categoria-valor", "valor-receita", "valor-despesa"
     ]) {
@@ -290,6 +290,9 @@ test("valores monetários usam formatação centralizada nas listas, resumos e g
     assert.match(app, /title: rotulo \+ " em ".*formatarMoeda\(valor\)/);
     assert.match(app, /formatarMoeda\(p\.receitas\).*formatarMoeda\(p\.despesas\)/);
     assert.match(app, /formatarMoeda\(total\)[\s\S]*formatarMoeda\(valor\)/);
+    assert.match(app, /const pago = pagoCentavos \/ 100/);
+    assert.match(app, /const pendente = \(despesaCentavos - pagoCentavos\) \/ 100/);
+    assert.doesNotMatch(app, /\$\("valor-pago"\)|ui\.valorPago/);
     assert.match(css, /body\.valores-ocultos \.grafico-barras/);
     assert.match(css, /body\.valores-ocultos #grafico-rosca/);
     assert.match(css, /html\.app-inicializando \.container/);
