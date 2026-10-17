@@ -715,6 +715,47 @@ body[data-densidade="confortavel"] #dialogo-ajustes .ajustes-secao + .ajustes-se
     }
 
     /* Listas de Receitas e Despesas */
+    #lista-despesas {
+        display: grid;
+        gap: 12px;
+    }
+
+    .despesa-grupo {
+        min-width: 0;
+        overflow: hidden;
+        border: 1px solid var(--borda);
+        border-radius: 14px;
+        background: var(--superficie);
+    }
+
+    .despesa-grupo-topo {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 5px 12px;
+        padding: 10px 12px;
+        background: var(--superficie-suave);
+    }
+
+    .despesa-grupo-topo h3 {
+        min-width: 0;
+        margin: 0;
+        overflow-wrap: anywhere;
+        font-size: .88rem;
+    }
+
+    .despesa-grupo-total {
+        color: var(--texto-secundario);
+        font-size: .78rem;
+        font-variant-numeric: tabular-nums;
+        text-align: right;
+    }
+
+    .despesa-grupo-itens {
+        padding: 0 12px;
+    }
+
     .receita, .despesa {
         display: grid;
         align-items: center;

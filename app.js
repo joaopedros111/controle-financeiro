@@ -1,5 +1,5 @@
 import { criarRecuperacaoFinanceira, storage } from "./storage.js";
-import { CATEGORIAS_PADRAO, CATEGORIA_FIXA, normalizarEstado as normalizarEstadoCore, normalizarValorMonetario, validarBackup, validarTotaisMonetarios, migrarDadosLegados, calcularExpressao, somarCentavos, gerarCsv, calcularOrcamentosPorCategoria, agruparDespesasPorCategoria, ordenarOrcamentosComGastos, renomearCategoriaOrcamentos, removerCategoriaOrcamentos } from "./finance-core.js";
+import { CATEGORIAS_PADRAO, CATEGORIA_FIXA, normalizarEstado as normalizarEstadoCore, normalizarValorMonetario, validarBackup, validarTotaisMonetarios, migrarDadosLegados, calcularExpressao, somarCentavos, gerarCsv, calcularOrcamentosPorCategoria, agruparDespesasPorCategoria, agruparLancamentosPorCategoria, ordenarOrcamentosComGastos, renomearCategoriaOrcamentos, removerCategoriaOrcamentos } from "./finance-core.js";
 import { apresentarValorFinanceiro, normalizarPreferenciasMenu, resolverTelaInicial } from "./preferences.js";
 import { instalarAtualizacao, lerVersaoInstalada, lerVersaoPublicada, verificarComConfirmacao } from "./update-manager.js";
 import { aplicarIdioma, formatarMoeda as formatarMoedaLocalizada, LOCALES } from "./localization.js";
@@ -908,16 +908,23 @@ function criarLinhaDespesa(despesa) {
 
 function renderDespesas() {
 
-
-
     const despesas = obterMes().despesas;
-
-
-
-    ui.listaDespesas.replaceChildren(...despesas.map(criarLinhaDespesa));
-
+    const grupos = agruparLancamentosPorCategoria(despesas)
+        .sort((a, b) => a.categoria.localeCompare(b.categoria, LOCALES[idiomaAtual] || "pt-BR"));
+    ui.listaDespesas.replaceChildren(...grupos.map((grupo) => criarEl("section", {
+        class: "despesa-grupo",
+        "aria-label": grupo.categoria
+    }, [
+        criarEl("div", { class: "despesa-grupo-topo" }, [
+            criarEl("h3", { class: "despesa-grupo-categoria", text: grupo.categoria }),
+            criarEl("strong", {
+                class: "despesa-grupo-total",
+                text: `Total da categoria: ${formatarMoeda(grupo.totalCentavos / 100)}`
+            })
+        ]),
+        criarEl("div", { class: "despesa-grupo-itens" }, grupo.despesas.map(criarLinhaDespesa))
+    ])));
     ui.vazioDespesas.hidden = despesas.length > 0;
-
     ui.vazioDespesas.textContent =
     "Nenhuma despesa neste mês. Toque em “+ Despesa” para começar.";
 }

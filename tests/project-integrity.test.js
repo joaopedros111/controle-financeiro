@@ -328,6 +328,28 @@ test("gráfico por categoria usa agregação segura também no renderizador", as
     assert.match(core, /const totaisCentavos = Object\.create\(null\)/);
 });
 
+test("despesas renderizam por categoria mantendo linhas e eventos delegados", async () => {
+    const [app, core, css] = await Promise.all([
+        read("app.js"), read("finance-core.js"), read("style.css")
+    ]);
+    const render = app.slice(app.indexOf("function renderDespesas"), app.indexOf("function atualizarResumo"));
+    const eventos = app.slice(app.indexOf('ui.listaDespesas.addEventListener("change"'), app.indexOf("function aposMudarCategorias"));
+
+    assert.match(core, /export function agruparLancamentosPorCategoria/);
+    assert.match(render, /agruparLancamentosPorCategoria\(despesas\)/);
+    assert.match(render, /grupo\.despesas\.map\(criarLinhaDespesa\)/);
+    assert.match(render, /grupo\.totalCentavos \/ 100/);
+    assert.match(render, /class: "despesa-grupo-categoria", text: grupo\.categoria/);
+    assert.match(await read("localization.js"), /\.despesa-grupo-categoria/);
+    assert.match(eventos, /ui\.listaDespesas\.addEventListener\("change"/);
+    assert.match(eventos, /ui\.listaDespesas\.addEventListener\("click"/);
+    for (const seletor of [".pago-despesa", ".editar-despesa", ".remover-despesa"]) {
+        assert.ok(eventos.includes(seletor), `${seletor} deixou de funcionar por delegação`);
+    }
+    assert.match(css, /#lista-despesas \{/);
+    assert.match(css, /@media \(max-width: 600px\)[\s\S]*?\.despesa \{/);
+});
+
 test("estado financeiro não é salvo automaticamente após leitura inválida", async () => {
     const app = await read("app.js");
     const storage = await read("storage.js");

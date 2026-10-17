@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { agruparDespesasPorCategoria, calcularExpressao, calcularOrcamentosPorCategoria, escaparCelulaCsv, gerarCsv, LIMITE_MONETARIO_SEGURO, migrarDadosLegados, normalizarEstado, normalizarValorMonetario, ordenarOrcamentosComGastos, removerCategoriaOrcamentos, renomearCategoriaOrcamentos, somarCentavos, validarBackup, validarTotaisMonetarios } from "../finance-core.js";
+import { agruparDespesasPorCategoria, agruparLancamentosPorCategoria, calcularExpressao, calcularOrcamentosPorCategoria, escaparCelulaCsv, gerarCsv, LIMITE_MONETARIO_SEGURO, migrarDadosLegados, normalizarEstado, normalizarValorMonetario, ordenarOrcamentosComGastos, removerCategoriaOrcamentos, renomearCategoriaOrcamentos, somarCentavos, validarBackup, validarTotaisMonetarios } from "../finance-core.js";
 
 test("backup válido é aceito e meses fora do calendário são recusados", () => {
     const backup = { categorias: ["Moradia"], meses: { "2026-10": { receitas: [{ id: "r1", nome: "Salário", valor: 1200 }], despesas: [] } } };
@@ -168,6 +168,33 @@ test("gráfico agrupa corretamente categorias especiais e comuns", () => {
         ["constructor", 20],
         ["Casa", 5]
     ]);
+});
+
+test("agrupamento de despesas conserva lançamentos e calcula totais por categoria", () => {
+    const moradia = [
+        { id: "d1", nome: "Aluguel", categoria: "Moradia", valor: 800, pago: false },
+        { id: "d2", nome: "Condomínio", categoria: "Moradia", valor: 150, pago: true }
+    ];
+    const mercado = { id: "d3", nome: "Compras", categoria: "Alimentação", valor: 42.35, pago: false };
+    const categoriasEspeciais = [
+        { id: "d4", nome: "Especial", categoria: "__proto__", valor: 1, pago: false },
+        { id: "d5", nome: "Construtor", categoria: "constructor", valor: 2, pago: false }
+    ];
+    const despesas = [...moradia, mercado, ...categoriasEspeciais];
+    const grupos = agruparLancamentosPorCategoria(despesas);
+
+    assert.deepEqual(grupos.map(({ categoria, totalCentavos }) => [categoria, totalCentavos]), [
+        ["Moradia", 95000],
+        ["Alimentação", 4235],
+        ["__proto__", 100],
+        ["constructor", 200]
+    ]);
+    assert.deepEqual(grupos[0].despesas, moradia);
+    assert.equal(grupos[1].despesas[0], mercado);
+    assert.deepEqual(grupos.flatMap((grupo) => grupo.despesas), despesas);
+    assert.equal(agruparLancamentosPorCategoria([
+        { id: "sem-categoria", nome: "Legada", valor: 10 }
+    ])[0].categoria, "Outros");
 });
 
 test("orçamentos e somas usam o mesmo arredondamento monetário preciso", () => {

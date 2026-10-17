@@ -72,6 +72,7 @@ const FRASES = [
     ["Categorias e valores das despesas", "Expense categories and amounts", "Categorías e importes de gastos", "Catégories et montants des dépenses", "Ausgabenkategorien und Beträge", "支出カテゴリと金額"],
     ["Adicione despesas neste mês para ver a divisão por categoria.", "Add expenses this month to see the category breakdown.", "Añade gastos este mes para ver el desglose por categoría.", "Ajoutez des dépenses ce mois-ci pour voir la répartition par catégorie.", "Füge diesen Monat Ausgaben hinzu, um die Aufteilung nach Kategorie zu sehen.", "今月の支出を追加すると、カテゴリ別の内訳が表示されます。"],
     ["Despesas do mês", "Monthly expenses", "Gastos del mes", "Dépenses du mois", "Monatsausgaben", "今月の支出"],
+    ["Total da categoria:", "Category total:", "Total de la categoría:", "Total de la catégorie :", "Kategoriesumme:", "カテゴリ合計:"],
     ["Adicionar", "Add", "Añadir", "Ajouter", "Hinzufügen", "追加"],
     ["Total a pagar", "Total due", "Total pendiente", "Total à payer", "Gesamt noch offen", "未払い合計"],
     ["Opções", "Options", "Opciones", "Options", "Optionen", "オプション"],
@@ -277,7 +278,7 @@ function textoTraduzido(texto, idioma = idiomaAtivo) {
 function devePreservarTexto(no) {
     const pai = no.parentElement;
     return Boolean(pai?.closest(
-        ".nome-receita, .nome-despesa, .grafico-categoria-nome, .orcamento-edicao legend, " +
+        ".nome-receita, .nome-despesa, .grafico-categoria-nome, .despesa-grupo-categoria, .orcamento-edicao legend, " +
         "#lista-categorias, #despesa-categoria"
     ));
 }

@@ -318,6 +318,23 @@ export function agruparDespesasPorCategoria(despesas) {
     return Object.entries(totaisCentavos).map(([categoria, centavos]) => [categoria, centavos / 100]);
 }
 
+export function agruparLancamentosPorCategoria(despesas) {
+    const grupos = new Map();
+    (Array.isArray(despesas) ? despesas : []).forEach((despesa) => {
+        if (!despesa || typeof despesa !== "object") return;
+        const categoria = typeof despesa.categoria === "string" && despesa.categoria.trim()
+            ? despesa.categoria.trim()
+            : CATEGORIA_FIXA;
+        if (!grupos.has(categoria)) grupos.set(categoria, []);
+        grupos.get(categoria).push(despesa);
+    });
+    return [...grupos].map(([categoria, itens]) => ({
+        categoria,
+        despesas: itens,
+        totalCentavos: somarCentavos(itens.map((item) => item.valor))
+    }));
+}
+
 export function ordenarOrcamentosComGastos(itens) {
     return (Array.isArray(itens) ? itens : [])
         .filter((item) => item && Number.isFinite(item.gastoCentavos) && item.gastoCentavos > 0)

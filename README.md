@@ -19,7 +19,7 @@ Aplicativo web responsivo e instalável para acompanhar entradas, despesas, cate
 
 Os valores monetários são normalizados para o centavo mais próximo usando a representação decimal do número; frações exatamente no meio são arredondadas para cima. Isso evita que a representação binária de valores como `1.005` mude o arredondamento esperado. Entradas negativas, não finitas ou acima do limite monetário de `2^44` unidades são rejeitadas na validação e na importação. Esse teto mantém os centavos como inteiros exatos e, mesmo na borda máxima, a resolução do `Number` é menor que um centavo, permitindo converter o valor de volta sem perder centavos. A soma das receitas e, separadamente, das despesas de cada mês também precisa respeitar o teto. Cálculos de totais, orçamentos e gráficos acima do limite geram erro explícito; o app impede salvar ou exportar somas mensais inválidas, em vez de exibir ou persistir totais imprecisos.
 
-O cálculo decimal usa `BigInt`; portanto, o PWA requer uma engine JavaScript com suporte a `BigInt`. O projeto não declara uma matriz de navegadores nem uma política de versões mínimas de navegador. Definir e testar formalmente essa matriz permanece pendente.
+O cálculo decimal usa `BigInt`; portanto, o PWA requer uma engine JavaScript com suporte a `BigInt`.
 
 Se dados financeiros armazenados não puderem ser lidos ou validados, o app bloqueia a gravação automática para não substituir o conteúdo original. Quando o texto bruto está acessível, é possível baixá-lo como cópia preservada; a substituição do estado só ocorre após selecionar e confirmar a restauração de um backup válido. A indisponibilidade do armazenamento, sem dados inacessíveis detectados, continua usando o fallback temporário em memória e é informada ao usuário.
 
@@ -45,12 +45,27 @@ Abra `http://localhost:8000`. Para instalar o PWA em outros dispositivos, publiq
 
 ## Testes
 
-Requer Node.js 20 ou mais recente. Para executar os testes e a verificação sintática definidos no projeto:
+Para desenvolvimento e testes automatizados, é necessário Node.js 20 ou superior. Execute os testes e a verificação sintática definidos no projeto:
 
 ```sh
 node --test
 npm run check
 ```
+
+## Compatibilidade de navegadores
+
+O aplicativo tem como alvo as duas versões principais estáveis mais recentes de cada navegador suportado, verificadas no momento de cada publicação:
+
+- Google Chrome para desktop e Android.
+- Microsoft Edge para desktop e Android.
+- Mozilla Firefox para desktop e Android.
+- Apple Safari para macOS, iPhone e iPad.
+
+Navegadores desatualizados, Internet Explorer e ambientes sem suporte às funcionalidades exigidas não são oficialmente suportados.
+
+A aplicação requer suporte a `BigInt`, módulos JavaScript, `Intl.NumberFormat`, `localStorage` e Service Workers. A instalação e o funcionamento do PWA fora de `localhost` exigem uma origem segura, normalmente HTTPS.
+
+O suporte teórico às funcionalidades não substitui testes funcionais. Antes de uma publicação, valide os fluxos essenciais — inicialização, lançamentos, cálculos financeiros, armazenamento, backup e recuperação — nos navegadores e sistemas operacionais da matriz acima. Registre os ambientes efetivamente testados; não declare compatibilidade verificada sem executar esses testes.
 
 ## Dados e migração
 
