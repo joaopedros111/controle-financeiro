@@ -149,25 +149,6 @@
     </div>
 </section>
 
-<section id="secao-planejamento" class="bloco planejamento" aria-labelledby="titulo-planejamento">
-    <div class="bloco-topo">
-        <div class="bloco-titulo-retratil">
-            <div>
-                <span class="grafico-sobretitulo">ORÇAMENTO POR CATEGORIA</span>
-                <h2 id="titulo-planejamento">Planejamento</h2>
-            </div>
-            <button class="bloco-retrair" type="button" aria-expanded="true" aria-controls="conteudo-planejamento" aria-label="Recolher planejamento">
-                <svg class="bloco-seta" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m7 10 5 5 5-5"/></svg>
-            </button>
-        </div>
-        <button id="gerenciar-orcamentos" class="btn btn-primario" type="button">Configurar</button>
-    </div>
-    <div id="conteudo-planejamento">
-        <ul id="lista-planejamento-orcamentos" class="lista-resumo-orcamentos" aria-label="Gastos e limites por categoria"></ul>
-        <p id="vazio-planejamento-orcamentos" class="orcamento-vazio" hidden>Adicione despesas neste mês para acompanhar o orçamento por categoria.</p>
-    </div>
-</section>
-
         <!-- Despesas -->
 
 <section id="secao-despesas" class="bloco despesas" aria-labelledby="titulo-despesas">
@@ -258,10 +239,6 @@
                 <span>Mostrar gráficos e indicadores</span>
                 <input id="mostrar-graficos" type="checkbox" checked>
             </label>
-            <label class="ajuste-linha ajuste-controle ajuste-alternancia" for="mostrar-planejamento">
-                <span>Exibir Planejamento na tela inicial</span>
-                <input id="mostrar-planejamento" type="checkbox" checked>
-            </label>
             <label class="ajuste-linha ajuste-controle ajuste-alternancia" for="mostrar-despesas-mes">
                 <span>Exibir Despesas do mês na tela inicial</span>
                 <input id="mostrar-despesas-mes" type="checkbox" checked>
@@ -339,6 +316,11 @@
                 </select>
             </label>
             <p class="nota">O dia inicial do período financeiro não está disponível: os cálculos atuais usam meses do calendário.</p>
+        </section>
+        <section class="ajustes-secao" aria-labelledby="titulo-categorias-orcamentos">
+            <h3 id="titulo-categorias-orcamentos">Categorias e orçamentos</h3>
+            <button id="abrir-categorias-orcamento" class="btn btn-secundario" type="button">Gerenciar categorias</button>
+            <button id="abrir-limites-orcamento" class="btn btn-secundario" type="button">Configurar limites de orçamento</button>
         </section>
         <section class="ajustes-secao" aria-labelledby="titulo-ferramentas">
             <h3 id="titulo-ferramentas">Dados e segurança</h3>
@@ -596,12 +578,8 @@
     <dialog id="dialogo-orcamentos" aria-labelledby="titulo-dialogo-orcamentos">
         <div class="dialogo-corpo orcamentos-dialogo-corpo">
             <div class="bloco-topo">
-                <h2 id="titulo-dialogo-orcamentos">Configurar orçamento e categorias</h2>
+                <h2 id="titulo-dialogo-orcamentos">Categorias e orçamentos</h2>
                 <button id="fechar-orcamentos" class="btn btn-icone" type="button" aria-label="Fechar orçamentos">×</button>
-            </div>
-            <div id="opcoes-orcamento" class="opcoes-orcamento">
-                <button id="abrir-categorias-orcamento" class="btn btn-secundario" type="button">Adicionar categorias</button>
-                <button id="abrir-limites-orcamento" class="btn btn-primario" type="button">Configurar limites de orçamento</button>
             </div>
             <section id="painel-categorias-orcamento" class="painel-orcamento" aria-labelledby="titulo-gerenciar-categorias" hidden>
                 <button class="btn btn-secundario orcamento-voltar" type="button" data-orcamento-voltar>Voltar</button>

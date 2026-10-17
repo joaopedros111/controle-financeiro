@@ -762,6 +762,28 @@ body[data-densidade="muito-confortavel"] #dialogo-ajustes .ajustes-secao + .ajus
         text-align: right;
     }
 
+    .despesa-grupo-resumo {
+        display: grid;
+        justify-items: end;
+        gap: 2px;
+    }
+
+    .despesa-grupo-limite {
+        color: var(--texto-secundario);
+        font-size: .72rem;
+        font-variant-numeric: tabular-nums;
+        text-align: right;
+    }
+
+    .despesa-grupo.acima-do-orcamento {
+        border-color: color-mix(in srgb, var(--vermelho) 48%, var(--borda));
+    }
+
+    .despesa-grupo-limite.excedido {
+        color: var(--vermelho);
+        font-weight: 700;
+    }
+
     .despesa-grupo-itens {
         padding: 0 12px;
     }

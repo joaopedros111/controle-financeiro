@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { agruparDespesasPorCategoria, agruparLancamentosPorCategoria, calcularExpressao, calcularOrcamentosPorCategoria, escaparCelulaCsv, gerarCsv, LIMITE_MONETARIO_SEGURO, migrarDadosLegados, normalizarEstado, normalizarValorMonetario, ordenarOrcamentosComGastos, removerCategoriaOrcamentos, renomearCategoriaOrcamentos, somarCentavos, validarBackup, validarTotaisMonetarios } from "../finance-core.js";
+import { agruparDespesasPorCategoria, agruparLancamentosComOrcamento, agruparLancamentosPorCategoria, calcularExpressao, calcularOrcamentosPorCategoria, escaparCelulaCsv, gerarCsv, LIMITE_MONETARIO_SEGURO, migrarDadosLegados, normalizarEstado, normalizarValorMonetario, ordenarOrcamentosComGastos, removerCategoriaOrcamentos, renomearCategoriaOrcamentos, somarCentavos, validarBackup, validarTotaisMonetarios } from "../finance-core.js";
 
 test("backup válido é aceito e meses fora do calendário são recusados", () => {
     const backup = { categorias: ["Moradia"], meses: { "2026-10": { receitas: [{ id: "r1", nome: "Salário", valor: 1200 }], despesas: [] } } };
@@ -195,6 +195,33 @@ test("agrupamento de despesas conserva lançamentos e calcula totais por categor
     assert.equal(agruparLancamentosPorCategoria([
         { id: "sem-categoria", nome: "Legada", valor: 10 }
     ])[0].categoria, "Outros");
+});
+
+test("grupos de despesas recebem apenas limites configurados e indicam excesso", () => {
+    const despesas = [
+        { id: "d1", categoria: "Alimentação", valor: 450 },
+        { id: "d2", categoria: "Alimentação", valor: 175 },
+        { id: "d3", categoria: "Moradia", valor: 300 }
+    ];
+    const grupos = agruparLancamentosComOrcamento(despesas, ["Alimentação", "Moradia"], {
+        padrao: { Alimentação: 600, Moradia: 0 },
+        meses: {}
+    });
+
+    assert.deepEqual(grupos.map(({ categoria, totalCentavos, limiteCentavos, excedido }) =>
+        [categoria, totalCentavos, limiteCentavos, excedido]), [
+        ["Alimentação", 62500, 60000, true],
+        ["Moradia", 30000, 0, true]
+    ]);
+    assert.deepEqual(grupos.flatMap((grupo) => grupo.despesas), despesas);
+
+    const semLimite = agruparLancamentosComOrcamento(
+        [{ id: "d4", categoria: "Lazer", valor: 25 }],
+        ["Lazer"],
+        { padrao: {}, meses: {} }
+    )[0];
+    assert.equal(semLimite.limiteCentavos, null);
+    assert.equal(semLimite.excedido, false);
 });
 
 test("orçamentos e somas usam o mesmo arredondamento monetário preciso", () => {

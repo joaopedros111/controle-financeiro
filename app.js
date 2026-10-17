@@ -1,5 +1,5 @@
 import { criarRecuperacaoFinanceira, storage } from "./storage.js";
-import { CATEGORIAS_PADRAO, CATEGORIA_FIXA, normalizarEstado as normalizarEstadoCore, normalizarValorMonetario, validarBackup, validarTotaisMonetarios, migrarDadosLegados, calcularExpressao, somarCentavos, gerarCsv, calcularOrcamentosPorCategoria, agruparDespesasPorCategoria, agruparLancamentosPorCategoria, ordenarOrcamentosComGastos, renomearCategoriaOrcamentos, removerCategoriaOrcamentos } from "./finance-core.js";
+import { CATEGORIAS_PADRAO, CATEGORIA_FIXA, normalizarEstado as normalizarEstadoCore, normalizarValorMonetario, validarBackup, validarTotaisMonetarios, migrarDadosLegados, calcularExpressao, somarCentavos, gerarCsv, agruparDespesasPorCategoria, agruparLancamentosComOrcamento, renomearCategoriaOrcamentos, removerCategoriaOrcamentos } from "./finance-core.js";
 import { apresentarValorFinanceiro, normalizarPreferenciasMenu, resolverTelaInicial } from "./preferences.js";
 import { criarConfirmacaoAtualizacao, criarVerificadorAutomatico, instalarAtualizacao, lerVersaoInstalada, lerVersaoPublicada, verificarComConfirmacao } from "./update-manager.js";
 import { aplicarIdioma, formatarMoeda as formatarMoedaLocalizada, LOCALES } from "./localization.js";
@@ -53,7 +53,6 @@ const ui = {
     moedaInterface: $("moeda-interface"),
     densidadeInterface: $("densidade-interface"),
     mostrarGraficos: $("mostrar-graficos"),
-    mostrarPlanejamento: $("mostrar-planejamento"),
     mostrarDespesas: $("mostrar-despesas-mes"),
     mostrarEntradas: $("mostrar-entradas"),
     telaInicial: $("tela-inicial"),
@@ -69,10 +68,8 @@ const ui = {
     dataVerificacaoAtualizacao: $("data-verificacao-atualizacao"),
     resultadoVerificacaoAtualizacao: $("resultado-verificacao-atualizacao"),
     statusAtualizacao: $("status-atualizacao"),
-    gerenciarOrcamentos: $("gerenciar-orcamentos"),
     dialogoOrcamentos: $("dialogo-orcamentos"),
     fecharOrcamentos: $("fechar-orcamentos"),
-    opcoesOrcamentos: $("opcoes-orcamento"),
     abrirCategoriasOrcamento: $("abrir-categorias-orcamento"),
     abrirLimitesOrcamento: $("abrir-limites-orcamento"),
     painelCategoriasOrcamento: $("painel-categorias-orcamento"),
@@ -186,8 +183,6 @@ const ui = {
     totalRotulo: $("total-rotulo"),
 
     totalValor: $("total-valor"),
-    listaPlanejamentoOrcamentos: $("lista-planejamento-orcamentos"),
-    vazioPlanejamentoOrcamentos: $("vazio-planejamento-orcamentos"),
 
 
 
@@ -907,20 +902,25 @@ function criarLinhaDespesa(despesa) {
 
 
 function renderDespesas() {
-
     const despesas = obterMes().despesas;
-    const grupos = agruparLancamentosPorCategoria(despesas)
+    const grupos = agruparLancamentosComOrcamento(despesas, estado.categorias, estado.orcamentos)
         .sort((a, b) => a.categoria.localeCompare(b.categoria, LOCALES[idiomaAtual] || "pt-BR"));
     ui.listaDespesas.replaceChildren(...grupos.map((grupo) => criarEl("section", {
-        class: "despesa-grupo",
-        "aria-label": grupo.categoria
+        class: "despesa-grupo" + (grupo.excedido ? " acima-do-orcamento" : ""),
+        "aria-label": grupo.excedido ? `${grupo.categoria}, orçamento excedido` : grupo.categoria
     }, [
         criarEl("div", { class: "despesa-grupo-topo" }, [
             criarEl("h3", { class: "despesa-grupo-categoria", text: grupo.categoria }),
-            criarEl("strong", {
-                class: "despesa-grupo-total",
-                text: `Total da categoria: ${formatarMoeda(grupo.totalCentavos / 100)}`
-            })
+            criarEl("div", { class: "despesa-grupo-resumo" }, [
+                criarEl("strong", {
+                    class: "despesa-grupo-total",
+                    text: `Total da categoria: ${formatarMoeda(grupo.totalCentavos / 100)}`
+                }),
+                ...(grupo.limiteCentavos === null ? [] : [criarEl("small", {
+                    class: "despesa-grupo-limite" + (grupo.excedido ? " excedido" : ""),
+                    text: `Limite: ${formatarMoeda(grupo.limiteCentavos / 100)}`
+                })])
+            ])
         ]),
         criarEl("div", { class: "despesa-grupo-itens" }, grupo.despesas.map(criarLinhaDespesa))
     ])));
@@ -944,56 +944,6 @@ function corDaCategoria(nome) {
 function somar(lista) {
     return somarCentavos(lista.map((item) => numero(item.valor))) / 100;
 
-}
-
-function renderOrcamentoPorCategoria() {
-    const chave = chaveMes(periodo.ano, periodo.mes);
-    const mes = estado.meses[chave] || { despesas: [] };
-    const itens = ordenarOrcamentosComGastos(calcularOrcamentosPorCategoria(
-        estado.categorias,
-        mes.despesas,
-        estado.orcamentos
-    ));
-    ui.listaPlanejamentoOrcamentos.replaceChildren(...itens.map((item) => {
-        const linha = criarEl("li", {
-            class: "orcamento-item" + (item.limiteCentavos !== null && item.gastoCentavos > item.limiteCentavos ? " acima-do-orcamento" : "")
-        });
-        const topo = criarEl("div", { class: "orcamento-item-topo" }, [
-            criarEl("strong", { text: item.categoria })
-        ]);
-        const gasto = item.gastoCentavos / 100;
-        const detalhes = item.limiteCentavos === null
-            ? `Gasto: ${formatarMoeda(gasto)} · Sem orçamento definido`
-            : `Gasto: ${formatarMoeda(gasto)} · Limite: ${formatarMoeda(item.limiteCentavos / 100)}`;
-        linha.append(topo, criarEl("p", { class: "orcamento-detalhes", text: detalhes }));
-
-        if (item.limiteCentavos !== null) {
-            const percentualIndeterminado = item.percentualConsumido === null;
-            const percentual = percentualIndeterminado ? 100 : item.percentualConsumido;
-            const barra = criarEl("div", {
-                class: "orcamento-progresso",
-                role: "progressbar",
-                "aria-label": `Orçamento de ${item.categoria}`,
-                "aria-valuemin": "0",
-                "aria-valuemax": "100",
-                "aria-valuenow": String(Math.min(100, Math.max(0, percentual))),
-                "aria-valuetext": percentualIndeterminado ? "Gasto acima de limite zero" : `${formatarPercentual(percentual)} consumido`
-            });
-            barra.append(criarEl("span", { class: "orcamento-progresso-preenchido" }));
-            barra.firstElementChild.style.width = Math.min(100, Math.max(0, percentual)) + "%";
-            linha.append(barra);
-            linha.append(item.restanteCentavos < 0
-                ? criarEl("p", {
-                    class: "orcamento-restante orcamento-excesso",
-                    text: percentualIndeterminado
-                        ? `Excesso: ${formatarMoeda(Math.abs(item.restanteCentavos) / 100)} · limite zero`
-                        : `Excesso: ${formatarMoeda(Math.abs(item.restanteCentavos) / 100)} · ${formatarPercentual(percentual)} consumido`
-                })
-                : criarEl("p", { class: "orcamento-restante", text: `Restante: ${formatarMoeda(item.restanteCentavos / 100)} · ${formatarPercentual(percentual)} consumido` }));
-        }
-        return linha;
-    }));
-    ui.vazioPlanejamentoOrcamentos.hidden = itens.length > 0;
 }
 
 function renderListaOrcamentos() {
@@ -1034,7 +984,7 @@ function renderListaOrcamentos() {
 
 function atualizarOrcamentos() {
     renderListaOrcamentos();
-    renderOrcamentoPorCategoria();
+    renderDespesas();
     salvar();
 }
 
@@ -1171,7 +1121,6 @@ function atualizarResumo(persistir = true) {
     renderGraficoMensal();
 
     renderGraficoCategorias();
-    renderOrcamentoPorCategoria();
 
     atualizarDiagnostico();
 
@@ -1525,7 +1474,7 @@ document.querySelectorAll(".bloco-retrair").forEach((botao) => {
         const conteudo = document.getElementById(botao.getAttribute("aria-controls"));
         if (!conteudo) return;
         botao.setAttribute("aria-expanded", String(!expandido));
-        const titulo = botao.closest(".bloco-topo, .orcamento-resumo-topo")
+        const titulo = botao.closest(".bloco-topo")
             .querySelector("h2, h3").textContent.trim().toLowerCase();
         botao.setAttribute("aria-label", (expandido ? "Expandir " : "Recolher ") + titulo);
         conteudo.hidden = expandido;
@@ -2526,32 +2475,34 @@ function removerCategoria(nome) {
 
 
 function mostrarPainelOrcamentos(painel) {
-    ui.opcoesOrcamentos.hidden = painel !== "opcoes";
     ui.painelCategoriasOrcamento.hidden = painel !== "categorias";
     ui.painelLimitesOrcamento.hidden = painel !== "limites";
 }
 
-ui.gerenciarOrcamentos.addEventListener("click", () => {
-    mostrarPainelOrcamentos("opcoes");
-    ui.dialogoOrcamentos.showModal();
-    ui.abrirCategoriasOrcamento.focus();
-});
 ui.abrirCategoriasOrcamento.addEventListener("click", () => {
     renderListaCategorias();
     mostrarPainelOrcamentos("categorias");
+    ui.dialogoAjustes.close();
+    ui.dialogoOrcamentos.showModal();
     ui.novaCategoria.focus();
 });
 ui.abrirLimitesOrcamento.addEventListener("click", () => {
     renderListaOrcamentos();
     mostrarPainelOrcamentos("limites");
+    ui.dialogoAjustes.close();
+    ui.dialogoOrcamentos.showModal();
     ui.listaOrcamentos.querySelector("[data-orcamento-campo]")?.focus();
 });
 ui.fecharOrcamentos.addEventListener("click", () => ui.dialogoOrcamentos.close());
 ui.dialogoOrcamentos.addEventListener("click", (evento) => {
     if (evento.target === ui.dialogoOrcamentos) ui.dialogoOrcamentos.close();
     if (evento.target.closest("[data-orcamento-voltar]")) {
-        mostrarPainelOrcamentos("opcoes");
-        ui.abrirCategoriasOrcamento.focus();
+        const controle = ui.painelCategoriasOrcamento.hidden
+            ? ui.abrirLimitesOrcamento
+            : ui.abrirCategoriasOrcamento;
+        ui.dialogoOrcamentos.close();
+        ui.dialogoAjustes.showModal();
+        controle.focus();
     }
 });
 ui.listaOrcamentos.addEventListener("click", (evento) => {
@@ -3133,7 +3084,6 @@ function aplicarPreferenciasVisuais() {
     document.body.classList.toggle("graficos-ocultos", !preferenciasMenu.mostrarGraficos);
 }
 function aplicarVisibilidadeSecoes() {
-    $("secao-planejamento").hidden = !preferenciasMenu.mostrarPlanejamento;
     $("secao-despesas").hidden = !preferenciasMenu.mostrarDespesas;
     $("secao-entradas").hidden = !preferenciasMenu.mostrarEntradas;
 }
@@ -3194,7 +3144,6 @@ function aplicarPreferenciasMenu() {
     ui.valorTamanhoBotaoMenu.value = preferenciasMenu.tamanhoBotao + " px";
     ui.densidadeInterface.value = preferenciasMenu.densidade;
     ui.mostrarGraficos.checked = preferenciasMenu.mostrarGraficos;
-    ui.mostrarPlanejamento.checked = preferenciasMenu.mostrarPlanejamento;
     ui.mostrarDespesas.checked = preferenciasMenu.mostrarDespesas;
     ui.mostrarEntradas.checked = preferenciasMenu.mostrarEntradas;
     ui.telaInicial.value = preferenciasMenu.telaInicial;
@@ -3240,11 +3189,6 @@ ui.tamanhoBotaoMenu.addEventListener("input", () => {
 });
 ui.densidadeInterface.addEventListener("change", () => { preferenciasMenu.densidade = ui.densidadeInterface.value; aplicarPreferenciasVisuais(); salvarPreferenciasMenu(); });
 ui.mostrarGraficos.addEventListener("change", () => { preferenciasMenu.mostrarGraficos = ui.mostrarGraficos.checked; aplicarPreferenciasVisuais(); salvarPreferenciasMenu(); });
-ui.mostrarPlanejamento.addEventListener("change", () => {
-    preferenciasMenu.mostrarPlanejamento = ui.mostrarPlanejamento.checked;
-    aplicarVisibilidadeSecoes();
-    salvarPreferenciasMenu();
-});
 ui.mostrarDespesas.addEventListener("change", () => {
     preferenciasMenu.mostrarDespesas = ui.mostrarDespesas.checked;
     aplicarVisibilidadeSecoes();

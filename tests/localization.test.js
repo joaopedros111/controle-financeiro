@@ -20,8 +20,10 @@ test("traduções localizam frases da interface e preservam o português como pa
     assert.equal(textoTraduzido("Ocultar valores financeiros", "ja"), "金額を非表示");
     assert.equal(textoTraduzido("Idioma e moeda", "pt-BR"), "Idioma e moeda");
     assert.equal(textoTraduzido("Rótulo personalizado", "fr"), "Rótulo personalizado");
-    assert.equal(textoTraduzido("Expandir planejamento", "en"), "Expand planning");
     assert.equal(textoTraduzido("Exibir Entradas na tela inicial", "en"), "Show Income on the home screen");
+    assert.equal(textoTraduzido("Gerenciar categorias", "en"), "Manage categories");
+    assert.equal(textoTraduzido("Categorias e orçamentos", "es"), "Categorías y presupuestos");
+    assert.equal(textoTraduzido("Limite: R$ 600,00", "en"), "Limit: R$ 600,00");
     assert.equal(textoTraduzido("Baixar cópia preservada", "en"), "Download preserved copy");
     assert.equal(textoTraduzido("Total da categoria: R$ 950,00", "en"), "Category total: R$ 950,00");
     assert.equal(

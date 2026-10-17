@@ -335,6 +335,19 @@ export function agruparLancamentosPorCategoria(despesas) {
     }));
 }
 
+export function agruparLancamentosComOrcamento(despesas, categorias, orcamentos) {
+    const limites = new Map(calcularOrcamentosPorCategoria(categorias, despesas, orcamentos)
+        .map(({ categoria, limiteCentavos }) => [categoria, limiteCentavos]));
+    return agruparLancamentosPorCategoria(despesas).map((grupo) => {
+        const limiteCentavos = limites.get(grupo.categoria) ?? null;
+        return {
+            ...grupo,
+            limiteCentavos,
+            excedido: limiteCentavos !== null && grupo.totalCentavos > limiteCentavos
+        };
+    });
+}
+
 export function ordenarOrcamentosComGastos(itens) {
     return (Array.isArray(itens) ? itens : [])
         .filter((item) => item && Number.isFinite(item.gastoCentavos) && item.gastoCentavos > 0)
