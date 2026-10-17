@@ -32,11 +32,15 @@ test("verificador automático compartilha consulta em andamento e limita verific
     let agora = 1000;
     let chamadas = 0;
     let concluir;
-    const verificar = criarVerificadorAutomatico(
-        () => {
-            chamadas += 1;
+    const executarVerificacao = () => {
+        chamadas += 1;
+        if (chamadas === 1) {
             return new Promise((resolve) => { concluir = resolve; });
-        },
+        }
+        return Promise.resolve("atualizado");
+    };
+    const verificar = criarVerificadorAutomatico(
+        executarVerificacao,
         { agora: () => agora, intervaloMinimoMs: 60000 }
     );
 

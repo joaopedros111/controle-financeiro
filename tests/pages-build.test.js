@@ -1,0 +1,66 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { prepararArtefatoPages } from "../scripts/prepare-pages.mjs";
+
+const root = new URL("../", import.meta.url);
+
+test("Pages build emits synchronized per-run version and cache without changing source", async () => {
+    const diretorioTemporario = await mkdtemp(path.join(os.tmpdir(), "controle-financeiro-pages-"));
+    const saida = path.join(diretorioTemporario, "site");
+    const versaoFonteAntes = await readFile(new URL("../version.json", import.meta.url), "utf8");
+    const serviceWorkerFonteAntes = await readFile(new URL("../sw.js", import.meta.url), "utf8");
+    const versaoBase = JSON.parse(versaoFonteAntes).version.match(/^(\d+\.\d+\.)(\d+)$/);
+    const cacheBase = /const PREFIXO_CACHE = "([^"]+)";\s*const CACHE = PREFIXO_CACHE \+ "v(\d+)";/.exec(serviceWorkerFonteAntes);
+    assert.ok(versaoBase, "versão base semver inválida");
+    assert.ok(cacheBase, "cache base inválido");
+    const versaoEsperada = `${versaoBase[1]}${Number(versaoBase[2]) + 1}`;
+    const cacheEsperado = `${cacheBase[1]}v${Number(cacheBase[2]) + 1}`;
+
+    try {
+        const release = await prepararArtefatoPages({
+            diretorioFonte: fileURLToPath(root),
+            diretorioSaida: saida,
+            numeroExecucao: "1"
+        });
+        const metadadosGerados = JSON.parse(await readFile(path.join(saida, "version.json"), "utf8"));
+        const serviceWorkerGerado = await readFile(path.join(saida, "sw.js"), "utf8");
+
+        assert.equal(release.version, versaoEsperada);
+        assert.equal(release.cache, cacheEsperado);
+        assert.equal(metadadosGerados.version, release.version);
+        assert.match(serviceWorkerGerado, new RegExp(`const VERSAO_SERVICE_WORKER = "${release.version}";`));
+        assert.ok(serviceWorkerGerado.includes(`const CACHE = PREFIXO_CACHE + "${cacheEsperado.slice(cacheBase[1].length)}";`));
+        for (const arquivo of ["index.html", "app.js", "manifest.json", "icons/icon-192.png"]) {
+            assert.ok((await readFile(path.join(saida, arquivo))).length > 0, `${arquivo} ausente do artefato`);
+        }
+        assert.equal(await readFile(new URL("../version.json", import.meta.url), "utf8"), versaoFonteAntes);
+        assert.equal(await readFile(new URL("../sw.js", import.meta.url), "utf8"), serviceWorkerFonteAntes);
+    } finally {
+        await rm(diretorioTemporario, { recursive: true, force: true });
+    }
+});
+
+test("Pages build aborts when source version and Service Worker identity disagree", async () => {
+    const diretorioTemporario = await mkdtemp(path.join(os.tmpdir(), "controle-financeiro-pages-invalid-"));
+    const fonte = path.join(diretorioTemporario, "source");
+    const saida = path.join(diretorioTemporario, "site");
+
+    try {
+        const metadados = JSON.parse(await readFile(new URL("../version.json", import.meta.url), "utf8"));
+        metadados.version = "9.9.9";
+        await mkdir(fonte, { recursive: true });
+        await writeFile(path.join(fonte, "version.json"), JSON.stringify(metadados));
+        await writeFile(path.join(fonte, "sw.js"), await readFile(new URL("../sw.js", import.meta.url), "utf8"));
+
+        await assert.rejects(
+            prepararArtefatoPages({ diretorioFonte: fonte, diretorioSaida: saida, numeroExecucao: 1 }),
+            /version\.json e a identidade do Service Worker estão inconsistentes/
+        );
+    } finally {
+        await rm(diretorioTemporario, { recursive: true, force: true });
+    }
+});

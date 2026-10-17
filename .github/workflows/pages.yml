@@ -1,0 +1,67 @@
+name: Deploy Controle Financeiro to GitHub Pages
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: github-pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Run tests
+        run: node --test
+
+      - name: Check JavaScript syntax
+        run: npm run check
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Confirm this is still the latest main commit
+        id: current
+        run: |
+          git fetch --no-tags origin main
+          if [ "$(git rev-parse FETCH_HEAD)" = "$GITHUB_SHA" ]; then
+            echo "is_current=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_current=false" >> "$GITHUB_OUTPUT"
+            echo "Skipping deployment because main has advanced beyond this run."
+          fi
+
+      - name: Prepare static site and release identity
+        if: steps.current.outputs.is_current == 'true'
+        run: node scripts/prepare-pages.mjs "$GITHUB_WORKSPACE" "$GITHUB_WORKSPACE/_site" "$GITHUB_RUN_NUMBER"
+
+      - name: Upload Pages artifact
+        if: steps.current.outputs.is_current == 'true'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      - name: Deploy to GitHub Pages
+        if: steps.current.outputs.is_current == 'true'
+        id: deploy
+        uses: actions/deploy-pages@v4

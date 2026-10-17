@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "test": "node --test",
-    "check": "node --check app.js && node --check finance-core.js && node --check preferences.js && node --check localization.js && node --check storage.js && node --check update-manager.js && node --check sw.js"
+    "check": "node --check app.js && node --check finance-core.js && node --check preferences.js && node --check localization.js && node --check storage.js && node --check update-manager.js && node --check sw.js && node --check scripts/prepare-pages.mjs"
   },
   "engines": {
     "node": ">=20"

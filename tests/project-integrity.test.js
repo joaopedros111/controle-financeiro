@@ -211,6 +211,24 @@ test("protocolo de identidade e ativação está presente nos dois lados", async
     }
 });
 
+test("workflow de Pages publica main pelo artefato oficial sem gravar a versão na branch", async () => {
+    const [workflow, builder] = await Promise.all([
+        read(".github/workflows/pages.yml"), read("scripts/prepare-pages.mjs")
+    ]);
+    assert.match(workflow, /branches:\s*\n\s+- main/);
+    assert.match(workflow, /uses: actions\/configure-pages@v5/);
+    assert.match(workflow, /uses: actions\/upload-pages-artifact@v3/);
+    assert.match(workflow, /uses: actions\/deploy-pages@v4/);
+    assert.match(workflow, /node scripts\/prepare-pages\.mjs .*GITHUB_RUN_NUMBER/);
+    assert.match(workflow, /Confirm this is still the latest main commit/);
+    assert.match(workflow, /steps\.current\.outputs\.is_current == 'true'/);
+    assert.doesNotMatch(workflow, /git push|git commit|contents:\s*write/i);
+    assert.match(builder, /metadados\.version = versaoPublicada/);
+    assert.match(builder, /VERSAO_SERVICE_WORKER = "\$\{versaoPublicada\}"/);
+    assert.match(builder, /CACHE = PREFIXO_CACHE \+ "v\$\{numeroCache\}"/);
+    assert.match(builder, /version\.json e a identidade do Service Worker estão inconsistentes/);
+});
+
 test("a aplicação só recarrega depois de confirmar a identidade ativa e não duplica recargas", async () => {
     const app = await read("app.js");
     const inicioVerificacao = app.indexOf("async function verificarAtualizacao");

@@ -80,7 +80,7 @@ test("Service Worker informa sua identidade de build", async () => {
         ports: [{ postMessage: (mensagem) => respostas.push(mensagem) }],
         waitUntil() {}
     });
-    assert.equal(versao, "1.1.7");
+    assert.equal(versao, "1.1.8");
     assert.equal(respostas.length, 1);
     assert.deepEqual(Object.keys(respostas[0]).sort(), ["tipo", "versao"]);
     assert.equal(respostas[0].tipo, "VERSAO_SERVICE_WORKER");
@@ -121,7 +121,7 @@ test("Service Worker só executa skipWaiting se a versão aceita corresponder ao
     await esperado.ativacao;
     assert.equal(skipWaitingChamado, 1);
     const respostaAceita = respostas.pop();
-    assert.equal(versao, "1.1.7");
+    assert.equal(versao, "1.1.8");
     assert.deepEqual(Object.keys(respostaAceita).sort(), ["tipo", "versao"]);
     assert.equal(respostaAceita.tipo, "ATUALIZACAO_ACEITA");
     assert.equal(respostaAceita.versao, versao);
