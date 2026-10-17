@@ -273,7 +273,7 @@ test("visibilidade altera somente apresentação e tem controles persistentes in
     }
     assert.match(aparencia, /id="ocultar-ao-iniciar" type="checkbox"/);
     assert.match(aparencia, /id="alternar-valores"/);
-    assert.match(aparencia, /id="mostrar-graficos" type="checkbox"/);
+    assert.match(aparencia, /class="ajuste-linha ajuste-controle ajuste-alternancia" for="mostrar-graficos"[\s\S]*?id="mostrar-graficos" type="checkbox"/);
     assert.match(preferences, /mostrarPlanejamento: true, mostrarDespesas: true, mostrarEntradas: true/);
     assert.match(app, /const CHAVE_PREFERENCIAS_MENU = "controleFinanceiro:preferencias-menu"/);
     assert.match(controls, /ajuste-controle\.ajuste-alternancia/);
