@@ -1858,7 +1858,7 @@ body #dialogo-ajustes .ajuste-controle { gap: var(--densidade-opcoes-controle-ga
         gap: 8px;
         padding: 8px;
         margin: 0;
-        border-radius: 16px;
+        border-radius: 0 0 16px 16px;
         background: color-mix(in srgb, var(--superficie) 94%, var(--fundo));
         box-shadow: 0 5px 18px -13px color-mix(in srgb, var(--texto) 48%, transparent);
         backdrop-filter: blur(14px);
