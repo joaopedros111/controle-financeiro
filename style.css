@@ -438,18 +438,15 @@ dialog#dialogo-receita .acoes-dialogo { position: static; margin-top: 12px; padd
 @layer components {
 .periodo {
     display: grid;
-    grid-template-columns: 44px minmax(0, 1fr) 88px 44px;
-    grid-template-rows: auto auto;
-
+    grid-template-columns: 44px minmax(0, 1.3fr) minmax(76px, 0.8fr) 44px auto;
     align-items: center;
     gap: 8px;
-
-    padding: 12px 12px 4px;
-    margin-bottom: 16px;
-
-    border: 1px solid var(--borda);
-    border-radius: 16px;
-    background: var(--superficie);
+    padding: 10px 10px 10px 12px;
+    margin-bottom: 18px;
+    border: 1px solid color-mix(in srgb, var(--borda) 80%, transparent);
+    border-radius: 22px;
+    background: linear-gradient(180deg, var(--superficie) 0%, color-mix(in srgb, var(--superficie) 88%, var(--primaria-suave)) 100%);
+    box-shadow: 0 10px 30px -18px rgba(15, 23, 42, 0.35);
 }
 
 .periodo #mes-anterior {
@@ -473,10 +470,15 @@ dialog#dialogo-receita .acoes-dialogo { position: static; margin-top: 12px; padd
 }
 
 .periodo #hoje {
-    grid-column: 1 / -1;
-    grid-row: 2;
-    width: 100%;
-    margin-top: 4px;
+    grid-column: 5;
+    grid-row: 1;
+    width: auto;
+    min-height: 42px;
+    padding-inline: 14px;
+    font-size: .8rem;
+    font-weight: 700;
+    letter-spacing: .02em;
+    border-radius: 12px;
 }
 
 .periodo > * {
@@ -485,10 +487,48 @@ dialog#dialogo-receita .acoes-dialogo { position: static; margin-top: 12px; padd
 }
 
 .periodo select {
-    border: 1px solid var(--borda);
-    border-radius: 12px;
-    background: var(--superficie-suave);
+    min-height: 44px;
+    padding: 9px 12px;
+    border: 1px solid transparent;
+    border-radius: 14px;
+    background: linear-gradient(180deg, var(--superficie), color-mix(in srgb, var(--superficie-suave) 92%, var(--superficie)));
     color: var(--texto);
+    font-size: .9rem;
+    font-weight: 700;
+    letter-spacing: -.01em;
+    box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.6);
+}
+
+.periodo select:hover {
+    border-color: color-mix(in srgb, var(--primaria) 22%, var(--borda));
+}
+
+.periodo .btn-icone {
+    border-radius: 12px;
+    border-color: transparent;
+    background: linear-gradient(180deg, var(--superficie), var(--superficie-suave));
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
+}
+
+.periodo .btn-icone:hover {
+    background: linear-gradient(180deg, color-mix(in srgb, var(--primaria-suave) 44%, var(--superficie)), var(--superficie-suave));
+}
+
+.periodo .btn-icone,
+.periodo #hoje {
+    transition: transform 0.15s ease, box-shadow 0.2s ease, background-color 0.2s ease;
+}
+
+.periodo .btn-icone:active,
+.periodo #hoje:active {
+    transform: translateY(1px);
+}
+
+.periodo #hoje {
+    color: var(--primaria);
+    border-color: color-mix(in srgb, var(--primaria) 18%, var(--borda));
+    background: color-mix(in srgb, var(--primaria-suave) 62%, var(--superficie));
+    box-shadow: 0 8px 18px -14px rgba(37, 99, 235, 0.8);
 }
 
 
