@@ -3350,13 +3350,11 @@ ui.fecharCalculadora.addEventListener("click", () => ui.dialogoCalculadora.close
 document.querySelectorAll("[data-calculadora]").forEach((tecla) => {
     tecla.addEventListener("click", () => {
         ui.visorCalculadora.value += tecla.dataset.calculadora;
-        ui.visorCalculadora.focus();
     });
 });
 $("limpar-calculadora").addEventListener("click", () => { ui.visorCalculadora.value = ""; });
 $("apagar-calculadora").addEventListener("click", () => {
     ui.visorCalculadora.value = ui.visorCalculadora.value.slice(0, -1);
-    ui.visorCalculadora.focus();
 });
 $("calcular-resultado").addEventListener("click", () => {
     try {
