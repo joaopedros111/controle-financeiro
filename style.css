@@ -1804,3 +1804,58 @@ body #dialogo-ajustes .ajuste-controle { gap: var(--densidade-opcoes-controle-ga
         .panorama-graficos .grafico-categorias-topo .grafico-periodo { font-size: .6rem; }
     }
 }
+
+/* Navegação do período: sticky dentro do fluxo da página, sem sobrepor o conteúdo. */
+@layer components {
+    .periodo {
+        position: sticky;
+        top: 0;
+        z-index: 20;
+        display: grid;
+        grid-template-columns: 44px minmax(110px, 1fr) 82px auto 44px;
+        grid-template-rows: auto;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 8px 17px;
+        margin: 0;
+        border-radius: 16px;
+        background: color-mix(in srgb, var(--superficie) 94%, var(--fundo));
+        box-shadow: 0 5px 18px -13px color-mix(in srgb, var(--texto) 48%, transparent);
+        backdrop-filter: blur(14px);
+        -webkit-backdrop-filter: blur(14px);
+    }
+    .periodo #mes-anterior { grid-column: 1; grid-row: 1; }
+    .periodo #mes { grid-column: 2; grid-row: 1; min-width: 0; width: 100%; }
+    .periodo #ano { grid-column: 3; grid-row: 1; min-width: 0; width: 100%; }
+    .periodo #hoje { grid-column: 4; grid-row: 1; width: auto; min-height: 44px; margin: 0; padding-inline: 12px; }
+    .periodo #mes-proximo { grid-column: 5; grid-row: 1; }
+    .periodo > * { justify-self: stretch; }
+    .periodo .btn-icone { width: 44px; min-width: 44px; min-height: 44px; border-radius: 13px; }
+    .periodo select { min-height: 44px; padding: 8px 10px; border: 1px solid var(--borda); border-radius: 12px; font-weight: 750; }
+    .periodo #mes { background: color-mix(in srgb, var(--primaria-suave) 58%, var(--superficie)); }
+    .periodo-atual {
+        position: absolute;
+        bottom: 3px;
+        left: 67px;
+        color: var(--primaria);
+        font-size: .68rem;
+        font-weight: 800;
+        letter-spacing: .08em;
+        line-height: 1.2;
+        text-transform: uppercase;
+    }
+    .periodo-atual[hidden] { display: none; }
+    @media (max-width: 420px) {
+        .periodo { grid-template-columns: 40px minmax(0, 1fr) 66px auto 40px; gap: 5px; padding: 6px 6px 17px; }
+        .periodo .btn-icone { width: 40px; min-width: 40px; min-height: 42px; }
+        .periodo #mes, .periodo #ano { min-height: 42px; padding: 7px 5px; font-size: .82rem; }
+        .periodo #hoje { min-height: 42px; padding-inline: 9px; font-size: .8rem; }
+    }
+    @media (max-width: 340px) {
+        .periodo { grid-template-columns: 36px minmax(0, 1fr) 58px auto 36px; gap: 3px; padding: 5px 5px 17px; }
+        .periodo .btn-icone { width: 36px; min-width: 36px; }
+        .periodo #mes { font-size: .78rem; }
+        .periodo #ano { font-size: .78rem; }
+    }
+    @media (prefers-reduced-motion: reduce) { .periodo { scroll-behavior: auto; } }
+}
