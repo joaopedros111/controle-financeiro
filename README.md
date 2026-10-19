@@ -1,6 +1,6 @@
 # Controle Financeiro
 
-Aplicativo web responsivo e instalável para acompanhar entradas, despesas, categorias e pagamentos. Os dados ficam no navegador atual; não há sincronização entre dispositivos.
+Aplicativo web responsivo e instalável para acompanhar entradas, despesas, categorias e pagamentos. Os dados financeiros continuam salvos localmente e podem, opcionalmente, ser sincronizados entre dispositivos por uma conta Google e Firebase.
 
 ## Arquivos
 
@@ -58,7 +58,10 @@ Para desenvolvimento e testes automatizados, é necessário Node.js 20 ou superi
 ```sh
 node --test
 npm run check
+npm run test:rules
 ```
+
+`npm run test:rules` inicia o Firestore Emulator e precisa de um JDK 21 ou superior; o workflow do GitHub instala Java 21 antes de executar esses testes. Sem o emulador, `node --test` executa os testes estáticos das regras e marca a integração de segurança como ignorada.
 
 ## Compatibilidade de navegadores
 
@@ -77,7 +80,25 @@ O suporte teórico às funcionalidades não substitui testes funcionais. Antes d
 
 ## Dados e migração
 
-Os dados são guardados no armazenamento local do navegador e não são sincronizados. Exporte backups regularmente e guarde-os fora do dispositivo. Se o armazenamento persistente estiver bloqueado ou cheio, o app avisa que os dados estão apenas na memória e podem se perder ao fechar.
+Sem configurar o Firebase e entrar com Google, o app funciona somente com o armazenamento local existente. Exporte backups regularmente e guarde-os fora do dispositivo. Se o armazenamento persistente estiver bloqueado ou cheio, o app avisa que os dados estão apenas na memória e podem se perder ao fechar.
+
+### Configurar sincronização Firebase
+
+A integração usa o SDK Web modular do Firebase, carregado de um bundle local gerado pelo build. A aplicação não precisa de Firebase para abrir ou continuar funcionando offline. As configurações do cliente Web são públicas; o isolamento dos dados depende obrigatoriamente das regras `firestore.rules` versionadas neste repositório.
+
+1. Crie um projeto em [Firebase Console](https://console.firebase.google.com/) e adicione um aplicativo Web. Copie `apiKey`, `authDomain`, `projectId` e `appId` para `firebase-config.js`, substituindo os valores `CONFIGURE_*`. Não coloque chaves de conta de serviço ou credenciais administrativas no frontend.
+2. Em **Authentication → Sign-in method**, habilite o provedor **Google** e escolha o e-mail de suporte.
+3. Em **Authentication → Settings → Authorized domains**, adicione o domínio exato do GitHub Pages (por exemplo, `usuario.github.io`) e `localhost` para desenvolvimento local.
+4. Crie o banco em **Firestore Database** no modo de produção. Escolha a região considerando os usuários; a região não pode ser alterada depois da criação.
+5. Publique as regras do repositório com Firebase CLI: `npx firebase login`, depois `npx firebase deploy --only firestore:rules --project SEU_PROJECT_ID`. Confira no console que essas regras estão publicadas antes de habilitar usuários.
+6. Instale dependências com `npm ci`. Para desenvolvimento local, gere `firebase-sync.bundle.js` com `npm run build:sync` antes de servir o PWA. O workflow do Pages gera o bundle automaticamente dentro do artefato.
+7. Abra Opções → Sincronização entre dispositivos e entre com Google. No primeiro vínculo, o app busca a conta autenticada, apresenta quantidades e candidatos a duplicidade e pede confirmação. Ele guarda uma cópia recuperável do estado financeiro local antes de enviar.
+
+O Firestore guarda cada lançamento separadamente em `/users/{uid}/records`, configurações financeiras em `/users/{uid}/settings/finance`, operações idempotentes em `operations` e conflitos em `conflicts`. Exclusões são tombstones; não são apagadas fisicamente. Operações locais não confirmadas permanecem numa fila local e são reenviadas quando a conexão retorna. Alterações concorrentes são comparadas por revisão transacional do documento, sem decidir pelo relógio do dispositivo. Conflitos preservam as duas versões; revise-os antes de continuar usando os dados divergentes.
+
+O login e a sincronização real não foram testados contra uma configuração Firebase deste usuário: os valores de configuração permanecem como marcadores até serem preenchidos e as regras só passam a proteger o banco após sua publicação. Os testes locais usam mocks/casos puros e o Emulator Suite, sem conta Google nem banco de produção.
+
+Os backups existentes continuam contendo apenas o estado financeiro no formato atual. Eles não incluem tokens, fila, estado de autenticação ou metadados de sincronização. Restaurar enquanto uma conta está vinculada fica somente local e suspende a sincronização automática; a seção de sincronização oferece a combinação explícita com os dados remotos. Essa combinação preserva registros remotos ausentes no backup e solicita confirmação antes do envio.
 
 Na migração do formato antigo, os registros não continham ano; por isso, os meses são associados ao ano atual. Confira o período migrado e exporte um backup após a conversão.
 

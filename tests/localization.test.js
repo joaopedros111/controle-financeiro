@@ -14,6 +14,15 @@ test("formatador suporta os idiomas e moedas disponíveis sem conversão de valo
     assert.equal(formatarMoeda(1234.56, "BRL", "pt-BR"), formatarMoeda(1234.56, "BRL", "pt-BR"));
 });
 
+test("controles de sincronização têm rótulos traduzidos em todos os idiomas disponíveis", () => {
+    for (const locale of IDIOMAS.filter((language) => language !== "pt-BR")) {
+        assert.notEqual(textoTraduzido("Sincronização entre dispositivos", locale), "Sincronização entre dispositivos");
+        assert.notEqual(textoTraduzido("Entrar com Google", locale), "Entrar com Google");
+        assert.notEqual(textoTraduzido("Conflitos de sincronização", locale), "Conflitos de sincronização");
+    }
+    assert.equal(textoTraduzido("Sincronizado", "pt-BR"), "Sincronizado");
+});
+
 test("traduções localizam frases da interface e preservam o português como padrão", () => {
     assert.equal(textoTraduzido("Idioma e moeda", "en"), "Language and currency");
     assert.equal(textoTraduzido("Janeiro", "es"), "Enero");

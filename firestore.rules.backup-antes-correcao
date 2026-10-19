@@ -1,0 +1,111 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function owner(uid) { return request.auth != null && request.auth.uid == uid; }
+    function bounded(data) { return data is map && data.size() <= 24 && data.keys().hasOnly(['month','type','id','record','deleted','revision','updatedAt','operationId','entityKey','baseRevision','status','createdAt','local','remote','theme','categories','budgets','version']); }
+    function validStamp(value) { return value is timestamp && value == request.time; }
+    function validRevision(data) { return data.revision is string && data.revision.size() > 0 && data.revision.size() <= 128 && validStamp(data.updatedAt); }
+    function stringAt(values, index) { return values.size() <= index || (values[index] is string && values[index].size() > 0 && values[index].size() <= 40 && values[index].matches('.*\\S.*')); }
+    function moneyAt(values, index) { return values.size() <= index || (values[index] is number && values[index] >= 0 && values[index] <= 17592186044416); }
+    function validStrings(values) { return stringAt(values, 0) && stringAt(values, 1) && stringAt(values, 2) && stringAt(values, 3) && stringAt(values, 4) && stringAt(values, 5) && stringAt(values, 6) && stringAt(values, 7) && stringAt(values, 8) && stringAt(values, 9) &&
+      stringAt(values, 10) && stringAt(values, 11) && stringAt(values, 12) && stringAt(values, 13) && stringAt(values, 14) && stringAt(values, 15) && stringAt(values, 16) && stringAt(values, 17) && stringAt(values, 18) && stringAt(values, 19) &&
+      stringAt(values, 20) && stringAt(values, 21) && stringAt(values, 22) && stringAt(values, 23) && stringAt(values, 24) && stringAt(values, 25) && stringAt(values, 26) && stringAt(values, 27) && stringAt(values, 28) && stringAt(values, 29) &&
+      stringAt(values, 30) && stringAt(values, 31) && stringAt(values, 32) && stringAt(values, 33) && stringAt(values, 34) && stringAt(values, 35) && stringAt(values, 36) && stringAt(values, 37) && stringAt(values, 38) && stringAt(values, 39) &&
+      stringAt(values, 40) && stringAt(values, 41) && stringAt(values, 42) && stringAt(values, 43) && stringAt(values, 44) && stringAt(values, 45) && stringAt(values, 46) && stringAt(values, 47) && stringAt(values, 48) && stringAt(values, 49) &&
+      stringAt(values, 50) && stringAt(values, 51) && stringAt(values, 52) && stringAt(values, 53) && stringAt(values, 54) && stringAt(values, 55) && stringAt(values, 56) && stringAt(values, 57) && stringAt(values, 58) && stringAt(values, 59) &&
+      stringAt(values, 60) && stringAt(values, 61) && stringAt(values, 62) && stringAt(values, 63) && stringAt(values, 64) && stringAt(values, 65) && stringAt(values, 66) && stringAt(values, 67) && stringAt(values, 68) && stringAt(values, 69) &&
+      stringAt(values, 70) && stringAt(values, 71) && stringAt(values, 72) && stringAt(values, 73) && stringAt(values, 74) && stringAt(values, 75) && stringAt(values, 76) && stringAt(values, 77) && stringAt(values, 78) && stringAt(values, 79) &&
+      stringAt(values, 80) && stringAt(values, 81) && stringAt(values, 82) && stringAt(values, 83) && stringAt(values, 84) && stringAt(values, 85) && stringAt(values, 86) && stringAt(values, 87) && stringAt(values, 88) && stringAt(values, 89) &&
+      stringAt(values, 90) && stringAt(values, 91) && stringAt(values, 92) && stringAt(values, 93) && stringAt(values, 94) && stringAt(values, 95) && stringAt(values, 96) && stringAt(values, 97) && stringAt(values, 98) && stringAt(values, 99); }
+    function validMoney(values) { return moneyAt(values, 0) && moneyAt(values, 1) && moneyAt(values, 2) && moneyAt(values, 3) && moneyAt(values, 4) && moneyAt(values, 5) && moneyAt(values, 6) && moneyAt(values, 7) && moneyAt(values, 8) && moneyAt(values, 9) &&
+      moneyAt(values, 10) && moneyAt(values, 11) && moneyAt(values, 12) && moneyAt(values, 13) && moneyAt(values, 14) && moneyAt(values, 15) && moneyAt(values, 16) && moneyAt(values, 17) && moneyAt(values, 18) && moneyAt(values, 19) &&
+      moneyAt(values, 20) && moneyAt(values, 21) && moneyAt(values, 22) && moneyAt(values, 23) && moneyAt(values, 24) && moneyAt(values, 25) && moneyAt(values, 26) && moneyAt(values, 27) && moneyAt(values, 28) && moneyAt(values, 29) &&
+      moneyAt(values, 30) && moneyAt(values, 31) && moneyAt(values, 32) && moneyAt(values, 33) && moneyAt(values, 34) && moneyAt(values, 35) && moneyAt(values, 36) && moneyAt(values, 37) && moneyAt(values, 38) && moneyAt(values, 39) &&
+      moneyAt(values, 40) && moneyAt(values, 41) && moneyAt(values, 42) && moneyAt(values, 43) && moneyAt(values, 44) && moneyAt(values, 45) && moneyAt(values, 46) && moneyAt(values, 47) && moneyAt(values, 48) && moneyAt(values, 49) &&
+      moneyAt(values, 50) && moneyAt(values, 51) && moneyAt(values, 52) && moneyAt(values, 53) && moneyAt(values, 54) && moneyAt(values, 55) && moneyAt(values, 56) && moneyAt(values, 57) && moneyAt(values, 58) && moneyAt(values, 59) &&
+      moneyAt(values, 60) && moneyAt(values, 61) && moneyAt(values, 62) && moneyAt(values, 63) && moneyAt(values, 64) && moneyAt(values, 65) && moneyAt(values, 66) && moneyAt(values, 67) && moneyAt(values, 68) && moneyAt(values, 69) &&
+      moneyAt(values, 70) && moneyAt(values, 71) && moneyAt(values, 72) && moneyAt(values, 73) && moneyAt(values, 74) && moneyAt(values, 75) && moneyAt(values, 76) && moneyAt(values, 77) && moneyAt(values, 78) && moneyAt(values, 79) &&
+      moneyAt(values, 80) && moneyAt(values, 81) && moneyAt(values, 82) && moneyAt(values, 83) && moneyAt(values, 84) && moneyAt(values, 85) && moneyAt(values, 86) && moneyAt(values, 87) && moneyAt(values, 88) && moneyAt(values, 89) &&
+      moneyAt(values, 90) && moneyAt(values, 91) && moneyAt(values, 92) && moneyAt(values, 93) && moneyAt(values, 94) && moneyAt(values, 95) && moneyAt(values, 96) && moneyAt(values, 97) && moneyAt(values, 98) && moneyAt(values, 99); }
+    function validBudgetMap(value) { return value is map && value.size() <= 100 && validMoney(value.values()); }
+    function validRecord(data, topId) {
+      return data is map && data.keys().hasOnly(['id','nome','valor','serie','categoria','pago','fixa','parcela'])
+        && data.id == topId && data.nome is string && data.nome.size() > 0 && data.nome.size() <= 80
+        && data.valor is number && data.valor > 0 && data.valor <= 17592186044416
+        && (!('serie' in data) || data.serie == null || (data.serie is string && data.serie.size() <= 128))
+        && (!('categoria' in data) || (data.categoria is string && data.categoria.size() <= 40))
+        && (!('pago' in data) || data.pago is bool)
+        && (!('fixa' in data) || data.fixa is bool)
+        && (!('parcela' in data) || data.parcela == null || (data.parcela is map
+          && data.parcela.keys().hasOnly(['atual','total']) && data.parcela.atual is int
+          && data.parcela.total is int && data.parcela.atual >= 1 && data.parcela.total >= 2
+          && data.parcela.atual <= data.parcela.total));
+    }
+    match /users/{uid}/records/{recordId} {
+      allow read: if owner(uid);
+      // Active record includes `record`; tombstone is the same envelope without `record`.
+      allow create, update: if owner(uid) && request.resource.data is map
+        && request.resource.data.month is string && request.resource.data.month.matches('^[0-9]{4}-(0[1-9]|1[0-2])$')
+        && request.resource.data.type in ['receitas','despesas']
+        && request.resource.data.id is string && request.resource.data.id.size() <= 128
+        && request.resource.data.deleted is bool
+        && validRevision(request.resource.data)
+        && (request.resource.data.deleted
+          ? request.resource.data.keys().hasOnly(['month','type','id','deleted','revision','updatedAt'])
+            && request.resource.data.keys().hasAll(['month','type','id','deleted','revision','updatedAt'])
+          : request.resource.data.keys().hasOnly(['month','type','id','record','deleted','revision','updatedAt'])
+            && request.resource.data.keys().hasAll(['month','type','id','record','deleted','revision','updatedAt'])
+            && validRecord(request.resource.data.record, request.resource.data.id));
+      allow delete: if false;
+    }
+    match /users/{uid}/settings/{settingsId} {
+      allow read: if owner(uid);
+      allow create, update: if owner(uid) && settingsId == 'finance' && request.resource.data is map
+        && request.resource.data.keys().hasOnly(['version','categories','theme','budgets','revision','updatedAt'])
+        && request.resource.data.keys().hasAll(['version','categories','theme','budgets','revision','updatedAt'])
+        && request.resource.data.version is int && request.resource.data.version in [2,3]
+        && request.resource.data.categories is list
+        && request.resource.data.categories.size() <= 100
+        && request.resource.data.categories.toSet().size() == request.resource.data.categories.size()
+        && validStrings(request.resource.data.categories)
+        && request.resource.data.budgets is map
+        && request.resource.data.budgets.keys().hasOnly(['padrao','meses'])
+        && request.resource.data.budgets.keys().hasAll(['padrao','meses'])
+        && validBudgetMap(request.resource.data.budgets.padrao)
+        // finance-core drops month-specific budget overrides when persisting the canonical state.
+        && request.resource.data.budgets.meses is map && request.resource.data.budgets.meses.size() == 0
+        && request.resource.data.budgets.padrao.keys().hasOnly(request.resource.data.categories)
+        && request.resource.data.theme in ['claro','escuro','rosa','floresta','pangolim']
+        && validRevision(request.resource.data);
+      allow delete: if false;
+    }
+    match /users/{uid}/operations/{operationId} {
+      allow read: if owner(uid);
+      allow create: if owner(uid) && bounded(request.resource.data) && request.resource.data.status in ['applied','conflict'];
+      allow update, delete: if false;
+    }
+    match /users/{uid}/conflicts/{conflictId} {
+      allow read: if owner(uid);
+      allow create: if owner(uid) && request.resource.data is map
+        && request.resource.data.keys().hasOnly(['operationId','entityKey','local','remote','createdAt'])
+        && request.resource.data.keys().hasAll(['operationId','entityKey','local','remote','createdAt'])
+        && request.resource.data.operationId == conflictId && conflictId.size() <= 128
+        && request.resource.data.entityKey is string && request.resource.data.entityKey.size() <= 512
+        && request.resource.data.local is map
+        && (request.resource.data.remote == null || request.resource.data.remote is map)
+        && validStamp(request.resource.data.createdAt);
+      allow update: if owner(uid) && resource.data.keys().hasOnly(['operationId','entityKey','local','remote','createdAt'])
+        && request.resource.data.keys().hasOnly(['operationId','entityKey','local','remote','createdAt','resolved','resolution','resolvedAt'])
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['resolved','resolution','resolvedAt'])
+        && request.resource.data.resolved == true && request.resource.data.resolution in ['local','remote','both']
+        && request.resource.data.resolvedAt is timestamp && request.resource.data.resolvedAt == request.time;
+      allow delete: if false;
+    }
+    match /users/{uid}/meta/{metaId} {
+      allow read: if owner(uid);
+      allow create, update: if owner(uid) && metaId == 'sync' && bounded(request.resource.data);
+      allow delete: if false;
+    }
+    match /users/{uid}/{document=**} { allow read, write: if false; }
+  }
+}

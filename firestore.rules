@@ -1,0 +1,131 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function owner(uid) { return request.auth != null && request.auth.uid == uid; }
+    function bounded(data) { return data is map && data.size() <= 24 && data.keys().hasOnly(['month','type','id','record','deleted','revision','updatedAt','operationId','entityKey','baseRevision','status','createdAt','local','remote','theme','categories','budgets','version']); }
+    function validStamp(value) { return value is timestamp; }
+    function validRevision(data) {
+      return data.get('revision', null) is string
+        ? (data.get('revision', null).size() > 0 && data.get('revision', null).size() <= 128 && validStamp(data.get('updatedAt', null)))
+        : false;
+    }
+    function validSettingsRevision(data) {
+      return data.get('revision', null) is string
+        ? (data.get('revision', null).size() > 0 && data.get('revision', null).size() <= 128)
+        : false;
+    }
+    function validSettingsManifest(data) {
+      return data is map ? (data.keys().hasOnly(['version','theme','categoryCount','budgetCount','generation','revision'])
+        && data.keys().hasAll(['version','theme','categoryCount','budgetCount','generation','revision'])
+        ? (data.get('theme', null) is string ? (data.theme in ['claro','escuro','rosa','floresta','pangolim']
+          ? (data.get('version', null) is int ? (data.version == 4
+            ? (data.get('categoryCount', null) is int ? (data.categoryCount >= 0 && data.categoryCount <= 1000
+              ? (data.get('budgetCount', null) is int ? (data.budgetCount >= 0 && data.budgetCount <= 1000
+                ? (data.get('generation', null) is string ? (data.generation.size() > 0 && data.generation.size() <= 128 && validSettingsRevision(data)) : false)
+                : false) : false)
+              : false) : false)
+            : false) : false)
+          : false) : false)
+        : false) : false;
+    }
+    function validRecord(data, topId) {
+      return data is map ? (data.keys().hasOnly(['id','nome','valor','serie','categoria','pago','fixa','parcela'])
+        && data.keys().hasAll(['id','nome','valor'])
+        && (data.get('id', null) is string ? data.get('id', null) == topId : false)
+        && (data.get('nome', null) is string ? (data.get('nome', null).size() > 0 && data.get('nome', null).size() <= 80) : false)
+        && (data.get('valor', null) is number ? (data.get('valor', null) > 0 && data.get('valor', null) <= 17592186044416) : false)
+        && (data.get('serie', null) == null ? true : (data.get('serie', null) is string ? data.get('serie', null).size() <= 128 : false))
+        && (!data.keys().hasAny(['categoria']) || (data.get('categoria', null) is string ? data.get('categoria', null).size() <= 40 : false))
+        && (!data.keys().hasAny(['pago']) || data.get('pago', null) is bool)
+        && (!data.keys().hasAny(['fixa']) || data.get('fixa', null) is bool)
+        && (data.get('parcela', null) == null ? true : (data.get('parcela', null) is map
+          ? (data.get('parcela', null).keys().hasOnly(['atual','total']) && data.get('parcela', null).keys().hasAll(['atual','total'])
+            && (data.get('parcela', null).get('atual', null) is int && data.get('parcela', null).get('atual', null) >= 1)
+            && (data.get('parcela', null).get('total', null) is int && data.get('parcela', null).get('total', null) >= 2)
+            && data.get('parcela', null).get('atual', 0) <= data.get('parcela', null).get('total', 0))
+          : false))) : false;
+    }
+    function validRecordShape(data) {
+      return data is map ? (data.keys().hasOnly(['month','type','id','record','deleted','revision','updatedAt'])
+        ? (data.get('deleted', null) is bool ? (data.deleted
+          ? (data.keys().hasOnly(['month','type','id','deleted','revision','updatedAt'])
+            ? (data.keys().hasAll(['month','type','id','deleted','revision','updatedAt'])
+              ? (data.get('month', null) is string ? (data.month.matches('^[0-9]{4}-(0[1-9]|1[0-2])$')
+                ? (data.get('type', null) is string ? (data.type in ['receitas','despesas']
+                  ? (data.get('id', null) is string ? (data.id.size() <= 128) : false) : false) : false) : false) : false)
+              : false) : false)
+          : (data.keys().hasOnly(['month','type','id','record','deleted','revision','updatedAt'])
+            ? (data.keys().hasAll(['month','type','id','record','deleted','revision','updatedAt'])
+              ? (data.get('month', null) is string ? (data.month.matches('^[0-9]{4}-(0[1-9]|1[0-2])$')
+                ? (data.get('type', null) is string ? (data.type in ['receitas','despesas']
+                  ? (data.get('id', null) is string ? (data.id.size() <= 128 ? validRecord(data.get('record', null), data.id) : false) : false) : false) : false) : false) : false)
+              : false) : false)) : false)
+        : false) : false;
+    }
+    function validCategorySetting(data) {
+      return data is map && data.keys().hasOnly(['name','budget']) && data.keys().hasAll(['name'])
+        && data.name is string && data.name.size() > 0 && data.name.size() <= 40
+        && (data.keys().hasAny(['budget']) ? (data.budget is number ? (data.budget >= 0 && data.budget <= 17592186044416) : false) : true);
+    }
+    match /users/{uid}/records/{recordId} {
+      allow read: if owner(uid);
+      // Active record includes `record`; tombstone is the same envelope without `record`.
+      allow create, update: if owner(uid) && (validRecordShape(request.resource.data)
+        ? validRevision(request.resource.data) : false);
+      allow delete: if false;
+    }
+    match /users/{uid}/settings/{settingsId} {
+      allow read: if owner(uid);
+      allow create, update: if false;
+      allow delete: if false;
+    }
+    // V2 settings are additive: the old finance document remains readable as a fallback.
+    match /users/{uid}/settingsV2/{settingsId} {
+      allow read: if owner(uid);
+      allow create, update: if owner(uid) && settingsId == 'finance' && validSettingsManifest(request.resource.data);
+      allow delete: if false;
+      match /generations/{generation}/categories/{categoryId} {
+        allow read: if owner(uid);
+        allow create: if owner(uid) && generation.size() > 0 && generation.size() <= 128
+          && categoryId.matches('^c_[A-Za-z0-9%_.-]{1,500}$')
+          && validCategorySetting(request.resource.data);
+        allow update: if false;
+        allow delete: if false;
+      }
+    }
+    match /users/{uid}/operations/{operationId} {
+      allow read: if owner(uid);
+      allow create: if owner(uid) && bounded(request.resource.data) && request.resource.data.status in ['applied','conflict'];
+      allow update, delete: if false;
+    }
+    match /users/{uid}/conflicts/{conflictId} {
+      allow read: if owner(uid);
+      allow create: if owner(uid) && request.resource.data is map
+        && request.resource.data.keys().hasOnly(['operationId','entityKey','local','remote','createdAt'])
+        && request.resource.data.keys().hasAll(['operationId','entityKey','local','remote','createdAt'])
+        && request.resource.data.operationId == conflictId && conflictId.size() <= 128
+        && request.resource.data.entityKey is string && request.resource.data.entityKey.size() <= 512
+        && request.resource.data.local is map
+        && (request.resource.data.remote == null || request.resource.data.remote is map)
+        && validStamp(request.resource.data.get('createdAt', null));
+      allow update: if owner(uid) && resource.data.keys().hasOnly(['operationId','entityKey','local','remote','createdAt'])
+        && request.resource.data.keys().hasOnly(['operationId','entityKey','local','remote','createdAt','resolved','resolution','resolvedAt'])
+        && request.resource.data.keys().hasAll(['operationId','entityKey','local','remote','createdAt','resolved','resolution','resolvedAt'])
+        && request.resource.data.operationId == resource.data.operationId
+        && request.resource.data.entityKey == resource.data.entityKey
+        && request.resource.data.local == resource.data.local
+        && request.resource.data.remote == resource.data.remote
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.resolved == true && request.resource.data.resolution in ['local','remote','both']
+        && validStamp(request.resource.data.get('resolvedAt', null));
+      allow delete: if false;
+    }
+    match /users/{uid}/meta/{metaId} {
+      allow read: if owner(uid);
+      allow create, update: if owner(uid) && metaId == 'sync' && bounded(request.resource.data);
+      allow delete: if false;
+    }
+    match /users/{uid}/{document=**} { allow read, write: if false; }
+  }
+}
+

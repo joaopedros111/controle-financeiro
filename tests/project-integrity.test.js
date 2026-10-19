@@ -79,7 +79,9 @@ test("módulos e estilos usados pela página estão incluídos no cache offline"
             `${caminhoPrecache} escapa do escopo do app publicado em subdiretório`
         );
         assert.ok(
-            existsSync(fileURLToPath(new URL(caminhoPrecache, root))),
+            caminhoPrecache === "./firebase-sync.bundle.js"
+                ? existsSync(fileURLToPath(new URL("firebase-sync-entry.js", root)))
+                : existsSync(fileURLToPath(new URL(caminhoPrecache, root))),
             `${caminhoPrecache} não existe no projeto`
         );
     }
@@ -89,7 +91,9 @@ test("módulos e estilos usados pela página estão incluídos no cache offline"
             `${recurso} do precache escapa do escopo do app`
         );
         assert.ok(
-            existsSync(fileURLToPath(new URL(recurso, root))),
+            recurso === "./firebase-sync.bundle.js"
+                ? existsSync(fileURLToPath(new URL("firebase-sync-entry.js", root)))
+                : existsSync(fileURLToPath(new URL(recurso, root))),
             `${recurso} do precache não existe no projeto`
         );
     }

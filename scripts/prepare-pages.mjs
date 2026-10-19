@@ -2,6 +2,7 @@ import { cp, copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { versaoValida } from "../update-manager.js";
+import { build } from "esbuild";
 
 const STATIC_FILES = [
     "index.html",
@@ -12,6 +13,8 @@ const STATIC_FILES = [
     "preferences.js",
     "localization.js",
     "storage.js",
+    "sync-core.js",
+    "firebase-config.js",
     "update-manager.js",
     "sw.js",
     "version.json",
@@ -55,6 +58,7 @@ export async function prepararArtefatoPages({ diretorioFonte, diretorioSaida, nu
         copyFile(path.join(fonte, arquivo), path.join(saida, arquivo))
     ));
     await cp(path.join(fonte, "icons"), path.join(saida, "icons"), { recursive: true });
+    await build({ entryPoints: [path.join(fonte, "firebase-sync-entry.js")], outfile: path.join(saida, "firebase-sync.bundle.js"), bundle: true, format: "esm", platform: "browser", target: "es2022", minify: true, legalComments: "none" });
 
     metadados.version = versaoPublicada;
     const arquivoVersao = `${JSON.stringify(metadados, null, 2)}\n`;
@@ -67,7 +71,7 @@ export async function prepararArtefatoPages({ diretorioFonte, diretorioSaida, nu
         /<meta name="app-version" content="[^"]*">/,
         `<meta name="app-version" content="${versaoPublicada}">`
     ).replace(
-        /(href|src)="(style\.css|controls\.css|app\.js|manifest\.json|icons\/[^"]+)"/g,
+        /(href|src)="(style\.css|controls\.css|app\.js|manifest\.json|firebase-config\.js|sync-core\.js|icons\/[^"]+)"/g,
         (_match, atributo, recurso) => `${atributo}="${recurso}?_release=${versaoPublicada}"`
     );
     await writeFile(path.join(saida, "index.html"), html);
@@ -77,6 +81,7 @@ export async function prepararArtefatoPages({ diretorioFonte, diretorioSaida, nu
         /(from\s*["'])(\.\/[^"']+\.js)(["'])/g,
         (_match, antes, recurso, depois) => `${antes}${recurso}?_release=${versaoPublicada}${depois}`
     );
+    app = app.replace(/(from\s*["'])(\.\/firebase-config\.js|\.\/sync-core\.js)(["'])/g, (_match, before, resource, after) => `${before}${resource}?_release=${versaoPublicada}${after}`);
     await writeFile(path.join(saida, "app.js"), app);
 
     const manifest = JSON.parse(await readFile(path.join(saida, "manifest.json"), "utf8"));

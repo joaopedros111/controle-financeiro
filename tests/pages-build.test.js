@@ -31,6 +31,7 @@ test("Pages build emits synchronized per-run version and cache without changing 
         const htmlGerado = await readFile(path.join(saida, "index.html"), "utf8");
         const appGerado = await readFile(path.join(saida, "app.js"), "utf8");
         const manifestGerado = JSON.parse(await readFile(path.join(saida, "manifest.json"), "utf8"));
+        const firebaseBundle = await readFile(path.join(saida, "firebase-sync.bundle.js"));
 
         assert.equal(release.version, versaoEsperada);
         assert.equal(release.cache, cacheEsperado);
@@ -39,6 +40,7 @@ test("Pages build emits synchronized per-run version and cache without changing 
         assert.ok(serviceWorkerGerado.includes(`const CACHE = PREFIXO_CACHE + "${cacheEsperado.slice(cacheBase[1].length)}";`));
         assert.match(htmlGerado, new RegExp(`name="app-version" content="${release.version}"`));
         assert.equal((htmlGerado.match(/name="app-version"/g) || []).length, 1);
+        assert.ok(firebaseBundle.length > 100_000, "Firebase SDK is bundled into the Pages artifact");
         for (const recurso of ["style.css", "controls.css", "app.js", "manifest.json", "icons/icon-192.png"]) {
             assert.ok(htmlGerado.includes(`${recurso}?_release=${release.version}`), `${recurso} sem URL versionada`);
         }
