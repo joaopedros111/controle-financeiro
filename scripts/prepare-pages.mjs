@@ -57,7 +57,36 @@ export async function prepararArtefatoPages({ diretorioFonte, diretorioSaida, nu
     await cp(path.join(fonte, "icons"), path.join(saida, "icons"), { recursive: true });
 
     metadados.version = versaoPublicada;
-    await writeFile(path.join(saida, "version.json"), `${JSON.stringify(metadados, null, 2)}\n`);
+    const arquivoVersao = `${JSON.stringify(metadados, null, 2)}\n`;
+    await writeFile(path.join(saida, "version.json"), arquivoVersao);
+    let html = await readFile(path.join(saida, "index.html"), "utf8");
+    if (!/<meta name="app-version" content="[^"]*">/.test(html)) {
+        throw new Error("index.html precisa conter o marcador meta app-version.");
+    }
+    html = html.replace(
+        /<meta name="app-version" content="[^"]*">/,
+        `<meta name="app-version" content="${versaoPublicada}">`
+    ).replace(
+        /(href|src)="(style\.css|controls\.css|app\.js|manifest\.json|icons\/[^"]+)"/g,
+        (_match, atributo, recurso) => `${atributo}="${recurso}?_release=${versaoPublicada}"`
+    );
+    await writeFile(path.join(saida, "index.html"), html);
+
+    let app = await readFile(path.join(saida, "app.js"), "utf8");
+    app = app.replace(
+        /(from\s*["'])(\.\/[^"']+\.js)(["'])/g,
+        (_match, antes, recurso, depois) => `${antes}${recurso}?_release=${versaoPublicada}${depois}`
+    );
+    await writeFile(path.join(saida, "app.js"), app);
+
+    const manifest = JSON.parse(await readFile(path.join(saida, "manifest.json"), "utf8"));
+    manifest.start_url = `./index.html?_release=${versaoPublicada}`;
+    manifest.icons = manifest.icons.map((icone) => ({
+        ...icone,
+        src: `${icone.src}?_release=${versaoPublicada}`
+    }));
+    await writeFile(path.join(saida, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
+
     serviceWorker = serviceWorker
         .replace(identidade[0], `const VERSAO_SERVICE_WORKER = "${versaoPublicada}";`)
         .replace(cache[0], `const PREFIXO_CACHE = "${cache[1]}";\nconst CACHE = PREFIXO_CACHE + "v${numeroCache}";`);

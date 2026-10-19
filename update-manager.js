@@ -16,6 +16,21 @@ export function compararVersoes(a, b) {
     return 0;
 }
 
+export function validarVersaoAplicacao({ documento, bundle = null, controlador }) {
+    const versoes = [
+        ["documento HTML", documento],
+        ...(bundle === null ? [] : [["módulo JavaScript", bundle]]),
+        ["Service Worker", controlador]
+    ];
+    for (const [origem, versao] of versoes) {
+        if (!versaoValida(versao)) throw new Error(`A versão informada por ${origem} é inválida.`);
+    }
+    if (versoes.some(([, versao]) => versao !== controlador)) {
+        throw new Error("Os arquivos da interface não correspondem à versão ativa do Service Worker.");
+    }
+    return controlador;
+}
+
 function validarMetadados(metadados) {
     if (!metadados || metadados.name !== "Controle Financeiro" || !versaoValida(metadados.version)) {
         throw new Error("O arquivo de versão publicado está inválido.");

@@ -1,7 +1,7 @@
 import { criarRecuperacaoFinanceira, storage } from "./storage.js";
 import { CATEGORIAS_PADRAO, CATEGORIA_FIXA, normalizarEstado as normalizarEstadoCore, normalizarValorMonetario, validarBackup, validarTotaisMonetarios, migrarDadosLegados, calcularExpressao, somarCentavos, gerarCsv, agruparDespesasPorCategoria, agruparLancamentosComOrcamento, renomearCategoriaOrcamentos, removerCategoriaOrcamentos, criarSerieReceitas, listarReceitasDaSerie, editarReceita, excluirReceita } from "./finance-core.js";
 import { apresentarValorFinanceiro, calcularEspacamentosDensidade, normalizarPreferenciasMenu, resolverTelaInicial } from "./preferences.js";
-import { criarConfirmacaoAtualizacao, criarVerificadorAutomatico, instalarAtualizacao, lerVersaoControlador, lerVersaoInstalada, lerVersaoPublicada, verificarComConfirmacao } from "./update-manager.js";
+import { criarConfirmacaoAtualizacao, criarVerificadorAutomatico, instalarAtualizacao, lerVersaoControlador, lerVersaoInstalada, lerVersaoPublicada, validarVersaoAplicacao, verificarComConfirmacao } from "./update-manager.js";
 import { aplicarIdioma, formatarMoeda as formatarMoedaLocalizada, LOCALES } from "./localization.js";
 
 
@@ -17,6 +17,8 @@ import { aplicarIdioma, formatarMoeda as formatarMoedaLocalizada, LOCALES } from
 
 
 const CHAVE_ESTADO = "controleFinanceiro:v3";
+const CHAVE_ATUALIZACAO_PENDENTE = "controleFinanceiro:confirmar-interface-atualizada";
+const VERSAO_BUNDLE = new URL(import.meta.url).searchParams.get("_release");
 const CHAVE_ESTADO_V2 = "controleFinanceiro:v2";
 const CHAVE_ESTADO_STORAGE_ANTIGO = "controle-financeiro-dados";
 
@@ -3099,10 +3101,26 @@ async function carregarVersaoInstalada() {
         const metadados = versaoControlador
             ? { version: versaoControlador }
             : await lerVersaoInstalada();
+        const versaoDocumento = document.querySelector('meta[name="app-version"]')?.content;
+        validarVersaoAplicacao({
+            documento: versaoDocumento,
+            bundle: VERSAO_BUNDLE,
+            controlador: metadados.version
+        });
         versaoInstalada = metadados.version;
+        let versaoAguardando = null;
+        try { versaoAguardando = sessionStorage.getItem(CHAVE_ATUALIZACAO_PENDENTE); } catch (_) {}
+        if (versaoAguardando === metadados.version) {
+            try { sessionStorage.removeItem(CHAVE_ATUALIZACAO_PENDENTE); } catch (_) {}
+            registrarResultadoVerificacao(`Atualizado para a versão ${metadados.version}.`, metadados.version);
+            ui.statusAtualizacao.textContent = `Aplicativo atualizado para a versão ${metadados.version}.`;
+        }
         atualizarDiagnostico();
     } catch (erro) {
         versaoInstalada = "Indisponível";
+        if (erro.message?.includes("arquivos da interface não correspondem")) {
+            registrarResultadoVerificacao("Atualização não confirmada: os arquivos carregados não correspondem ao Service Worker ativo.");
+        }
         ui.statusAtualizacao.textContent = `Não foi possível carregar os metadados da versão instalada: ${erro.message || "erro desconhecido"}.`;
         atualizarDiagnostico();
     }
@@ -3419,8 +3437,8 @@ async function verificarAtualizacao({ automatico = false } = {}) {
                     throw new Error(`A versão ${publicada.version} não foi confirmada como controladora do aplicativo.`);
                 }
                 estadoServiceWorker = "Nova versão instalada e controlando esta página.";
-                registrarResultadoVerificacao(`Atualizado para a versão ${publicada.version}.`, publicada.version);
-                ui.statusAtualizacao.textContent = `Versão ${publicada.version} instalada. Reabrindo o aplicativo…`;
+                try { sessionStorage.setItem(CHAVE_ATUALIZACAO_PENDENTE, publicada.version); } catch (_) {}
+                ui.statusAtualizacao.textContent = `Arquivos da versão ${publicada.version} assumiram o controle. Confirmando a interface após recarregar…`;
                 window.location.reload();
             }
         });

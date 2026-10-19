@@ -257,6 +257,22 @@ test("a aplicação só recarrega depois de confirmar a identidade ativa e não 
     assert.equal((app.match(/window\.location\.reload\(\)/g) || []).length, 1);
 });
 
+test("a atualização só é marcada como concluída após confirmar os arquivos carregados", async () => {
+    const app = await read("app.js");
+    const inicioCargaVersao = app.indexOf("async function carregarVersaoInstalada");
+    const fimCargaVersao = app.indexOf("function registrarResultadoVerificacao", inicioCargaVersao);
+    const cargaVersao = app.slice(inicioCargaVersao, fimCargaVersao);
+    const inicioAtualizacao = app.indexOf("atualizar: async () => {");
+    const fimRecarga = app.indexOf("window.location.reload()", inicioAtualizacao);
+    const fluxoAntesDaRecarga = app.slice(inicioAtualizacao, fimRecarga);
+
+    assert.match(cargaVersao, /validarVersaoAplicacao\(/);
+    assert.match(cargaVersao, /if \(versaoAguardando === metadados\.version\)/);
+    assert.match(cargaVersao, /registrarResultadoVerificacao\(.*Atualizado para a versão/);
+    assert.doesNotMatch(fluxoAntesDaRecarga, /registrarResultadoVerificacao\(.*Atualizado para a versão/);
+    assert.match(fluxoAntesDaRecarga, /sessionStorage\.setItem\(CHAVE_ATUALIZACAO_PENDENTE/);
+});
+
 test("verificação automática roda ao iniciar, retornar ao app e recuperar conexão", async () => {
     const app = await read("app.js");
     assert.match(app, /criarVerificadorAutomatico\(\s*\(\) => verificarAtualizacao\(\{ automatico: true \}\)/);

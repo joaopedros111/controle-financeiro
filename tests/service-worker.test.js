@@ -44,8 +44,15 @@ test("Service Worker não ativa atualização pendente automaticamente e só faz
         skipWaiting: async () => { skipWaitingChamado += 1; },
         clients: { claim: async () => {} }
     };
-    const caches = { open: async () => ({ addAll: async () => {} }) };
-    vm.runInNewContext(source, { self, caches, URL, Promise, Set, Response, fetch: globalThis.fetch });
+    const caches = {
+        open: async () => ({
+            addAll: async () => {},
+            match: async () => new Response(JSON.stringify({ version: versao }), {
+                headers: { "Content-Type": "application/json" }
+            })
+        })
+    };
+    vm.runInNewContext(source, { self, caches, URL, Promise, Set, Request, Response, fetch: globalThis.fetch });
 
     let instalacao;
     handlers.install({ waitUntil: (promise) => { instalacao = promise; } });
@@ -60,6 +67,69 @@ test("Service Worker não ativa atualização pendente automaticamente e só faz
     });
     await ativacao;
     assert.equal(skipWaitingChamado, 1);
+});
+
+test("instalação precacheia recursos com URL exclusiva do release e revalida o cache HTTP", async () => {
+    const source = await readFile(new URL("../sw.js", import.meta.url), "utf8");
+    const versao = await lerVersaoRelease();
+    const handlers = {};
+    const requisicoes = [];
+    const self = {
+        registration: { scope: "https://example.test/finance/" },
+        addEventListener: (nome, handler) => { handlers[nome] = handler; },
+        skipWaiting: async () => {},
+        clients: { claim: async () => {} }
+    };
+    const caches = {
+        open: async () => ({
+            addAll: async (lote) => { requisicoes.push(...lote); },
+            match: async (url) => url.endsWith("/version.json")
+                ? new Response(JSON.stringify({ version: versao }))
+                : null
+        })
+    };
+    vm.runInNewContext(source, { self, caches, URL, Promise, Set, Request, Response, fetch: globalThis.fetch });
+
+    let instalacao;
+    handlers.install({ waitUntil: (promise) => { instalacao = promise; } });
+    await instalacao;
+
+    assert.ok(requisicoes.length > 0);
+    assert.ok(requisicoes.every((request) => request.cache === "reload"));
+    assert.ok(requisicoes.some((request) => request.url.endsWith(`/app.js?_release=${versao}`)));
+    assert.ok(requisicoes.some((request) => request.url.endsWith(`/index.html?_release=${versao}`)));
+});
+
+test("navegações recebem o index.html do mesmo release do Service Worker ativo", async () => {
+    const source = await readFile(new URL("../sw.js", import.meta.url), "utf8");
+    const versao = await lerVersaoRelease();
+    const handlers = {};
+    const chavesConsultadas = [];
+    const self = {
+        registration: { scope: "https://example.test/finance/" },
+        addEventListener: (nome, handler) => { handlers[nome] = handler; },
+        skipWaiting: async () => {},
+        clients: { claim: async () => {} }
+    };
+    const caches = {
+        open: async () => ({
+            match: async (chave) => {
+                chavesConsultadas.push(String(chave));
+                return String(chave).endsWith(`/index.html?_release=${versao}`)
+                    ? new Response("shell do release ativo")
+                    : null;
+            }
+        })
+    };
+    vm.runInNewContext(source, { self, caches, URL, Promise, Set, Request, Response, fetch: globalThis.fetch });
+    let resposta;
+    handlers.fetch({
+        request: { method: "GET", url: "https://example.test/finance/", mode: "navigate" },
+        respondWith: (promise) => { resposta = promise; }
+    });
+
+    assert.equal(await (await resposta).text(), "shell do release ativo");
+    assert.ok(chavesConsultadas.some((chave) => chave.endsWith(`/index.html?_release=${versao}`)));
 });
 
 test("Service Worker informa sua identidade de build", async () => {

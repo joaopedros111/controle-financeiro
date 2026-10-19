@@ -22,10 +22,24 @@ const ARQUIVOS = [
 ];
 
 const urlEscopo = new URL(self.registration.scope);
-const urlsPrecache = new Set(ARQUIVOS.map((arquivo) => new URL(arquivo, urlEscopo).href));
+function urlRelease(arquivo) {
+    const url = new URL(arquivo, urlEscopo);
+    if (!url.pathname.endsWith("/version.json")) url.searchParams.set("_release", VERSAO_SERVICE_WORKER);
+    return url.href;
+}
+const urlsPrecache = new Set(ARQUIVOS.map(urlRelease));
+const urlIndexRelease = urlRelease("./index.html");
 
 self.addEventListener("install", (event) => {
-    event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(ARQUIVOS)));
+    event.waitUntil((async () => {
+        const cache = await caches.open(CACHE);
+        const requisicoes = [...urlsPrecache].map((url) => new Request(url, { cache: "reload" }));
+        await cache.addAll(requisicoes);
+        const versaoEmCache = await cache.match(new URL("./version.json", urlEscopo).href);
+        if (!versaoEmCache || (await versaoEmCache.json()).version !== VERSAO_SERVICE_WORKER) {
+            throw new Error("Os metadados precacheados não correspondem à versão do Service Worker.");
+        }
+    })());
 });
 
 self.addEventListener("activate", (event) => {
@@ -69,6 +83,10 @@ self.addEventListener("fetch", (event) => {
             return fetch(requisicao, { cache: "no-store" });
         }
         const cache = await caches.open(CACHE);
+        if (requisicao.mode === "navigate") {
+            const pagina = await cache.match(urlIndexRelease);
+            if (pagina) return pagina;
+        }
         const armazenada = await cache.match(requisicao);
         if (armazenada) return armazenada;
 

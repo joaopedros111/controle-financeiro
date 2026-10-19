@@ -28,12 +28,24 @@ test("Pages build emits synchronized per-run version and cache without changing 
         });
         const metadadosGerados = JSON.parse(await readFile(path.join(saida, "version.json"), "utf8"));
         const serviceWorkerGerado = await readFile(path.join(saida, "sw.js"), "utf8");
+        const htmlGerado = await readFile(path.join(saida, "index.html"), "utf8");
+        const appGerado = await readFile(path.join(saida, "app.js"), "utf8");
+        const manifestGerado = JSON.parse(await readFile(path.join(saida, "manifest.json"), "utf8"));
 
         assert.equal(release.version, versaoEsperada);
         assert.equal(release.cache, cacheEsperado);
         assert.equal(metadadosGerados.version, release.version);
         assert.match(serviceWorkerGerado, new RegExp(`const VERSAO_SERVICE_WORKER = "${release.version}";`));
         assert.ok(serviceWorkerGerado.includes(`const CACHE = PREFIXO_CACHE + "${cacheEsperado.slice(cacheBase[1].length)}";`));
+        assert.match(htmlGerado, new RegExp(`name="app-version" content="${release.version}"`));
+        assert.equal((htmlGerado.match(/name="app-version"/g) || []).length, 1);
+        for (const recurso of ["style.css", "controls.css", "app.js", "manifest.json", "icons/icon-192.png"]) {
+            assert.ok(htmlGerado.includes(`${recurso}?_release=${release.version}`), `${recurso} sem URL versionada`);
+        }
+        assert.match(appGerado, new RegExp(`from "./finance-core.js\\?_release=${release.version}"`));
+        assert.equal(manifestGerado.start_url, `./index.html?_release=${release.version}`);
+        assert.ok(manifestGerado.icons.every((icone) => icone.src.includes(`?_release=${release.version}`)));
+        assert.match(serviceWorkerGerado, /new Request\(url, \{ cache: "reload" \}\)/);
         for (const arquivo of ["index.html", "app.js", "manifest.json", "icons/icon-192.png"]) {
             assert.ok((await readFile(path.join(saida, arquivo))).length > 0, `${arquivo} ausente do artefato`);
         }

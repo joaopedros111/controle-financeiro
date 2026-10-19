@@ -8,9 +8,28 @@ import {
     lerVersaoControlador,
     lerVersaoInstalada,
     lerVersaoPublicada,
+    validarVersaoAplicacao,
     versaoValida,
     verificarComConfirmacao
 } from "../update-manager.js";
+
+test("a aplicação rejeita documento ou módulo de uma versão diferente do Service Worker ativo", () => {
+    assert.equal(validarVersaoAplicacao({
+        documento: "1.2.0", bundle: "1.2.0", controlador: "1.2.0"
+    }), "1.2.0");
+    assert.throws(
+        () => validarVersaoAplicacao({
+            documento: "1.1.9", bundle: "1.1.9", controlador: "1.2.0"
+        }),
+        /interface não correspondem/
+    );
+    assert.throws(
+        () => validarVersaoAplicacao({
+            documento: "1.2.0", bundle: "1.1.9", controlador: "1.2.0"
+        }),
+        /interface não correspondem/
+    );
+});
 
 test("confirmação automática não repete aviso adiado da mesma versão e manual pode reabrir", () => {
     const solicitacoes = [];
