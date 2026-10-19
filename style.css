@@ -1888,7 +1888,17 @@ body #dialogo-ajustes .ajuste-controle { gap: var(--densidade-opcoes-controle-ga
     @media (max-width: 420px) {
         .periodo { grid-template-columns: 40px minmax(0, 1fr) 66px auto 40px; gap: 5px; padding: 6px 6px 17px; }
         .periodo .btn-icone { width: 40px; min-width: 40px; min-height: 42px; }
-        .periodo #mes, .periodo #ano { min-height: 42px; padding: 7px 5px; font-size: .82rem; }
+        .periodo #mes, .periodo #ano {
+            min-height: 42px;
+            padding: 7px 5px;
+            appearance: auto;
+            -webkit-appearance: menulist;
+            background: Field;
+            color: FieldText;
+            border-color: ButtonBorder;
+            border-radius: revert;
+            font: revert;
+        }
         .periodo #hoje { min-height: 42px; padding-inline: 9px; font-size: .8rem; }
     }
     @media (max-width: 340px) {
