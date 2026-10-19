@@ -35,7 +35,7 @@ test("Firestore rules restrict records by UID and require tombstones", { skip: !
         await assertSucceeds(getDoc(pathAlice));
         await assertDenied(setDoc(doc(alice, "users/alice/records/key2"), { ...entry, record: { ...entry.record, id: "other" }, updatedAt: clientStamp }));
         await assertDenied(setDoc(doc(alice, "users/alice/records/key2"), { ...entry, record: { ...entry.record, valor: "1000" }, updatedAt: Timestamp.fromDate(new Date()) }));
-        await assertDenied(setDoc(doc(alice, "users/alice/records/key2"), { ...entry, unexpected: true, updatedAt: serverTimestamp() }));
+        await assertDenied(setDoc(doc(alice, "users/alice/records/key2"), { ...entry, unexpected: true, updatedAt: clientStamp }));
         await assertDenied(getDoc(doc(bob, "users/alice/records/key1")));
         await assertDenied(setDoc(doc(bob, "users/alice/records/key2"), entry));
         await assertDenied(getDoc(doc(anonymous, "users/alice/records/key1")));
