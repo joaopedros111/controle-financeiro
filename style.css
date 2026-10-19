@@ -877,11 +877,9 @@ body #dialogo-ajustes .ajuste-controle { gap: var(--densidade-opcoes-controle-ga
         grid-template-columns: minmax(0, 1fr) auto 38px 38px;
     }
 
-    .receita.receita-com-proximas { grid-template-columns: minmax(0, 1fr) auto 38px 38px 38px; }
     .receita-identificacao { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; min-width: 0; }
     .receita-identificacao .nome-receita { min-width: 0; }
     .marca-recorrente { flex: 0 0 auto; }
-    .receita .cancelar-serie-receita { color: var(--primaria); }
 
     .despesa {
         grid-template-columns: 24px minmax(0, 1fr) auto auto 38px 38px;

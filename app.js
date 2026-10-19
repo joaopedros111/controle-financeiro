@@ -1,5 +1,5 @@
 import { criarRecuperacaoFinanceira, storage } from "./storage.js";
-import { CATEGORIAS_PADRAO, CATEGORIA_FIXA, normalizarEstado as normalizarEstadoCore, normalizarValorMonetario, validarBackup, validarTotaisMonetarios, migrarDadosLegados, calcularExpressao, somarCentavos, gerarCsv, agruparDespesasPorCategoria, agruparLancamentosComOrcamento, renomearCategoriaOrcamentos, removerCategoriaOrcamentos, criarSerieReceitas, listarReceitasDaSerie, editarReceita, excluirReceita, cancelarProximasReceitas } from "./finance-core.js";
+import { CATEGORIAS_PADRAO, CATEGORIA_FIXA, normalizarEstado as normalizarEstadoCore, normalizarValorMonetario, validarBackup, validarTotaisMonetarios, migrarDadosLegados, calcularExpressao, somarCentavos, gerarCsv, agruparDespesasPorCategoria, agruparLancamentosComOrcamento, renomearCategoriaOrcamentos, removerCategoriaOrcamentos, criarSerieReceitas, listarReceitasDaSerie, editarReceita, excluirReceita } from "./finance-core.js";
 import { apresentarValorFinanceiro, calcularEspacamentosDensidade, normalizarPreferenciasMenu, resolverTelaInicial } from "./preferences.js";
 import { criarConfirmacaoAtualizacao, criarVerificadorAutomatico, instalarAtualizacao, lerVersaoControlador, lerVersaoInstalada, lerVersaoPublicada, verificarComConfirmacao } from "./update-manager.js";
 import { aplicarIdioma, formatarMoeda as formatarMoedaLocalizada, LOCALES } from "./localization.js";
@@ -172,6 +172,7 @@ const ui = {
     textoPropagar: $("texto-propagar"),
 
     dialogoSerie: $("dialogo-serie"),
+    tituloSerie: $("titulo-dialogo-serie"),
 
     textoSerie: $("texto-serie"),
 
@@ -697,8 +698,8 @@ function criarLinhaReceita(receita) {
     if (receita.serie) {
         identificacao.append(criarEl("span", {
             class: "marca marca-recorrente",
-            title: "Série mensal: " + receita.serie,
-            text: "Mensal · " + receita.serie.slice(-8)
+            title: "Série mensal",
+            text: "Mensal"
         }));
     }
 
@@ -716,14 +717,6 @@ function criarLinhaReceita(receita) {
 
         }),
 
-        criarEl("button", {
-            type: "button",
-            class: "cancelar-serie-receita",
-            title: "Cancelar próximas ocorrências",
-            "aria-label": "Cancelar próximas ocorrências de " + nome,
-            hidden: true,
-            text: "↻"
-        }),
         criarEl("button", {
 
             type: "button",
@@ -753,15 +746,6 @@ function criarLinhaReceita(receita) {
         })
 
     );
-
-    const temProximas = receita.serie
-        && listarReceitasDaSerie(estado.meses, receita.serie).some(({ chave }) => chave > chaveAtual());
-    if (temProximas) {
-        linha.classList.add("receita-com-proximas");
-        linha.querySelector(".cancelar-serie-receita").hidden = false;
-    }
-
-
 
     return linha;
 
@@ -1564,21 +1548,6 @@ ui.listaReceitas.addEventListener("click", (evento) => {
 
     }
 
-    const cancelarSerie = evento.target.closest(".cancelar-serie-receita");
-    if (cancelarSerie) {
-        const idReceita = cancelarSerie.closest(".receita").dataset.id;
-        const receita = obterMes().receitas.find((item) => item.id === idReceita);
-        if (!receita?.serie) return;
-        const removidas = cancelarProximasReceitas(estado.meses, receita.serie, chaveAtual())
-            .map((removida) => ({ ...removida, lista: "receitas" }));
-        if (removidas.length) {
-            registrarRemocao(removidas, "Ocorrências futuras canceladas: " + removidas.length + ".");
-        }
-        return;
-    }
-
-
-
     const remover = evento.target.closest(".remover-receita");
 
 
@@ -1597,6 +1566,13 @@ ui.listaReceitas.addEventListener("click", (evento) => {
 
 
 
+    const futuras = receita.serie
+        ? listarReceitasDaSerie(estado.meses, receita.serie).filter(({ chave }) => chave > chaveAtual()).length
+        : 0;
+    if (futuras) {
+        pedirEscolhaDaSerieReceita(receita, futuras);
+        return;
+    }
     const removida = excluirReceita(estado.meses, chaveAtual(), id);
     if (removida) registrarRemocao([{ ...removida, lista: "receitas" }], "Entrada removida.");
 
@@ -1617,6 +1593,7 @@ const MESES_DA_FIXA = 12; // meses lançados de uma vez ao criar uma despesa fix
 let despesaEmEdicao = null; // id da despesa aberta no diálogo (null = nova)
 
 let despesaParaRemover = null; // despesa fixa/parcelada aguardando a escolha do usuário
+let receitaParaRemover = null;
 
 
 
@@ -2052,6 +2029,10 @@ function pedirEscolhaDaSerie(despesa, futuros) {
 
 
     despesaParaRemover = despesa;
+    receitaParaRemover = null;
+    ui.tituloSerie.textContent = "Remover despesa";
+    ui.serieSoEste.textContent = "Só este mês";
+    ui.serieProximos.textContent = "Este e os próximos";
 
 
 
@@ -2081,6 +2062,16 @@ function pedirEscolhaDaSerie(despesa, futuros) {
 
     ui.dialogoSerie.showModal();
 
+}
+
+function pedirEscolhaDaSerieReceita(receita, futuras) {
+    receitaParaRemover = receita;
+    despesaParaRemover = null;
+    ui.tituloSerie.textContent = "Remover entrada";
+    ui.textoSerie.textContent = `\"${receita.nome}\" tem ${futuras} ocorrência${futuras === 1 ? "" : "s"} futura${futuras === 1 ? "" : "s"}. Deseja excluir também as ocorrências futuras?`;
+    ui.serieSoEste.textContent = "Só esta entrada";
+    ui.serieProximos.textContent = "Esta e as futuras";
+    ui.dialogoSerie.showModal();
 }
 
 
@@ -2234,6 +2225,7 @@ ui.serieSoEste.addEventListener("click", () => {
 
 
     const despesa = despesaParaRemover;
+    const receita = receitaParaRemover;
 
 
 
@@ -2244,6 +2236,10 @@ ui.serieSoEste.addEventListener("click", () => {
     if (despesa) {
 
         removerSelecao("despesas", [{ chave: chaveAtual(), item: despesa }], "Despesa removida.");
+
+    } else if (receita) {
+
+        removerSelecao("receitas", [{ chave: chaveAtual(), item: receita }], "Entrada removida.");
 
     }
 
@@ -2256,12 +2252,20 @@ ui.serieProximos.addEventListener("click", () => {
 
 
     const despesa = despesaParaRemover;
+    const receita = receitaParaRemover;
 
 
 
     ui.dialogoSerie.close();
 
 
+
+    if (receita) {
+        const selecao = listarReceitasDaSerie(estado.meses, receita.serie)
+            .filter(({ chave }) => chave >= chaveAtual());
+        removerSelecao("receitas", selecao, selecao.length + " entradas removidas.");
+        return;
+    }
 
     if (!despesa) return;
 
