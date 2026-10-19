@@ -650,6 +650,7 @@ html.app-inicializando .container { visibility: hidden; }
 body.valores-ocultos .barra,
 body.valores-ocultos .grafico-barras { visibility: hidden; }
 body.valores-ocultos #texto-comprometido { display: none; }
+body.valores-ocultos .grafico-categoria-percentual { display: none; }
 body.valores-ocultos #grafico-rosca { background: conic-gradient(var(--borda) 0deg 360deg) !important; }
 body.graficos-ocultos .grafico-bloco { display: none; }
 main.container { gap: var(--densidade-container-gap, 12px); }

@@ -1221,7 +1221,7 @@ function renderGraficoCategorias() {
 
     rosquinha.setAttribute("aria-label", itens.length
         ? "Despesas por categoria em " + rotuloMes + ". Total " + formatarMoeda(total) + ". " + itens.map(([nome, valor]) =>
-            nome + ": " + formatarMoeda(valor) + ", " + formatarPercentual((valor / total) * 100)
+            nome + ": " + formatarMoeda(valor) + (valoresOcultos ? "" : ", " + formatarPercentual((valor / total) * 100))
         ).join("; ")
         : "Nenhuma despesa com valor registrado em " + rotuloMes + ".");
 }
