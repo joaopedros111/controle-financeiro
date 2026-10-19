@@ -639,11 +639,6 @@ function renderPeriodo() {
 
     ui.ano.value = String(periodo.ano);
 
-    const agora = new Date();
-    const mesAtual = periodo.ano === agora.getFullYear() && periodo.mes === agora.getMonth() + 1;
-    const indicadorMesAtual = $("indicador-mes-atual");
-    if (indicadorMesAtual) indicadorMesAtual.hidden = !mesAtual;
-
 }
 
 

@@ -1856,7 +1856,7 @@ body #dialogo-ajustes .ajuste-controle { gap: var(--densidade-opcoes-controle-ga
         grid-template-rows: auto;
         align-items: center;
         gap: 8px;
-        padding: 8px 8px 17px;
+        padding: 8px;
         margin: 0;
         border-radius: 16px;
         background: color-mix(in srgb, var(--superficie) 94%, var(--fundo));
@@ -1873,39 +1873,31 @@ body #dialogo-ajustes .ajuste-controle { gap: var(--densidade-opcoes-controle-ga
     .periodo .btn-icone { width: 44px; min-width: 44px; min-height: 44px; border-radius: 13px; }
     .periodo select { min-height: 44px; padding: 8px 10px; border: 1px solid var(--borda); border-radius: 12px; font-weight: 750; }
     .periodo #mes { background: color-mix(in srgb, var(--primaria-suave) 58%, var(--superficie)); }
-    .periodo-atual {
-        position: absolute;
-        bottom: 3px;
-        left: 67px;
-        color: var(--primaria);
-        font-size: .68rem;
-        font-weight: 800;
-        letter-spacing: .08em;
-        line-height: 1.2;
-        text-transform: uppercase;
-    }
-    .periodo-atual[hidden] { display: none; }
     @media (max-width: 420px) {
-        .periodo { grid-template-columns: 40px minmax(0, 1fr) 66px auto 40px; gap: 5px; padding: 6px 6px 17px; }
-        .periodo .btn-icone { width: 40px; min-width: 40px; min-height: 42px; }
-        .periodo #mes, .periodo #ano {
-            min-height: 42px;
-            padding: 7px 5px;
-            appearance: auto;
-            -webkit-appearance: menulist;
-            background: Field;
-            color: FieldText;
-            border-color: ButtonBorder;
-            border-radius: revert;
-            font: revert;
+        .periodo {
+            grid-template-columns: 40px minmax(0, 1fr) 66px auto 40px;
+            gap: 5px;
+            padding: 6px;
         }
-        .periodo #hoje { min-height: 42px; padding-inline: 9px; font-size: .8rem; }
+        .periodo #mes, .periodo #ano {
+            all: revert;
+            display: block;
+            box-sizing: border-box;
+            width: 100%;
+            min-width: 0;
+            height: 44px;
+            min-height: 44px;
+            justify-self: stretch;
+        }
+        .periodo #mes { grid-column: 2; grid-row: 1; }
+        .periodo #ano { grid-column: 3; grid-row: 1; }
+        .periodo .btn-icone,
+        .periodo #hoje { box-sizing: border-box; height: 44px; min-height: 44px; }
+        .periodo .btn-icone { width: 40px; min-width: 40px; }
+        .periodo #hoje { padding-inline: 9px; }
     }
     @media (max-width: 340px) {
-        .periodo { grid-template-columns: 36px minmax(0, 1fr) 58px auto 36px; gap: 3px; padding: 5px 5px 17px; }
-        .periodo .btn-icone { width: 36px; min-width: 36px; }
-        .periodo #mes { font-size: .78rem; }
-        .periodo #ano { font-size: .78rem; }
+        .periodo { grid-template-columns: 40px minmax(0, 1fr) 62px auto 40px; gap: 3px; padding: 6px; }
     }
     @media (prefers-reduced-motion: reduce) { .periodo { scroll-behavior: auto; } }
 }
