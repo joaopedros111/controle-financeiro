@@ -70,6 +70,70 @@ function valorNormalizavel(valor) {
     return normalizarValorMonetario(valor) !== null;
 }
 
+const MESES_SERIE_RECEITA = 12;
+
+function deslocarChaveMes(chave, deslocamento) {
+    const partes = /^(\d{4})-(0[1-9]|1[0-2])$/.exec(chave);
+    if (!partes) return null;
+    const indice = Number(partes[1]) * 12 + Number(partes[2]) - 1 + deslocamento;
+    const ano = Math.floor(indice / 12);
+    if (ano < ANO_MINIMO || ano > ANO_MAXIMO) return null;
+    return `${ano}-${String((indice % 12) + 1).padStart(2, "0")}`;
+}
+
+export function criarSerieReceitas(meses, { chaveInicial, nome, valor, serie }, criarId = gerarId) {
+    if (!meses || typeof meses !== "object" || !serie || typeof serie !== "string"
+        || typeof nome !== "string" || !nome.trim() || !valorValido(valor)) return [];
+
+    const criadas = [];
+    for (let indice = 0; indice < MESES_SERIE_RECEITA; indice += 1) {
+        const chave = deslocarChaveMes(chaveInicial, indice);
+        if (!chave) break;
+        const mes = meses[chave] || (meses[chave] = { receitas: [], despesas: [] });
+        if (!Array.isArray(mes.receitas)) mes.receitas = [];
+        if (mes.receitas.some((receita) => receita.serie === serie)) continue;
+        const item = { id: criarId(), nome: nome.trim(), valor: normalizarValorMonetario(valor), serie };
+        mes.receitas.push(item);
+        criadas.push({ chave, item });
+    }
+    return criadas;
+}
+
+export function listarReceitasDaSerie(meses, serie) {
+    if (!meses || typeof meses !== "object" || typeof serie !== "string" || !serie) return [];
+    return Object.entries(meses).flatMap(([chave, mes]) =>
+        (Array.isArray(mes?.receitas) ? mes.receitas : [])
+            .filter((item) => item.serie === serie)
+            .map((item) => ({ chave, item }))
+    ).sort((a, b) => a.chave.localeCompare(b.chave));
+}
+
+export function editarReceita(meses, chave, id, dados) {
+    const receita = meses?.[chave]?.receitas?.find((item) => item.id === id);
+    if (!receita || typeof dados?.nome !== "string" || !dados.nome.trim() || !valorValido(dados.valor)) return null;
+    receita.nome = dados.nome.trim();
+    receita.valor = normalizarValorMonetario(dados.valor);
+    return receita;
+}
+
+export function excluirReceita(meses, chave, id) {
+    const receitas = meses?.[chave]?.receitas;
+    if (!Array.isArray(receitas)) return null;
+    const indice = receitas.findIndex((item) => item.id === id);
+    if (indice < 0) return null;
+    const [item] = receitas.splice(indice, 1);
+    return { chave, item, indice };
+}
+
+export function cancelarProximasReceitas(meses, serie, chaveReferencia) {
+    const futuras = listarReceitasDaSerie(meses, serie)
+        .filter(({ chave }) => chave > chaveReferencia)
+        .map(({ chave, item }) => ({ chave, item, indice: meses[chave].receitas.indexOf(item) }));
+    [...futuras].sort((a, b) => a.chave.localeCompare(b.chave) || b.indice - a.indice)
+        .forEach(({ chave, indice }) => meses[chave].receitas.splice(indice, 1));
+    return futuras;
+}
+
 function listaValida(lista) {
     return (Array.isArray(lista) ? lista : []).filter((item) =>
         item && typeof item === "object" && !Array.isArray(item)
@@ -152,9 +216,9 @@ export function validarBackup(bruto, { permitirTextoNumerico = false } = {}) {
                     || (!permitirTextoNumerico && typeof item.valor !== "number")
                     || !idValido(item)) return false;
                 if (campo === "despesas" && item.categoria !== undefined && typeof item.categoria !== "string") return false;
+                if (item.serie !== undefined && item.serie !== null && typeof item.serie !== "string") return false;
                 if (campo === "despesas" && item.pago !== undefined && typeof item.pago !== "boolean") return false;
                 if (campo === "despesas" && item.fixa !== undefined && typeof item.fixa !== "boolean") return false;
-                if (campo === "despesas" && item.serie !== undefined && item.serie !== null && typeof item.serie !== "string") return false;
                 if (campo === "despesas" && item.parcela !== undefined && item.parcela !== null) {
                     const { atual, total } = item.parcela;
                     if (!Number.isInteger(atual) || !Number.isInteger(total) || atual < 1 || total < 2 || atual > total) return false;
@@ -208,6 +272,7 @@ export function normalizarEstado(bruto, criarId = gerarId) {
         ids.add(id);
         const nome = typeof item.nome === "string" ? item.nome.trim() : "";
         const registro = { id, nome, valor: normalizarValorMonetario(item.valor) };
+        if (tipo === "receita" && typeof item.serie === "string" && item.serie) registro.serie = item.serie;
         if (tipo === "despesa") {
             const atual = Number(item.parcela?.atual);
             const total = Number(item.parcela?.total);
@@ -408,7 +473,10 @@ export function gerarCsv(estado, { ano, mes, escopo = "mes" } = {}) {
     };
     const linhas = [["Período", "Tipo", "Nome", "Categoria", "Valor", "Situação", "Observação"]];
     registros.forEach(([periodo, dados]) => {
-        dados.receitas.forEach((r) => linhas.push([periodo, "Entrada", r.nome, "", valorCsv(r.valor), "", ""]));
+        dados.receitas.forEach((r) => linhas.push([
+            periodo, "Entrada", r.nome, "", valorCsv(r.valor), "",
+            r.serie ? `Recorrente mensal (${r.serie})` : ""
+        ]));
         dados.despesas.forEach((d) => {
             const observacao = d.parcela
                 ? `Parcela ${d.parcela.atual}/${d.parcela.total}`

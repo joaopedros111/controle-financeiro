@@ -82,3 +82,8 @@ test("preferências antigas e valores não suportados usam idioma e moeda padrã
     assert.equal(antigas.moeda, "BRL");
     assert.equal(antigas.mostrarGraficos, false);
 });
+
+test("recurring income controls are localized in supported interface languages", () => {
+    assert.equal(textoTraduzido("Repetir mensalmente por 12 meses", "en"), "Repeat monthly for 12 months");
+    assert.equal(textoTraduzido("Cancelar próximas ocorrências", "fr"), "Annuler les prochaines occurrences");
+});

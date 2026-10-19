@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { agruparDespesasPorCategoria, agruparLancamentosComOrcamento, agruparLancamentosPorCategoria, calcularExpressao, calcularOrcamentosPorCategoria, escaparCelulaCsv, gerarCsv, LIMITE_MONETARIO_SEGURO, migrarDadosLegados, normalizarEstado, normalizarValorMonetario, ordenarOrcamentosComGastos, removerCategoriaOrcamentos, renomearCategoriaOrcamentos, somarCentavos, validarBackup, validarTotaisMonetarios } from "../finance-core.js";
+import { agruparDespesasPorCategoria, agruparLancamentosComOrcamento, agruparLancamentosPorCategoria, calcularExpressao, calcularOrcamentosPorCategoria, cancelarProximasReceitas, criarSerieReceitas, editarReceita, excluirReceita, escaparCelulaCsv, gerarCsv, listarReceitasDaSerie, LIMITE_MONETARIO_SEGURO, migrarDadosLegados, normalizarEstado, normalizarValorMonetario, ordenarOrcamentosComGastos, removerCategoriaOrcamentos, renomearCategoriaOrcamentos, somarCentavos, validarBackup, validarTotaisMonetarios } from "../finance-core.js";
 
 test("backup válido é aceito e meses fora do calendário são recusados", () => {
     const backup = { categorias: ["Moradia"], meses: { "2026-10": { receitas: [{ id: "r1", nome: "Salário", valor: 1200 }], despesas: [] } } };
@@ -425,4 +425,70 @@ test("calculadora rejeita código, sintaxe incompleta e divisão por zero", () =
     for (const expressao of ["1+alert(1)", "2+", "1/0", "(2+3"]) {
         assert.throws(() => calcularExpressao(expressao));
     }
+});
+
+test("recurring income creates twelve monthly occurrences across the year boundary", () => {
+    const months = {};
+    let nextId = 0;
+    const created = criarSerieReceitas(months, {
+        chaveInicial: "2026-10", nome: "Salary", valor: 2500, serie: "salary-1"
+    }, () => `rec-${++nextId}`);
+    assert.deepEqual(created.map(({ chave }) => chave), [
+        "2026-10", "2026-11", "2026-12", "2027-01", "2027-02", "2027-03",
+        "2027-04", "2027-05", "2027-06", "2027-07", "2027-08", "2027-09"
+    ]);
+    assert.equal(new Set(created.map(({ item }) => item.id)).size, 12);
+    assert.ok(created.every(({ item }) => item.serie === "salary-1" && item.valor === 2500));
+});
+
+test("creating the same recurring series again does not duplicate existing months", () => {
+    const months = {};
+    let nextId = 0;
+    const options = { chaveInicial: "2026-10", nome: "Salary", valor: 2500, serie: "salary-idempotent" };
+    assert.equal(criarSerieReceitas(months, options, () => `id-${++nextId}`).length, 12);
+    assert.equal(criarSerieReceitas(months, options, () => `duplicate-${++nextId}`).length, 0);
+    assert.equal(listarReceitasDaSerie(months, options.serie).length, 12);
+    months["2027-03"].receitas = [];
+    assert.equal(criarSerieReceitas(months, options, () => `restored-${++nextId}`).length, 1);
+    assert.equal(months["2027-03"].receitas.length, 1);
+});
+
+test("cancelling future recurring income preserves previous and reference months", () => {
+    const months = {};
+    let id = 0;
+    criarSerieReceitas(months, { chaveInicial: "2026-10", nome: "Salary", valor: 2500, serie: "salary-cancel" }, () => `id-${++id}`);
+    const removed = cancelarProximasReceitas(months, "salary-cancel", "2027-01");
+    assert.deepEqual(removed.map(({ chave }) => chave), ["2027-02", "2027-03", "2027-04", "2027-05", "2027-06", "2027-07", "2027-08", "2027-09"]);
+    assert.deepEqual(listarReceitasDaSerie(months, "salary-cancel").map(({ chave }) => chave), ["2026-10", "2026-11", "2026-12", "2027-01"]);
+});
+
+test("editing or deleting one occurrence leaves other recurring income unchanged", () => {
+    const months = {};
+    let id = 0;
+    criarSerieReceitas(months, { chaveInicial: "2026-10", nome: "Salary", valor: 2500, serie: "salary-edit" }, () => `id-${++id}`);
+    const occurrences = listarReceitasDaSerie(months, "salary-edit");
+    const edited = editarReceita(months, "2026-11", occurrences[1].item.id, { nome: "Adjusted salary", valor: 2600 });
+    assert.equal(edited.serie, "salary-edit");
+    assert.equal(months["2026-10"].receitas[0].nome, "Salary");
+    assert.equal(months["2026-12"].receitas[0].valor, 2500);
+    const deleted = excluirReceita(months, "2026-12", occurrences[2].item.id);
+    assert.equal(deleted.item.serie, "salary-edit");
+    assert.equal(listarReceitasDaSerie(months, "salary-edit").length, 11);
+});
+test("recurrence metadata survives backup validation and normalization while older entries stay unchanged", () => {
+    const months = {
+        "2026-09": { receitas: [{ id: "old-income", nome: "Old income", valor: 100 }], despesas: [] }
+    };
+    let id = 0;
+    criarSerieReceitas(months, { chaveInicial: "2026-10", nome: "Salary", valor: 2500, serie: "salary-backup" }, () => `new-${++id}`);
+    const backup = { versao: 3, meses: months };
+    assert.equal(validarBackup(backup), true);
+    const restored = normalizarEstado(backup);
+    assert.equal(restored.meses["2026-09"].receitas[0].serie, undefined);
+    assert.ok(listarReceitasDaSerie(restored.meses, "salary-backup").length === 12);
+    assert.equal(validarBackup({ ...backup, meses: {
+        ...months,
+        "2028-01": { receitas: [{ id: "bad", nome: "Bad", valor: 1, serie: 42 }], despesas: [] }
+    } }), false);
+    assert.ok(gerarCsv(restored, { ano: 2026, mes: 10 }).includes("Recorrente mensal (salary-backup)"));
 });

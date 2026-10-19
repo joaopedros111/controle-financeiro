@@ -1,5 +1,5 @@
 import { criarRecuperacaoFinanceira, storage } from "./storage.js";
-import { CATEGORIAS_PADRAO, CATEGORIA_FIXA, normalizarEstado as normalizarEstadoCore, normalizarValorMonetario, validarBackup, validarTotaisMonetarios, migrarDadosLegados, calcularExpressao, somarCentavos, gerarCsv, agruparDespesasPorCategoria, agruparLancamentosComOrcamento, renomearCategoriaOrcamentos, removerCategoriaOrcamentos } from "./finance-core.js";
+import { CATEGORIAS_PADRAO, CATEGORIA_FIXA, normalizarEstado as normalizarEstadoCore, normalizarValorMonetario, validarBackup, validarTotaisMonetarios, migrarDadosLegados, calcularExpressao, somarCentavos, gerarCsv, agruparDespesasPorCategoria, agruparLancamentosComOrcamento, renomearCategoriaOrcamentos, removerCategoriaOrcamentos, criarSerieReceitas, listarReceitasDaSerie, editarReceita, excluirReceita, cancelarProximasReceitas } from "./finance-core.js";
 import { apresentarValorFinanceiro, calcularEspacamentosDensidade, normalizarPreferenciasMenu, resolverTelaInicial } from "./preferences.js";
 import { criarConfirmacaoAtualizacao, criarVerificadorAutomatico, instalarAtualizacao, lerVersaoControlador, lerVersaoInstalada, lerVersaoPublicada, verificarComConfirmacao } from "./update-manager.js";
 import { aplicarIdioma, formatarMoeda as formatarMoedaLocalizada, LOCALES } from "./localization.js";
@@ -120,6 +120,10 @@ const ui = {
     receitaNome: $("receita-nome"),
 
     receitaValor: $("receita-valor"),
+
+    receitaRepetir: $("receita-repetir"),
+
+    campoRepetirReceita: $("campo-repetir-receita"),
 
     fecharReceita: $("fechar-receita"),
 
@@ -687,12 +691,22 @@ function criarLinhaReceita(receita) {
 
 
     const nome = receita.nome.trim() || "Sem nome";
+    const identificacao = criarEl("div", { class: "receita-identificacao" }, [
+        criarEl("span", { class: "nome-receita", text: nome })
+    ]);
+    if (receita.serie) {
+        identificacao.append(criarEl("span", {
+            class: "marca marca-recorrente",
+            title: "Série mensal: " + receita.serie,
+            text: "Mensal · " + receita.serie.slice(-8)
+        }));
+    }
 
 
 
     linha.append(
 
-        criarEl("span", { class: "nome-receita", text: nome }),
+        identificacao,
 
         criarEl("span", {
 
@@ -702,6 +716,14 @@ function criarLinhaReceita(receita) {
 
         }),
 
+        criarEl("button", {
+            type: "button",
+            class: "cancelar-serie-receita",
+            title: "Cancelar próximas ocorrências",
+            "aria-label": "Cancelar próximas ocorrências de " + nome,
+            hidden: true,
+            text: "↻"
+        }),
         criarEl("button", {
 
             type: "button",
@@ -731,6 +753,13 @@ function criarLinhaReceita(receita) {
         })
 
     );
+
+    const temProximas = receita.serie
+        && listarReceitasDaSerie(estado.meses, receita.serie).some(({ chave }) => chave > chaveAtual());
+    if (temProximas) {
+        linha.classList.add("receita-com-proximas");
+        linha.querySelector(".cancelar-serie-receita").hidden = false;
+    }
 
 
 
@@ -1273,14 +1302,19 @@ function removerSelecao(lista, selecao, mensagem) {
 
 
 
+    registrarRemocao(ultimaRemocao, mensagem);
+
+}
+
+
+
+function registrarRemocao(remocoes, mensagem) {
+
+    ultimaRemocao = remocoes;
+
     renderReceitas();
-
     renderDespesas();
-
     atualizarResumo();
-
-
-
     avisar(mensagem, { rotulo: "Desfazer", executar: desfazerRemocao });
 
 }
@@ -1347,6 +1381,9 @@ let receitaEmEdicao = null; // id da receita aberta no diálogo (null = nova)
 
 
 
+let receitaSerieEmCriacao = null;
+
+
 function abrirDialogoReceita(id) {
 
 
@@ -1364,6 +1401,7 @@ function abrirDialogoReceita(id) {
 
 
     receitaEmEdicao = receita ? receita.id : null;
+    receitaSerieEmCriacao = receita ? null : uid();
 
 
 
@@ -1374,6 +1412,8 @@ function abrirDialogoReceita(id) {
     ui.receitaNome.value = receita ? receita.nome : "";
 
     ui.receitaValor.value = receita && receita.valor ? String(receita.valor) : "";
+    ui.campoRepetirReceita.hidden = Boolean(receita);
+    ui.receitaRepetir.checked = false;
 
 
 
@@ -1419,11 +1459,7 @@ function salvarReceita() {
 
 
 
-        const receita = obterMes().receitas.find((r) => r.id === receitaEmEdicao);
-
-
-
-        if (receita) Object.assign(receita, dados);
+        editarReceita(estado.meses, chaveMes(periodo.ano, periodo.mes), receitaEmEdicao, dados);
 
 
 
@@ -1435,17 +1471,28 @@ function salvarReceita() {
 
 
 
-        obterMes().receitas.push({ id: uid(), ...dados });
-
-
-
-        avisar("Entrada adicionada.");
+        if (ui.receitaRepetir.checked) {
+            const agora = new Date();
+            const anoInicial = agora.getFullYear();
+            const mesInicial = agora.getMonth() + 1;
+            const criadas = criarSerieReceitas(estado.meses, {
+                chaveInicial: chaveMes(anoInicial, mesInicial),
+                ...dados,
+                serie: receitaSerieEmCriacao || uid()
+            }, uid);
+            mudarPeriodo(anoInicial, mesInicial);
+            avisar(criadas.length ? "Entrada adicionada." : "Esta série mensal já foi criada.");
+        } else {
+            obterMes().receitas.push({ id: uid(), ...dados });
+            avisar("Entrada adicionada.");
+        }
 
     }
 
 
 
     ui.dialogoReceita.close();
+    receitaSerieEmCriacao = null;
 
 
 
@@ -1517,6 +1564,19 @@ ui.listaReceitas.addEventListener("click", (evento) => {
 
     }
 
+    const cancelarSerie = evento.target.closest(".cancelar-serie-receita");
+    if (cancelarSerie) {
+        const idReceita = cancelarSerie.closest(".receita").dataset.id;
+        const receita = obterMes().receitas.find((item) => item.id === idReceita);
+        if (!receita?.serie) return;
+        const removidas = cancelarProximasReceitas(estado.meses, receita.serie, chaveAtual())
+            .map((removida) => ({ ...removida, lista: "receitas" }));
+        if (removidas.length) {
+            registrarRemocao(removidas, "Ocorrências futuras canceladas: " + removidas.length + ".");
+        }
+        return;
+    }
+
 
 
     const remover = evento.target.closest(".remover-receita");
@@ -1537,15 +1597,8 @@ ui.listaReceitas.addEventListener("click", (evento) => {
 
 
 
-    removerSelecao(
-
-        "receitas",
-
-        [{ chave: chaveMes(periodo.ano, periodo.mes), item: receita }],
-
-        "Entrada removida."
-
-    );
+    const removida = excluirReceita(estado.meses, chaveAtual(), id);
+    if (removida) registrarRemocao([{ ...removida, lista: "receitas" }], "Entrada removida.");
 
 });
 
@@ -2701,7 +2754,11 @@ function copiarDoMesAnterior() {
 
 
 
-    origem.receitas.forEach((r) => destino.receitas.push({ ...r, id: uid() }));
+    origem.receitas.forEach((r) => {
+        // A série já administra suas ocorrências; copiar uma entrada recorrente poderia recriar uma ocorrência cancelada.
+        if (r.serie) return;
+        destino.receitas.push({ ...r, id: uid() });
+    });
 
     origem.despesas.forEach((d) => {
 

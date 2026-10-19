@@ -38,6 +38,9 @@ Para habilitar o workflow após revisão, altere manualmente a origem de publica
 
 O diagnóstico mostra a versão instalada, a última versão publicada consultada, o horário e o resultado da verificação, além do estado do Service Worker e do armazenamento. Nada é enviado para serviços externos.
 
+## Recorrência de entradas
+
+Ao adicionar uma entrada, é possível repeti-la mensalmente por 12 meses a partir do mês atual. Cada ocorrência fica salva no mês correspondente e compartilha um identificador de série, preservado em backups e indicado na lista e no CSV. O controle de cancelamento remove somente as ocorrências posteriores ao mês selecionado; entradas anteriores permanecem. Editar ou excluir uma ocorrência afeta somente aquele mês. A função de copiar o mês anterior não copia entradas recorrentes, para evitar duplicações ou reativar uma série cancelada.
 ## Executar localmente
 
 O service worker requer um contexto seguro. Para desenvolver localmente, inicie um servidor HTTP na pasta do projeto:

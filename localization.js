@@ -10,6 +10,14 @@ const LOCALES = {
 const MOEDAS = ["BRL", "USD", "EUR", "JPY"];
 
 const FRASES = [
+    ["Repetir mensalmente por 12 meses", "Repeat monthly for 12 months", "Repetir mensualmente durante 12 meses", "Répéter chaque mois pendant 12 mois", "12 Monate lang monatlich wiederholen", "12か月間、毎月繰り返す"],
+    ["Mensal", "Monthly", "Mensual", "Mensuel", "Monatlich", "毎月"],
+    ["Série mensal", "Monthly series", "Serie mensual", "Série mensuelle", "Monatliche Serie", "月次シリーズ"],
+    ["Série mensal: ", "Monthly series: ", "Serie mensual: ", "Série mensuelle : ", "Monatliche Serie: ", "月次シリーズ: "],
+    ["Cancelar próximas ocorrências", "Cancel upcoming occurrences", "Cancelar próximas ocurrencias", "Annuler les prochaines occurrences", "Künftige Vorkommen abbrechen", "今後の発生をキャンセル"],
+    ["Cancelar próximas ocorrências de ", "Cancel upcoming occurrences of ", "Cancelar próximas ocurrencias de ", "Annuler les prochaines occurrences de ", "Künftige Vorkommen von ", "今後の発生をキャンセル: "],
+    ["Ocorrências futuras canceladas: ", "Future occurrences canceled: ", "Se cancelaron las ocurrencias futuras: ", "Occurrences futures annulées : ", "Künftige Vorkommen abgebrochen: ", "今後の発生をキャンセルしました: "],
+    ["Esta série mensal já foi criada.", "This monthly series has already been created.", "Esta serie mensual ya se creó.", "Cette série mensuelle a déjà été créée.", "Diese monatliche Serie wurde bereits erstellt.", "この月次シリーズはすでに作成されています。"],
     ["Período", "Period", "Período", "Période", "Zeitraum", "期間"],
     ["Mês", "Month", "Mes", "Mois", "Monat", "月"],
     ["Ano", "Year", "Año", "Année", "Jahr", "年"],
