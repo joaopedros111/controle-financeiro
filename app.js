@@ -1476,8 +1476,6 @@ function abrirDialogoReceita(id) {
     bloquearRolagemFundoEdicao();
     ui.dialogoReceita.showModal();
 
-    ui.receitaNome.focus();
-
 }
 
 
@@ -1854,8 +1852,6 @@ function abrirDialogoDespesa(id) {
 
     bloquearRolagemFundoEdicao();
     ui.dialogoDespesa.showModal();
-
-    ui.despesaNome.focus();
 
 }
 
@@ -2606,14 +2602,12 @@ ui.abrirCategoriasOrcamento.addEventListener("click", () => {
     mostrarPainelOrcamentos("categorias");
     ui.dialogoAjustes.close();
     ui.dialogoOrcamentos.showModal();
-    ui.novaCategoria.focus();
 });
 ui.abrirLimitesOrcamento.addEventListener("click", () => {
     renderListaOrcamentos();
     mostrarPainelOrcamentos("limites");
     ui.dialogoAjustes.close();
     ui.dialogoOrcamentos.showModal();
-    ui.listaOrcamentos.querySelector("[data-orcamento-campo]")?.focus();
 });
 ui.fecharOrcamentos.addEventListener("click", () => ui.dialogoOrcamentos.close());
 ui.dialogoOrcamentos.addEventListener("click", (evento) => {
