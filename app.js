@@ -1078,7 +1078,7 @@ function renderListaOrcamentos() {
                 }),
                 criarEl("button", {
                     type: "button", class: "btn btn-perigo",
-                    dataset: { orcamentoAcao: "remover-padrao" }, text: "X",
+                    dataset: { orcamentoAcao: "remover-padrao" }, text: "Remover",
                     disabled: !padraoConfigurado
                 })
             ])
