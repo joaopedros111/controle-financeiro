@@ -370,16 +370,16 @@ test("os cinco temas mantêm identificadores, cores e nomes de exibição", asyn
     assert.match(app, /estado\.tema = ordemTemas\[\(ordemTemas\.indexOf\(atual\) \+ 1\) % ordemTemas\.length\]/);
 });
 
-test("calculadora fica centralizada no topo e oferece operações adicionais", async () => {
+test("calculadora usa o layout centralizado de diálogo e oferece operações adicionais", async () => {
     const [html, app, css] = await Promise.all([
-        read("index.html"), read("app.js"), read("controls.css")
+        read("index.html"), read("app.js"), read("style.css")
     ]);
     for (const id of ["limpar-calculadora", "apagar-calculadora", "calcular-resultado"]) {
         assert.match(html, new RegExp(`id="${id}"`));
     }
     for (const operador of ["(", ")", "%"]) assert.match(html, new RegExp(`data-calculadora="${operador.replace(/[()]/g, "\\$&")}"`));
-    assert.match(css, /\.dialogo-calculadora \{[^}]*position: fixed;[^}]*50%/);
-    assert.match(css, /\.dialogo-calculadora\[open\] \{ animation: none; \}/);
+    assert.match(css, /dialog\[open\]\s*\{[^}]*position:\s*fixed;[^}]*top:\s*var\(--dialogo-viewport-center, 50dvh\)/);
+    assert.match(css, /dialog\[open\]::backdrop\s*\{[^}]*backdrop-filter:/);
     assert.match(app, /apagar-calculadora/);
     assert.match(app, /evento\.key !== "Enter"/);
 });
@@ -423,8 +423,8 @@ test("orçamento foi removido da tela inicial e o gerenciamento fica em Opções
     }
     assert.doesNotMatch(controls, /lista-resumo-orcamentos|orcamento-progresso|orcamento-item/);
     assert.match(app, /class: "despesa-grupo" \+ \(grupo\.excedido \? " acima-do-orcamento" : ""\)/);
-    assert.match(app, /ui\.abrirCategoriasOrcamento\.addEventListener\("click"[\s\S]*mostrarPainelOrcamentos\("categorias"\)[\s\S]*ui\.dialogoOrcamentos\.showModal\(\)/);
-    assert.match(app, /ui\.abrirLimitesOrcamento\.addEventListener\("click"[\s\S]*mostrarPainelOrcamentos\("limites"\)[\s\S]*ui\.dialogoOrcamentos\.showModal\(\)/);
+    assert.match(app, /ui\.abrirCategoriasOrcamento\.addEventListener\("click"[\s\S]*mostrarPainelOrcamentos\("categorias"\)[\s\S]*abrirDialogoModal\(ui\.dialogoOrcamentos\)/);
+    assert.match(app, /ui\.abrirLimitesOrcamento\.addEventListener\("click"[\s\S]*mostrarPainelOrcamentos\("limites"\)[\s\S]*abrirDialogoModal\(ui\.dialogoOrcamentos\)/);
 });
 
 test("resumo, despesas e entradas permanecem sem uma seção separada de planejamento", async () => {
@@ -526,8 +526,8 @@ test("gerenciamento de categorias abre o painel existente a partir de Opções",
     assert.ok(!html.includes('id="gerenciar-categorias"'));
     assert.match(ajustes, /Gerenciar categorias/);
     assert.match(ajustes, /Configurar limites de orçamento/);
-    assert.match(app, /ui\.abrirCategoriasOrcamento\.addEventListener\("click"[\s\S]*renderListaCategorias\(\)[\s\S]*mostrarPainelOrcamentos\("categorias"\)[\s\S]*ui\.dialogoOrcamentos\.showModal\(\)/);
-    assert.match(app, /ui\.abrirLimitesOrcamento\.addEventListener\("click"[\s\S]*renderListaOrcamentos\(\)[\s\S]*mostrarPainelOrcamentos\("limites"\)[\s\S]*ui\.dialogoOrcamentos\.showModal\(\)/);
+    assert.match(app, /ui\.abrirCategoriasOrcamento\.addEventListener\("click"[\s\S]*renderListaCategorias\(\)[\s\S]*mostrarPainelOrcamentos\("categorias"\)[\s\S]*abrirDialogoModal\(ui\.dialogoOrcamentos\)/);
+    assert.match(app, /ui\.abrirLimitesOrcamento\.addEventListener\("click"[\s\S]*renderListaOrcamentos\(\)[\s\S]*mostrarPainelOrcamentos\("limites"\)[\s\S]*abrirDialogoModal\(ui\.dialogoOrcamentos\)/);
 });
 
 test("seções de despesas e entradas usam botões Adicionar e ícones recolhíveis modernos", async () => {
@@ -597,15 +597,18 @@ test("calendário do resumo seleciona um período e a edição acompanha o tecla
     assert.match(app, /document\.documentElement\.clientHeight\s*-\s*viewport\.height\s*-\s*viewport\.offsetTop/);
     assert.match(app, /campoAtivo\s*&&\s*alturaTeclado\s*>\s*80/);
     assert.match(app, /corpo\.style\.position\s*=\s*"fixed"/);
-    assert.match(app, /function restaurarRolagemFundoEdicao\(\)[\s\S]*?window\.scrollTo\(estadoSalvo\.x, estadoSalvo\.y\)/);
-    assert.match(app, /dialogo\.addEventListener\("close"[\s\S]*?restaurarRolagemFundoEdicao\(\)/);
-    assert.match(app, /dialogo\.style\.setProperty\("--dialogo-viewport-top"/);
-    assert.match(controls, /dialog#dialogo-despesa,[\s\S]*?--dialogo-viewport-top[\s\S]*?--dialogo-viewport-height/);
+    assert.match(app, /function restaurarRolagemFundoModal\(\)[\s\S]*?window\.scrollTo\(estadoSalvo\.x, estadoSalvo\.y\)/);
+    assert.match(app, /dialogo\.addEventListener\("close"[\s\S]*?restaurarRolagemFundoModal\(\)/);
+    assert.match(app, /dialogo\.style\.setProperty\("--dialogo-viewport-center"/);
+    assert.match(app, /function abrirDialogoModal\(dialogo\)[\s\S]*?dialogo\.showModal\(\)/);
+    assert.equal((app.match(/\.showModal\(\)/g) || []).length, 1, "todas as aberturas devem usar a função modal compartilhada");
+    assert.match(app, /for \(const dialogo of document\.querySelectorAll\("dialog"\)\)/);
+    assert.match(app, /document\.querySelector\("dialog\[open\]"\)/);
     assert.match(controls, /dialog#dialogo-receita\.teclado-virtual-ativo\s*\{\s*scroll-padding-block:\s*8px/);
-    assert.match(css, /dialog#dialogo-despesa,[\s\S]*?overscroll-behavior:\s*contain/);
-    assert.match(controls, /dialog#dialogo-despesa,[\s\S]*?padding-bottom:\s*0/);
-    assert.match(css, /dialog#dialogo-despesa,[\s\S]*?inset:\s*max\(8px, env\(safe-area-inset-top, 0px\)\) auto auto 50%;/);
-    assert.doesNotMatch(css, /dialog#dialogo-despesa,[\s\S]*?inset:\s*auto auto/);
+    assert.match(css, /dialog\[open\]\s*\{[^}]*overflow-y:\s*auto;[^}]*overscroll-behavior:\s*contain/);
+    assert.match(css, /dialog#dialogo-despesa\[open\][\s\S]*?width:\s*min\(420px/);
+    assert.doesNotMatch(controls, /dialog#dialogo-despesa,\s*dialog#dialogo-receita\s*\{[^}]*position:\s*fixed/);
+    assert.match(css, /#dialogo-orcamentos \.lista-orcamentos\s*\{\s*max-height:\s*none;\s*overflow:\s*visible/);
     assert.match(css, /\.lista-categorias\s*\{[^}]*gap:\s*6px/);
     assert.match(css, /\.lista-categorias\s*>\s*li\s+button\s*\{[^}]*min-height:\s*40px/);
 });

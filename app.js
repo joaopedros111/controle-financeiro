@@ -218,66 +218,92 @@ const ui = {
 
 };
 
-function atualizarPosicaoEdicaoComTeclado() {
+function atualizarPosicaoDialogosAbertos() {
     const viewport = window.visualViewport;
     if (!viewport || !window.matchMedia("(max-width: 600px)").matches) return;
-    const dialogo = [ui.dialogoDespesa, ui.dialogoReceita].find((item) => item.open);
-    if (!dialogo) return;
-    const campoAtivo = dialogo.contains(document.activeElement)
-        && document.activeElement.matches("input:not([type=checkbox]), textarea");
-    const alturaTeclado = document.documentElement.clientHeight - viewport.height - viewport.offsetTop;
-    const tecladoVisivel = campoAtivo && alturaTeclado > 80;
-    dialogo.classList.toggle("teclado-virtual-ativo", tecladoVisivel);
-    dialogo.style.setProperty("--dialogo-viewport-top", `${Math.max(0, viewport.offsetTop)}px`);
-    dialogo.style.setProperty("--dialogo-viewport-height", `${viewport.height}px`);
+    const centro = `${Math.max(0, viewport.offsetTop) + viewport.height / 2}px`;
+    document.querySelectorAll("dialog[open]").forEach((dialogo) => {
+        dialogo.style.setProperty("--dialogo-viewport-center", centro);
+        dialogo.style.setProperty("--dialogo-viewport-height", `${viewport.height}px`);
+        if (![ui.dialogoDespesa, ui.dialogoReceita].includes(dialogo)) return;
+        const campoAtivo = dialogo.contains(document.activeElement)
+            && document.activeElement.matches("input:not([type=checkbox]), textarea");
+        const alturaTeclado = document.documentElement.clientHeight - viewport.height - viewport.offsetTop;
+        dialogo.classList.toggle("teclado-virtual-ativo", campoAtivo && alturaTeclado > 80);
+    });
 }
 
-function agendarAjusteDialogoEdicao() {
-    requestAnimationFrame(atualizarPosicaoEdicaoComTeclado);
+function agendarAtualizacaoPosicaoDialogos() {
+    requestAnimationFrame(atualizarPosicaoDialogosAbertos);
 }
 
-let estadoRolagemFundoEdicao = null;
-const estilosBloqueioRolagem = ["position", "top", "left", "width", "overflow"];
+let estadoRolagemFundoModal = null;
+const estilosBloqueioRolagem = ["position", "top", "left", "right", "width", "overflow"];
 
-function bloquearRolagemFundoEdicao() {
-    if (estadoRolagemFundoEdicao) return;
+function bloquearRolagemFundoModal() {
+    if (estadoRolagemFundoModal) return;
     const corpo = document.body;
-    estadoRolagemFundoEdicao = {
+    const raiz = document.documentElement;
+    estadoRolagemFundoModal = {
         x: window.scrollX,
         y: window.scrollY,
         estilos: Object.fromEntries(estilosBloqueioRolagem.map((propriedade) => [
             propriedade,
             [corpo.style.getPropertyValue(propriedade), corpo.style.getPropertyPriority(propriedade)]
-        ]))
+        ])),
+        overflowRaiz: [raiz.style.getPropertyValue("overflow"), raiz.style.getPropertyPriority("overflow")],
+        gutterRaiz: [raiz.style.getPropertyValue("scrollbar-gutter"), raiz.style.getPropertyPriority("scrollbar-gutter")]
     };
     corpo.style.position = "fixed";
-    corpo.style.top = `${-estadoRolagemFundoEdicao.y}px`;
-    corpo.style.left = `${-estadoRolagemFundoEdicao.x}px`;
-    corpo.style.width = "100%";
+    corpo.style.top = `${-estadoRolagemFundoModal.y}px`;
+    corpo.style.left = "0";
+    corpo.style.right = "0";
+    corpo.style.width = "auto";
     corpo.style.overflow = "hidden";
+    raiz.style.overflow = "hidden";
+    raiz.style.scrollbarGutter = "auto";
 }
 
-function restaurarRolagemFundoEdicao() {
-    if (!estadoRolagemFundoEdicao) return;
-    const estadoSalvo = estadoRolagemFundoEdicao;
-    estadoRolagemFundoEdicao = null;
+function restaurarRolagemFundoModal() {
+    if (!estadoRolagemFundoModal || document.querySelector("dialog[open]")) return;
+    const estadoSalvo = estadoRolagemFundoModal;
+    estadoRolagemFundoModal = null;
     for (const [propriedade, [valor, prioridade]] of Object.entries(estadoSalvo.estilos)) {
         if (valor) document.body.style.setProperty(propriedade, valor, prioridade);
         else document.body.style.removeProperty(propriedade);
     }
+    const raiz = document.documentElement;
+    const [overflow, overflowPriority] = estadoSalvo.overflowRaiz;
+    const [gutter, gutterPriority] = estadoSalvo.gutterRaiz;
+    if (overflow) raiz.style.setProperty("overflow", overflow, overflowPriority);
+    else raiz.style.removeProperty("overflow");
+    if (gutter) raiz.style.setProperty("scrollbar-gutter", gutter, gutterPriority);
+    else raiz.style.removeProperty("scrollbar-gutter");
     window.scrollTo(estadoSalvo.x, estadoSalvo.y);
 }
 
-window.visualViewport?.addEventListener("resize", agendarAjusteDialogoEdicao);
-window.visualViewport?.addEventListener("scroll", agendarAjusteDialogoEdicao);
-document.addEventListener("focusin", agendarAjusteDialogoEdicao);
-document.addEventListener("focusout", () => setTimeout(agendarAjusteDialogoEdicao, 0));
-for (const dialogo of [ui.dialogoDespesa, ui.dialogoReceita]) {
+function abrirDialogoModal(dialogo) {
+    if (dialogo.open) return;
+    bloquearRolagemFundoModal();
+    try {
+        dialogo.showModal();
+        atualizarPosicaoDialogosAbertos();
+    } catch (erro) {
+        restaurarRolagemFundoModal();
+        throw erro;
+    }
+}
+
+window.visualViewport?.addEventListener("resize", agendarAtualizacaoPosicaoDialogos);
+window.visualViewport?.addEventListener("scroll", agendarAtualizacaoPosicaoDialogos);
+document.addEventListener("focusin", agendarAtualizacaoPosicaoDialogos);
+document.addEventListener("focusout", () => setTimeout(agendarAtualizacaoPosicaoDialogos, 0));
+for (const dialogo of document.querySelectorAll("dialog")) {
     dialogo.addEventListener("close", () => {
         dialogo.classList.remove("teclado-virtual-ativo");
-        dialogo.style.removeProperty("--dialogo-viewport-top");
+        dialogo.style.removeProperty("--dialogo-viewport-center");
         dialogo.style.removeProperty("--dialogo-viewport-height");
-        restaurarRolagemFundoEdicao();
+        restaurarRolagemFundoModal();
     });
 }
 
@@ -1473,8 +1499,7 @@ function abrirDialogoReceita(id) {
 
 
 
-    bloquearRolagemFundoEdicao();
-    ui.dialogoReceita.showModal();
+    abrirDialogoModal(ui.dialogoReceita);
 
 }
 
@@ -1852,8 +1877,7 @@ function abrirDialogoDespesa(id) {
 
 
 
-    bloquearRolagemFundoEdicao();
-    ui.dialogoDespesa.showModal();
+    abrirDialogoModal(ui.dialogoDespesa);
 
 }
 
@@ -2132,7 +2156,7 @@ function pedirEscolhaDaSerie(despesa, futuros) {
 
 
 
-    ui.dialogoSerie.showModal();
+    abrirDialogoModal(ui.dialogoSerie);
 
 }
 
@@ -2143,7 +2167,7 @@ function pedirEscolhaDaSerieReceita(receita, futuras) {
     ui.textoSerie.textContent = `\"${receita.nome}\" tem ${futuras} ocorrência${futuras === 1 ? "" : "s"} futura${futuras === 1 ? "" : "s"}. Deseja excluir também as ocorrências futuras?`;
     ui.serieSoEste.textContent = "Só esta entrada";
     ui.serieProximos.textContent = "Esta e as futuras";
-    ui.dialogoSerie.showModal();
+    abrirDialogoModal(ui.dialogoSerie);
 }
 
 
@@ -2597,13 +2621,13 @@ ui.abrirCategoriasOrcamento.addEventListener("click", () => {
     renderListaCategorias();
     mostrarPainelOrcamentos("categorias");
     ui.dialogoAjustes.close();
-    ui.dialogoOrcamentos.showModal();
+    abrirDialogoModal(ui.dialogoOrcamentos);
 });
 ui.abrirLimitesOrcamento.addEventListener("click", () => {
     renderListaOrcamentos();
     mostrarPainelOrcamentos("limites");
     ui.dialogoAjustes.close();
-    ui.dialogoOrcamentos.showModal();
+    abrirDialogoModal(ui.dialogoOrcamentos);
 });
 ui.fecharOrcamentos.addEventListener("click", () => ui.dialogoOrcamentos.close());
 ui.dialogoOrcamentos.addEventListener("click", (evento) => {
@@ -2613,7 +2637,7 @@ ui.dialogoOrcamentos.addEventListener("click", (evento) => {
             ? ui.abrirLimitesOrcamento
             : ui.abrirCategoriasOrcamento;
         ui.dialogoOrcamentos.close();
-        ui.dialogoAjustes.showModal();
+        abrirDialogoModal(ui.dialogoAjustes);
         controle.focus();
     }
 });
@@ -3444,10 +3468,10 @@ ui.abrirAjustes.addEventListener("click", (evento) => {
         menuFoiArrastado = false;
         return;
     }
-    ui.dialogoAjustes.showModal();
+    abrirDialogoModal(ui.dialogoAjustes);
 });
 ui.fecharAjustes.addEventListener("click", () => ui.dialogoAjustes.close());
-ui.abrirCalculadora.addEventListener("click", () => ui.dialogoCalculadora.showModal());
+ui.abrirCalculadora.addEventListener("click", () => abrirDialogoModal(ui.dialogoCalculadora));
 ui.abrirCalendarioResumo.addEventListener("click", () => {
     ui.dataCalendarioResumo.value = `${periodo.ano}-${String(periodo.mes).padStart(2, "0")}-01`;
     try {
@@ -3957,6 +3981,6 @@ async function resolveSyncConflict(index, choice) {
     }
     settingsConflictActive = (latestMeta.conflicts || []).some((entry) => entry.kind === "settings"); writeSyncMeta(conflictUserUid, latestMeta); renderSyncConflicts();
 }
-syncUi.conflicts.addEventListener("click", () => { renderSyncConflicts(); syncUi.conflictDialog.showModal(); });
+syncUi.conflicts.addEventListener("click", () => { renderSyncConflicts(); abrirDialogoModal(syncUi.conflictDialog); });
 syncUi.closeConflicts.addEventListener("click", () => syncUi.conflictDialog.close());
 if (firebaseConfigurado(firebaseConfig)) void loadFirebaseSync();

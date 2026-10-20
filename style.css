@@ -13,43 +13,6 @@
     }
 }
 
-/* Formulários de lançamento: tamanho e espaçamento compactos. */
-dialog#dialogo-despesa,
-dialog#dialogo-receita {
-    height: fit-content;
-    min-height: 0;
-    max-height: min(86dvh, 600px);
-    overscroll-behavior: contain;
-    -webkit-overflow-scrolling: touch;
-}
-dialog#dialogo-despesa .dialogo-corpo,
-dialog#dialogo-receita .dialogo-corpo { height: auto; min-height: 0; padding: 14px; }
-dialog#dialogo-despesa .dialogo-corpo > .bloco-topo,
-dialog#dialogo-receita .dialogo-corpo > .bloco-topo { margin-bottom: 10px; }
-dialog#dialogo-despesa .campos,
-dialog#dialogo-receita .campos { align-content: start; gap: 8px 10px; }
-dialog#dialogo-despesa .campo,
-dialog#dialogo-receita .campo { gap: 2px; font-size: .75rem; }
-dialog#dialogo-despesa .campo input,
-dialog#dialogo-despesa .campo select,
-dialog#dialogo-receita .campo input { min-height: 40px; }
-dialog#dialogo-despesa .acoes-dialogo,
-dialog#dialogo-receita .acoes-dialogo { position: static; margin-top: 12px; padding-top: 10px; }
-
-@media (max-width: 600px) {
-    dialog#dialogo-despesa,
-    dialog#dialogo-receita {
-        inset: max(8px, env(safe-area-inset-top, 0px)) auto auto 50%;
-        width: min(calc(100% - 28px), 420px);
-        max-height: calc(100dvh - 16px);
-        margin: 0;
-        border: 0;
-        border-radius: 24px;
-        padding: 0;
-        transform: translateX(-50%);
-    }
-}
-
 .bloco-retrair {
     display: inline-flex;
     align-items: center;
@@ -1177,22 +1140,9 @@ dialog#dialogo-receita #campo-repetir-receita { grid-column: 1 / -1; }
     dialog .nova-categoria { padding: 16px 0 0; background: var(--superficie); }
 
     @media (max-width: 600px) {
-        dialog {
-            position: fixed;
-            inset: auto 0 0;
-            width: 100%;
-            max-width: none;
-            max-height: min(92dvh, 820px);
-            margin: 0;
-            border: 0;
-            border-radius: 24px 24px 0 0;
-            padding-bottom: env(safe-area-inset-bottom, 0px);
-            animation: subir-dialogo .2s ease-out;
-        }
-
         dialog .dialogo-corpo { padding: 24px 20px 20px; }
         dialog .dialogo-corpo > .bloco-topo { margin-bottom: 20px; }
-        dialog .acoes-dialogo { position: sticky; bottom: -20px; padding: 14px 0 4px; margin-top: 20px; background: var(--superficie); }
+        dialog .acoes-dialogo { position: sticky; bottom: 0; z-index: 1; padding: 12px 0 4px; margin-top: 20px; background: var(--superficie); }
         dialog#dialogo-orcamentos .lista-categorias > li {
             grid-template-columns: minmax(0, 1fr) auto auto;
             gap: 6px;
@@ -1201,11 +1151,6 @@ dialog#dialogo-receita #campo-repetir-receita { grid-column: 1 / -1; }
         dialog#dialogo-orcamentos .lista-categorias > li button { width: auto; min-width: 40px; }
         dialog#dialogo-orcamentos .nova-categoria { grid-template-columns: 1fr; }
         dialog#dialogo-orcamentos .nova-categoria .btn { width: 100%; }
-    }
-
-    @keyframes subir-dialogo {
-        from { opacity: .6; transform: translateY(24px); }
-        to { opacity: 1; transform: translateY(0); }
     }
 
     /* Área interna */
@@ -1525,9 +1470,6 @@ dialog#dialogo-receita #campo-repetir-receita { grid-column: 1 / -1; }
     }
     @media (max-width: 380px) {
         .topo { padding: 13px; }
-    }
-    @media (max-width: 600px) {
-        dialog { border-radius: 26px 26px 0 0; }
     }
     @media (prefers-reduced-motion: reduce) {
         .bloco, .btn { transition: none; }
@@ -1955,4 +1897,79 @@ dialog#dialogo-receita #campo-repetir-receita { grid-column: 1 / -1; }
     border: 0;
     border-bottom: 1px solid var(--borda);
     border-radius: 0;
+}
+
+/* All native dialogs share one centered, isolated window layout. */
+dialog[open] {
+    position: fixed;
+    inset: auto auto auto auto;
+    top: var(--dialogo-viewport-center, 50dvh);
+    left: 50%;
+    width: min(440px, calc(100vw - 32px));
+    max-width: calc(100vw - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px) - 24px);
+    height: fit-content;
+    max-height: min(760px, calc(var(--dialogo-viewport-height, 100dvh) - max(24px, env(safe-area-inset-top, 0px) + env(safe-area-inset-bottom, 0px))));
+    margin: 0;
+    padding: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
+    border: 1px solid var(--borda);
+    border-radius: 24px;
+    background: var(--superficie);
+    box-shadow: 0 24px 80px rgba(15, 23, 42, .3);
+    transform: translate(-50%, -50%);
+    -webkit-overflow-scrolling: touch;
+}
+
+dialog[open]::backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(13, 18, 38, .58);
+    backdrop-filter: blur(3px);
+    -webkit-backdrop-filter: blur(3px);
+}
+
+dialog[open] .dialogo-corpo {
+    height: auto;
+    min-height: 0;
+}
+
+dialog[open] .dialogo-corpo > .bloco-topo {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    padding-block: 4px;
+    background: var(--superficie);
+}
+
+dialog[open] .acoes-dialogo {
+    position: sticky;
+    bottom: 0;
+    z-index: 1;
+    background: var(--superficie);
+}
+
+dialog#dialogo-ajustes[open] { width: min(560px, calc(100vw - 32px)); }
+dialog#dialogo-orcamentos[open] { width: min(680px, calc(100vw - 32px)); }
+dialog#dialogo-despesa[open],
+dialog#dialogo-receita[open] { width: min(420px, calc(100vw - 28px)); }
+dialog#dialogo-calculadora[open] { width: min(380px, calc(100vw - 28px)); }
+dialog#dialogo-conflitos-sincronizacao[open] { width: min(560px, calc(100vw - 32px)); }
+
+@media (max-width: 600px) {
+    dialog[open] {
+        width: min(440px, calc(100vw - 28px));
+        max-height: min(820px, calc(var(--dialogo-viewport-height, 100dvh) - max(24px, env(safe-area-inset-top, 0px) + env(safe-area-inset-bottom, 0px))));
+    }
+
+    dialog#dialogo-ajustes[open],
+    dialog#dialogo-orcamentos[open] { width: min(440px, calc(100vw - 28px)); }
+
+    dialog .dialogo-corpo { padding: 18px 16px 16px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    dialog[open] { scroll-behavior: auto; }
 }

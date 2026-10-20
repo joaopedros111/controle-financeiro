@@ -93,8 +93,6 @@
     }
     .resumo-calendario { width: 34px; min-width: 34px; height: 34px; min-height: 34px; padding: 6px; }
     .resumo-calendario svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
-    .dialogo-calculadora { position: fixed; inset: max(8vh, env(safe-area-inset-top, 0px)) auto auto 50%; width: min(calc(100% - 28px), 380px); height: fit-content; max-height: 90dvh; margin: 0; border: 1px solid var(--borda); border-radius: 22px; padding: 0; transform: translateX(-50%); }
-    .dialogo-calculadora[open] { animation: none; }
     .dialogo-calculadora .calculadora-corpo { height: auto; min-height: 0; }
     .visor-calculadora { width: 100%; min-height: 52px; margin-bottom: 12px; padding: 8px 12px; border: 1px solid var(--borda); border-radius: 12px; color: var(--texto); background: var(--superficie-suave); text-align: right; font-size: 1.35rem; }
     .teclas-calculadora { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
@@ -103,46 +101,9 @@
     .teclas-calculadora button:focus-visible { outline: 3px solid color-mix(in srgb, var(--primaria) 45%, transparent); outline-offset: 2px; }
 
     @media (max-width: 600px) {
-        dialog#dialogo-despesa,
-        dialog#dialogo-receita {
-            inset: calc(var(--dialogo-viewport-top, 0px) + max(8px, env(safe-area-inset-top, 0px))) auto auto 50%;
-            max-height: max(0px, calc(var(--dialogo-viewport-height, 100dvh) - max(16px, calc(env(safe-area-inset-top, 0px) + 16px))));
-            margin: 0;
-            padding-bottom: 0;
-            transform: translateX(-50%);
-            animation: none;
-            overflow-y: auto;
-            overscroll-behavior: contain;
-            -webkit-overflow-scrolling: touch;
-        }
-
         dialog#dialogo-despesa.teclado-virtual-ativo,
         dialog#dialogo-receita.teclado-virtual-ativo { scroll-padding-block: 8px; }
     }
-}
-
-/* Keep category and budget dialogs aligned with the compact launch forms on mobile. */
-@media (max-width: 600px) {
-    dialog#dialogo-ajustes,
-    dialog#dialogo-orcamentos {
-        position: fixed;
-        inset: max(8px, env(safe-area-inset-top, 0px)) auto auto 50%;
-        width: min(calc(100% - 28px), 420px);
-        max-height: calc(100dvh - 16px);
-        height: fit-content;
-        margin: 0;
-        border: 1px solid var(--borda);
-        border-radius: 24px;
-        padding: 0;
-        transform: translateX(-50%);
-        animation: none;
-    }
-
-    dialog#dialogo-ajustes .dialogo-corpo,
-    dialog#dialogo-orcamentos .dialogo-corpo { height: auto; min-height: 0; padding: 14px; }
-
-    dialog#dialogo-ajustes .acoes-dialogo,
-    dialog#dialogo-orcamentos .acoes-dialogo { position: static; }
 }
 
 /* Present category and budget entries directly in the dialog body, without nested cards. */
