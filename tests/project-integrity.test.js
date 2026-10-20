@@ -594,7 +594,9 @@ test("calendário do resumo seleciona um período e a edição acompanha o tecla
     assert.match(app, /ui\.dataCalendarioResumo\.addEventListener\("change"[\s\S]*?mudarPeriodo\(/);
     assert.match(app, /window\.visualViewport\?\.addEventListener\("resize"/);
     assert.match(app, /document\.documentElement\.clientHeight\s*-\s*viewport\.height\s*-\s*viewport\.offsetTop/);
+    assert.match(app, /campoAtivo\s*&&\s*alturaTeclado\s*>\s*80/);
     assert.match(app, /dialogo\.style\.setProperty\("--dialogo-viewport-bottom"/);
+    assert.match(controls, /dialog#dialogo-despesa:not\(\.teclado-virtual-ativo\)[\s\S]*?inset:\s*50% auto auto 50%[\s\S]*?transform:\s*translate\(-50%, -50%\)/);
     assert.match(controls, /dialog#dialogo-despesa\.teclado-virtual-ativo[\s\S]*?--dialogo-viewport-bottom/);
     assert.match(controls, /dialog#dialogo-receita\.teclado-virtual-ativo/);
     assert.match(controls, /dialog#dialogo-receita\.teclado-virtual-ativo[\s\S]*?padding-bottom:\s*0/);

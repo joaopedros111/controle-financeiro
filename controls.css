@@ -103,6 +103,13 @@
     .teclas-calculadora button:focus-visible { outline: 3px solid color-mix(in srgb, var(--primaria) 45%, transparent); outline-offset: 2px; }
 
     @media (max-width: 600px) {
+        dialog#dialogo-despesa:not(.teclado-virtual-ativo),
+        dialog#dialogo-receita:not(.teclado-virtual-ativo) {
+            inset: 50% auto auto 50%;
+            transform: translate(-50%, -50%);
+            animation: none;
+        }
+
         dialog#dialogo-despesa.teclado-virtual-ativo,
         dialog#dialogo-receita.teclado-virtual-ativo {
             inset: auto auto calc(var(--dialogo-viewport-bottom, 0px) + 8px) 50%;
