@@ -73,7 +73,6 @@ const ui = {
     resultadoVerificacaoAtualizacao: $("resultado-verificacao-atualizacao"),
     statusAtualizacao: $("status-atualizacao"),
     dialogoOrcamentos: $("dialogo-orcamentos"),
-    fecharOrcamentos: $("fechar-orcamentos"),
     abrirCategoriasOrcamento: $("abrir-categorias-orcamento"),
     abrirLimitesOrcamento: $("abrir-limites-orcamento"),
     painelCategoriasOrcamento: $("painel-categorias-orcamento"),
@@ -2628,13 +2627,17 @@ ui.abrirLimitesOrcamento.addEventListener("click", () => {
     ui.dialogoAjustes.close();
     abrirDialogoModal(ui.dialogoOrcamentos);
 });
-ui.fecharOrcamentos.addEventListener("click", () => ui.dialogoOrcamentos.close());
 ui.dialogoOrcamentos.addEventListener("click", (evento) => {
-    if (evento.target === ui.dialogoOrcamentos) ui.dialogoOrcamentos.close();
+    if (evento.target === ui.dialogoOrcamentos) {
+        ui.dialogoOrcamentos.close();
+        return;
+    }
+
     if (evento.target.closest("[data-orcamento-voltar]")) {
         const controle = ui.painelCategoriasOrcamento.hidden
             ? ui.abrirLimitesOrcamento
             : ui.abrirCategoriasOrcamento;
+
         ui.dialogoOrcamentos.close();
         abrirDialogoModal(ui.dialogoAjustes);
         controle.focus();
