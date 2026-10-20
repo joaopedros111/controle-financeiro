@@ -120,3 +120,27 @@
         dialog#dialogo-receita.teclado-virtual-ativo { scroll-padding-block: 8px; }
     }
 }
+
+/* Keep category and budget dialogs aligned with the compact launch forms on mobile. */
+@media (max-width: 600px) {
+    dialog#dialogo-ajustes,
+    dialog#dialogo-orcamentos {
+        position: fixed;
+        inset: max(8px, env(safe-area-inset-top, 0px)) auto auto 50%;
+        width: min(calc(100% - 28px), 420px);
+        max-height: calc(100dvh - 16px);
+        height: fit-content;
+        margin: 0;
+        border: 1px solid var(--borda);
+        border-radius: 24px;
+        padding: 0;
+        transform: translateX(-50%);
+        animation: none;
+    }
+
+    dialog#dialogo-ajustes .dialogo-corpo,
+    dialog#dialogo-orcamentos .dialogo-corpo { height: auto; min-height: 0; padding: 14px; }
+
+    dialog#dialogo-ajustes .acoes-dialogo,
+    dialog#dialogo-orcamentos .acoes-dialogo { position: static; }
+}
