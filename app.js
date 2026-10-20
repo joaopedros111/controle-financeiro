@@ -1049,11 +1049,11 @@ function renderListaOrcamentos() {
             ]),
             criarEl("div", { class: "orcamento-acoes" }, [
                 criarEl("button", {
-                    type: "button", class: "btn btn-secundario",
+                    type: "button", class: "btn btn-primario",
                     dataset: { orcamentoAcao: "salvar-padrao" }, text: "Salvar limite"
                 }),
                 criarEl("button", {
-                    type: "button", class: "btn btn-secundario",
+                    type: "button", class: "btn btn-perigo",
                     dataset: { orcamentoAcao: "remover-padrao" }, text: "Remover limite",
                     disabled: !padraoConfigurado
                 })
@@ -1812,7 +1812,9 @@ function abrirDialogoDespesa(id) {
 
     ui.despesaNome.value = despesa ? despesa.nome : "";
 
-    ui.despesaCategoria.value = despesa ? despesa.categoria : CATEGORIA_FIXA;
+    ui.despesaCategoria.value = despesa
+        ? despesa.categoria
+        : (estado.categorias.includes(CATEGORIA_FIXA) ? CATEGORIA_FIXA : estado.categorias[0] || "");
 
     ui.despesaValor.value = despesa && despesa.valor ? String(despesa.valor) : "";
 
@@ -2379,16 +2381,6 @@ function renderListaCategorias() {
 
 
 
-        if (nome === CATEGORIA_FIXA) {
-
-            item.append(criarEl("span", { class: "nota", text: "padrão" }));
-
-            return item;
-
-        }
-
-
-
         item.append(
 
             criarEl("button", {
@@ -2547,6 +2539,11 @@ function renomearCategoria(antigo) {
 
 function removerCategoria(nome) {
 
+    if (estado.categorias.length <= 1) {
+        avisar("Mantenha pelo menos uma categoria.");
+        return;
+    }
+
 
 
     const emUso = Object.values(estado.meses)
@@ -2555,11 +2552,10 @@ function removerCategoria(nome) {
 
 
 
+    const categoriaDestino = estado.categorias.find((categoria) => categoria !== nome) || CATEGORIA_FIXA;
     const aviso = emUso
-
-        ? "Remover “" + nome + "”? As " + emUso + " despesa(s) dessa categoria passarão para “" + CATEGORIA_FIXA + "”."
-
-        : "Remover a categoria “" + nome + "”?";
+        ? "Remover " + nome + "? As " + emUso + " despesa(s) dessa categoria passarão para " + categoriaDestino + "."
+        : "Remover a categoria " + nome + "?";
 
 
 
@@ -2576,7 +2572,7 @@ function removerCategoria(nome) {
 
         mes.despesas.forEach((d) => {
 
-            if (d.categoria === nome) d.categoria = CATEGORIA_FIXA;
+            if (d.categoria === nome) d.categoria = categoriaDestino;
 
         });
 
@@ -2906,6 +2902,25 @@ function limparMes() {
 
 
 
+function excluirTudo() {
+    const total = Object.values(estado.meses).reduce(
+        (soma, mes) => soma + mes.receitas.length + mes.despesas.length, 0
+    );
+    if (!total) {
+        avisar("Não há lançamentos para excluir.");
+        return;
+    }
+    if (!confirm("Excluir todas as entradas e despesas de todos os meses? Essa ação não pode ser desfeita.")) return;
+    Object.values(estado.meses).forEach((mes) => {
+        mes.receitas = [];
+        mes.despesas = [];
+    });
+    renderReceitas();
+    renderDespesas();
+    atualizarResumo();
+    avisar("Todos os lançamentos foram excluídos.");
+}
+
 function baixarArquivo(conteudo, nome, tipo) {
 
 
@@ -3074,6 +3089,7 @@ function importarBackup(arquivo) {
 ui.copiarMesAnterior.addEventListener("click", copiarDoMesAnterior);
 
 ui.limparMes.addEventListener("click", limparMes);
+$("excluir-tudo").addEventListener("click", excluirTudo);
 
 ui.exportarCsv.addEventListener("click", exportarCsv);
 

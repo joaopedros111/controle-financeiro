@@ -299,7 +299,6 @@ export function normalizarEstado(bruto, criarId = gerarId) {
     }
 
     if (!estado.categorias.length) estado.categorias = [...CATEGORIAS_PADRAO];
-    if (!estado.categorias.includes(CATEGORIA_FIXA)) estado.categorias.push(CATEGORIA_FIXA);
     Object.keys(estado.orcamentos.padrao).forEach((categoria) => {
         if (!estado.categorias.includes(categoria)) estado.categorias.push(categoria);
     });

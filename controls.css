@@ -160,3 +160,53 @@
     border-bottom: 1px solid var(--borda);
     border-radius: 0;
 }
+
+#dialogo-orcamentos .orcamento-edicao {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 8px;
+}
+
+#dialogo-orcamentos .orcamento-campo { grid-column: 1; }
+#dialogo-orcamentos .orcamento-acoes {
+    grid-column: 2;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-self: end;
+    gap: 6px;
+}
+
+#dialogo-orcamentos .orcamento-acoes .btn {
+    min-width: 0;
+    padding: 6px 5px;
+    border: 1px solid var(--borda);
+    font-size: .68rem;
+}
+
+#dialogo-orcamentos .orcamento-acoes [data-orcamento-acao="salvar-padrao"] {
+    color: #fff;
+    border-color: var(--primaria);
+    background: var(--primaria);
+}
+
+#dialogo-orcamentos .orcamento-acoes [data-orcamento-acao="remover-padrao"] {
+    color: var(--vermelho);
+    border-color: color-mix(in srgb, var(--vermelho) 45%, var(--borda));
+    background: var(--vermelho-suave);
+}
+
+#dialogo-orcamentos #lista-categorias button,
+#dialogo-ajustes .acoes-ferramentas #limpar-mes,
+#dialogo-ajustes .acoes-ferramentas #excluir-tudo {
+    border: 1px solid var(--borda);
+}
+
+#dialogo-ajustes .acoes-ferramentas #limpar-mes { grid-column: auto; }
+#dialogo-ajustes .acoes-ferramentas #limpar-mes,
+#dialogo-ajustes .acoes-ferramentas #excluir-tudo {
+    color: var(--vermelho);
+    border-color: color-mix(in srgb, var(--vermelho) 45%, var(--borda));
+}
+
+#dialogo-orcamentos #lista-categorias [data-acao="remover"] {
+    border-color: color-mix(in srgb, var(--vermelho) 45%, var(--borda));
+}
