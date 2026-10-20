@@ -1387,26 +1387,26 @@ dialog#dialogo-receita #campo-repetir-receita { grid-column: 1 / -1; }
 /* Acabamento visual: identidade mais atual, mantendo fluxos e componentes existentes. */
 @layer base {
     :root {
-        --fundo: #f4f6fb;
+        --fundo: #f2f5f3;
         --superficie: #ffffff;
-        --superficie-suave: #f7f8fc;
-        --texto: #172033;
-        --texto-secundario: #748097;
-        --borda: #e6eaf2;
-        --primaria: #5856d6;
-        --primaria-hover: #4745bd;
-        --primaria-suave: #f0efff;
-        --verde: #0f9f8f;
-        --verde-suave: #e8faf6;
-        --vermelho: #e45566;
-        --vermelho-suave: #fff0f2;
-        --ambar: #d88a25;
-        --ambar-suave: #fff7e9;
-        --sombra-card: 0 8px 28px -16px rgba(30, 41, 70, .22), 0 2px 8px rgba(30, 41, 70, .035);
-        --sombra-flutuante: 0 18px 44px -24px rgba(44, 49, 115, .3), 0 5px 16px rgba(30, 41, 70, .06);
+        --superficie-suave: #f6f8f7;
+        --texto: #1d2923;
+        --texto-secundario: #68776e;
+        --borda: #e1e8e3;
+        --primaria: #087f5b;
+        --primaria-hover: #066847;
+        --primaria-suave: #e7f4ed;
+        --verde: #16845e;
+        --verde-suave: #e8f5ed;
+        --vermelho: #c94f5c;
+        --vermelho-suave: #fff0f0;
+        --ambar: #a96816;
+        --ambar-suave: #fff6e6;
+        --sombra-card: 0 10px 30px -16px rgba(30, 57, 43, .2), 0 2px 8px rgba(30, 57, 43, .045);
+        --sombra-flutuante: 0 18px 44px -24px rgba(28, 67, 48, .25), 0 5px 16px rgba(30, 57, 43, .06);
         --raio: 22px;
         --raio-menor: 15px;
-        --foco: 0 0 0 4px rgba(88, 86, 214, .18);
+        --foco: 0 0 0 4px rgba(8, 127, 91, .2);
     }
 
     :root[data-tema="escuro"] {
@@ -1449,10 +1449,10 @@ dialog#dialogo-receita #campo-repetir-receita { grid-column: 1 / -1; }
 
     .marca-icone {
         color: #fff;
-        background: linear-gradient(145deg, #6967e8, #4543b8 72%, #33358a);
+        background: linear-gradient(145deg, #21a778, #087f5b 72%, #07543f);
         border: 1px solid rgba(255, 255, 255, .24);
         border-radius: 16px;
-        box-shadow: 0 9px 20px -8px rgba(75, 73, 190, .72), inset 0 1px 0 rgba(255,255,255,.3);
+        box-shadow: 0 9px 20px -8px rgba(8, 127, 91, .48), inset 0 1px 0 rgba(255,255,255,.3);
     }
 
     .marca-icone svg { width: 26px; height: 26px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
@@ -1499,8 +1499,8 @@ dialog#dialogo-receita #campo-repetir-receita { grid-column: 1 / -1; }
     .bloco-topo h2 { letter-spacing: -.035em; }
     .grafico-bloco { background: linear-gradient(180deg, var(--superficie), color-mix(in srgb, var(--superficie-suave) 54%, var(--superficie))); }
     .grafico-barra { box-shadow: 0 3px 9px -5px currentColor; }
-    .grafico-barra-entrada { background: linear-gradient(180deg, #8aa8ff, #5856d6); color: #5856d6; }
-    .grafico-barra-despesa { background: linear-gradient(180deg, #70dfca, #0f9f8f); color: #0f9f8f; }
+    .grafico-barra-entrada { background: linear-gradient(180deg, #55c99b, #087f5b); color: #087f5b; }
+    .grafico-barra-despesa { background: linear-gradient(180deg, #f08b92, #c94f5c); color: #c94f5c; }
 
     .btn { transition: transform .16s ease, background-color .18s ease, box-shadow .18s ease, border-color .18s ease; }
     .btn-primario { background: linear-gradient(135deg, var(--primaria), var(--primaria-hover)); box-shadow: 0 7px 16px -9px color-mix(in srgb, var(--primaria) 80%, transparent); }
