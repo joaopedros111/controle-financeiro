@@ -1002,7 +1002,9 @@ function renderDespesas() {
                 })])
             ])
         ]),
-        criarEl("div", { class: "despesa-grupo-itens" }, grupo.despesas.map(criarLinhaDespesa))
+        criarEl("div", { class: "despesa-grupo-itens" }, [...grupo.despesas]
+            .sort((a, b) => a.nome.localeCompare(b.nome, LOCALES[idiomaAtual] || "pt-BR", { sensitivity: "base" }))
+            .map(criarLinhaDespesa))
     ])));
     ui.vazioDespesas.hidden = despesas.length > 0;
     ui.vazioDespesas.textContent =

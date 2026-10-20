@@ -557,7 +557,8 @@ test("despesas renderizam por categoria mantendo linhas e eventos delegados", as
 
     assert.match(core, /export function agruparLancamentosComOrcamento/);
     assert.match(render, /agruparLancamentosComOrcamento\(despesas, estado\.categorias, estado\.orcamentos\)/);
-    assert.match(render, /grupo\.despesas\.map\(criarLinhaDespesa\)/);
+    assert.match(render, /\[\.\.\.grupo\.despesas\][\s\S]*?\.sort\(\(a, b\) => a\.nome\.localeCompare\(b\.nome, LOCALES\[idiomaAtual\]/);
+    assert.match(render, /\.map\(criarLinhaDespesa\)/);
     assert.match(render, /grupo\.totalCentavos \/ 100/);
     assert.match(render, /class: "despesa-grupo-categoria", text: grupo\.categoria/);
     assert.match(render, /grupo\.limiteCentavos === null \? \[\] : \[criarEl\("small"/);
