@@ -642,7 +642,7 @@ dialog#dialogo-receita .acoes-dialogo { position: static; margin-top: 12px; padd
     box-shadow: var(--sombra-flutuante);
 }
 
-.resumo-cabecalho { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.resumo-cabecalho { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
 .resumo-cabecalho .resumo-titulo { margin-bottom: 10px; }
 .resumo-acoes { position: relative; display: flex; flex: 0 0 auto; align-items: center; gap: 6px; }
 .resumo-visibilidade { width: 34px; min-width: 34px; height: 34px; min-height: 34px; padding: 6px; margin: -5px -4px 4px 0; }
