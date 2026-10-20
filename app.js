@@ -228,13 +228,8 @@ function atualizarPosicaoEdicaoComTeclado() {
     const alturaTeclado = document.documentElement.clientHeight - viewport.height - viewport.offsetTop;
     const tecladoVisivel = campoAtivo && alturaTeclado > 80;
     dialogo.classList.toggle("teclado-virtual-ativo", tecladoVisivel);
-    if (tecladoVisivel) {
-        dialogo.style.setProperty("--dialogo-viewport-bottom", `${Math.max(0, alturaTeclado)}px`);
-        dialogo.style.setProperty("--dialogo-viewport-height", `${viewport.height}px`);
-    } else {
-        dialogo.style.removeProperty("--dialogo-viewport-bottom");
-        dialogo.style.removeProperty("--dialogo-viewport-height");
-    }
+    dialogo.style.setProperty("--dialogo-viewport-top", `${Math.max(0, viewport.offsetTop)}px`);
+    dialogo.style.setProperty("--dialogo-viewport-height", `${viewport.height}px`);
 }
 
 function agendarAjusteDialogoEdicao() {
@@ -280,7 +275,7 @@ document.addEventListener("focusout", () => setTimeout(agendarAjusteDialogoEdica
 for (const dialogo of [ui.dialogoDespesa, ui.dialogoReceita]) {
     dialogo.addEventListener("close", () => {
         dialogo.classList.remove("teclado-virtual-ativo");
-        dialogo.style.removeProperty("--dialogo-viewport-bottom");
+        dialogo.style.removeProperty("--dialogo-viewport-top");
         dialogo.style.removeProperty("--dialogo-viewport-height");
         restaurarRolagemFundoEdicao();
     });

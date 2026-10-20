@@ -103,21 +103,20 @@
     .teclas-calculadora button:focus-visible { outline: 3px solid color-mix(in srgb, var(--primaria) 45%, transparent); outline-offset: 2px; }
 
     @media (max-width: 600px) {
-        dialog#dialogo-despesa:not(.teclado-virtual-ativo),
-        dialog#dialogo-receita:not(.teclado-virtual-ativo) {
-            inset: 50% auto auto 50%;
-            transform: translate(-50%, -50%);
-            animation: none;
-        }
-
-        dialog#dialogo-despesa.teclado-virtual-ativo,
-        dialog#dialogo-receita.teclado-virtual-ativo {
-            inset: auto auto calc(var(--dialogo-viewport-bottom, 0px) + 8px) 50%;
-            max-height: var(--dialogo-viewport-height, 92dvh);
+        dialog#dialogo-despesa,
+        dialog#dialogo-receita {
+            inset: calc(var(--dialogo-viewport-top, 0px) + max(8px, env(safe-area-inset-top, 0px))) auto auto 50%;
+            max-height: max(0px, calc(var(--dialogo-viewport-height, 100dvh) - max(16px, calc(env(safe-area-inset-top, 0px) + 16px))));
             margin: 0;
             padding-bottom: 0;
             transform: translateX(-50%);
             animation: none;
+            overflow-y: auto;
+            overscroll-behavior: contain;
+            -webkit-overflow-scrolling: touch;
         }
+
+        dialog#dialogo-despesa.teclado-virtual-ativo,
+        dialog#dialogo-receita.teclado-virtual-ativo { scroll-padding-block: 8px; }
     }
 }
