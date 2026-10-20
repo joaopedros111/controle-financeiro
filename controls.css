@@ -161,6 +161,14 @@
     border: 1px solid var(--borda);
 }
 
+#dialogo-orcamentos #lista-categorias button {
+    min-width: 76px;
+    min-height: 38px;
+    padding: 6px 9px;
+    font-size: .74rem;
+    white-space: nowrap;
+}
+
 #dialogo-ajustes .acoes-ferramentas #limpar-mes { grid-column: auto; }
 #dialogo-ajustes .acoes-ferramentas #limpar-mes,
 #dialogo-ajustes .acoes-ferramentas #excluir-tudo {
@@ -169,5 +177,7 @@
 }
 
 #dialogo-orcamentos #lista-categorias [data-acao="remover"] {
+    color: var(--vermelho);
     border-color: color-mix(in srgb, var(--vermelho) 45%, var(--borda));
+    background: var(--vermelho-suave);
 }
