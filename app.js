@@ -1075,7 +1075,7 @@ function renderListaOrcamentos() {
             criarEl("div", { class: "orcamento-acoes" }, [
                 criarEl("button", {
                     type: "button", class: "btn btn-primario",
-                    dataset: { orcamentoAcao: "salvar-padrao" }, text: "Salvar limite"
+                    dataset: { orcamentoAcao: "salvar-padrao" }, text: "Salvar"
                 }),
                 criarEl("button", {
                     type: "button", class: "btn btn-perigo",

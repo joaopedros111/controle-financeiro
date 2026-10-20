@@ -250,7 +250,7 @@ const FRASES = [
     ["Adicione, renomeie ou remova categorias usadas nos lançamentos e orçamentos.", "Add, rename, or remove categories used in transactions and budgets.", "Añade, cambia el nombre o elimina categorías de movimientos y presupuestos.", "Ajoutez, renommez ou supprimez les catégories utilisées dans les opérations et les budgets.", "Füge Kategorien für Buchungen und Budgets hinzu, benenne sie um oder entferne sie.", "取引や予算で使うカテゴリを追加、名前変更、削除できます。"],
     ["Nome da nova categoria", "New category name", "Nombre de la nueva categoría", "Nom de la nouvelle catégorie", "Name der neuen Kategorie", "新しいカテゴリ名"],
     ["Adicionar categoria", "Add category", "Añadir categoría", "Ajouter une catégorie", "Kategorie hinzufügen", "カテゴリを追加"],
-    ["Salvar limite", "Save limit", "Guardar límite", "Enregistrer la limite", "Limit speichern", "上限を保存"],
+    ["Salvar", "Save limit", "Guardar límite", "Enregistrer la limite", "Limit speichern", "上限を保存"],
     ["Remover", "Remove limit", "Eliminar límite", "Supprimer la limite", "Limit entfernen", "上限を削除"],
     ["padrão", "default", "predeterminado", "par défaut", "Standard", "標準"],
     ["Renomear", "Rename", "Cambiar nombre", "Renommer", "Umbenennen", "名前を変更"],
