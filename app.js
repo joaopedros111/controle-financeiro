@@ -225,7 +225,7 @@ function atualizarPosicaoEdicaoComTeclado() {
     if (!dialogo) return;
     const campoAtivo = dialogo.contains(document.activeElement)
         && document.activeElement.matches("input:not([type=checkbox]), textarea");
-    const alturaTeclado = window.innerHeight - viewport.height - viewport.offsetTop;
+    const alturaTeclado = document.documentElement.clientHeight - viewport.height - viewport.offsetTop;
     const tecladoVisivel = campoAtivo && alturaTeclado > 80;
     dialogo.classList.toggle("teclado-virtual-ativo", tecladoVisivel);
     if (tecladoVisivel) {

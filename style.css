@@ -1327,7 +1327,7 @@ dialog#dialogo-receita #campo-repetir-receita { grid-column: 1 / -1; }
     /* Gerenciar categorias */
     .lista-categorias {
         display: grid;
-        gap: 10px;
+        gap: 6px;
         margin: 0;
         padding: 0;
         list-style: none;
@@ -1335,17 +1335,19 @@ dialog#dialogo-receita #campo-repetir-receita { grid-column: 1 / -1; }
 
 .lista-categorias > li {
     display: grid;
-    grid-template-columns: 1fr auto auto;
+    grid-template-columns: minmax(0, 1fr) auto auto;
     align-items: center;
-    gap: 8px;
+    gap: 6px;
 
-    padding: 12px;
+    padding: 8px 10px;
     border: 1px solid var(--borda);
     border-radius: 12px;
     background: var(--superficie-suave);
 }
 
     .lista-categorias > li button {
+        min-height: 40px;
+        padding: 7px 10px;
         flex-shrink: 0;
     }
 

@@ -108,6 +108,7 @@
             inset: auto auto var(--dialogo-viewport-bottom, 0px) 50%;
             max-height: var(--dialogo-viewport-height, 92dvh);
             margin: 0;
+            padding-bottom: 0;
             transform: translateX(-50%);
             animation: none;
         }

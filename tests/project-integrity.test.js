@@ -585,17 +585,21 @@ test("estado financeiro não é salvo automaticamente após leitura inválida", 
 });
 
 test("calendário do resumo seleciona um período e a edição acompanha o teclado virtual", async () => {
-    const [html, app, controls] = await Promise.all([
-        read("index.html"), read("app.js"), read("controls.css")
+    const [html, app, controls, css] = await Promise.all([
+        read("index.html"), read("app.js"), read("controls.css"), read("style.css")
     ]);
     assert.match(html, /id="abrir-calendario-resumo"[^>]*aria-label="Selecionar data no calendário"/);
     assert.match(html, /id="data-calendario-resumo"[^>]*type="date"/);
     assert.match(app, /ui\.abrirCalendarioResumo\.addEventListener\("click"[\s\S]*?\.showPicker\(\)/);
     assert.match(app, /ui\.dataCalendarioResumo\.addEventListener\("change"[\s\S]*?mudarPeriodo\(/);
     assert.match(app, /window\.visualViewport\?\.addEventListener\("resize"/);
+    assert.match(app, /document\.documentElement\.clientHeight\s*-\s*viewport\.height\s*-\s*viewport\.offsetTop/);
     assert.match(app, /dialogo\.style\.setProperty\("--dialogo-viewport-bottom"/);
     assert.match(controls, /dialog#dialogo-despesa\.teclado-virtual-ativo[\s\S]*?--dialogo-viewport-bottom/);
     assert.match(controls, /dialog#dialogo-receita\.teclado-virtual-ativo/);
+    assert.match(controls, /dialog#dialogo-receita\.teclado-virtual-ativo[\s\S]*?padding-bottom:\s*0/);
+    assert.match(css, /\.lista-categorias\s*\{[^}]*gap:\s*6px/);
+    assert.match(css, /\.lista-categorias\s*>\s*li\s+button\s*\{[^}]*min-height:\s*40px/);
 });
 
 test("mensagem vazia de despesas usa o rótulo atual do botão Adicionar", async () => {
