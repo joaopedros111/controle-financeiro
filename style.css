@@ -1934,3 +1934,25 @@ dialog#dialogo-receita #campo-repetir-receita { grid-column: 1 / -1; }
     }
     @media (prefers-reduced-motion: reduce) { .periodo { scroll-behavior: auto; } }
 }
+/* Category and budget content flows in the dialog itself, with no nested scrollers. */
+#dialogo-orcamentos .painel-orcamento,
+#dialogo-orcamentos .lista-categorias,
+#dialogo-orcamentos .lista-orcamentos {
+    max-height: none;
+    overflow: visible;
+}
+
+#dialogo-orcamentos .lista-categorias > li {
+    padding: 8px 0;
+    border: 0;
+    border-bottom: 1px solid var(--borda);
+    border-radius: 0;
+    background: transparent;
+}
+
+#dialogo-orcamentos .orcamento-edicao {
+    padding: 12px 0;
+    border: 0;
+    border-bottom: 1px solid var(--borda);
+    border-radius: 0;
+}
