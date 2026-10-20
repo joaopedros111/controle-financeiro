@@ -362,7 +362,7 @@ test("os cinco temas mantêm identificadores, cores e nomes de exibição", asyn
     assert.match(app, /claro: "Claro", escuro: "Escuro", rosa: "Rosa", pangolim: "Pangolim", floresta: "Selva"/);
     assert.match(app, /criarEl\("span", \{ text: nomesTema\[tema\] \}\)/);
     assert.match(app, /"claro", "escuro", "rosa", "pangolim", "floresta"/);
-    assert.match(html, /Escuro, Claro, Rosa, Selva ou Pangolim/);
+    assert.match(html, /Claro, Escuro, Rosa, Pangolin ou Selva/);
     assert.match(html, /id="alternar-tema"[\s\S]*?<span>Claro<\/span>/);
     assert.match(core, /"claro", "escuro", "rosa", "pangolim", "floresta"/);
     assert.match(app, /const tema = estado\.tema \|\| "claro"/);
