@@ -1065,7 +1065,6 @@ function renderListaOrcamentos() {
         const linha = criarEl("fieldset", { class: "orcamento-edicao", dataset: { categoria } }, [
             criarEl("legend", { text: categoria }),
             criarEl("label", { class: "orcamento-campo" }, [
-                criarEl("span", { text: "Limite mensal padrão" }),
                 criarEl("input", {
                     type: valoresOcultos ? "password" : "number", min: "0", step: "0.01", inputMode: "decimal",
                     value: limitePadrao, placeholder: "Sem limite",
@@ -1080,7 +1079,7 @@ function renderListaOrcamentos() {
                 }),
                 criarEl("button", {
                     type: "button", class: "btn btn-perigo",
-                    dataset: { orcamentoAcao: "remover-padrao" }, text: "Remover limite",
+                    dataset: { orcamentoAcao: "remover-padrao" }, text: "Remover",
                     disabled: !padraoConfigurado
                 })
             ])
