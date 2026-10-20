@@ -144,3 +144,19 @@
     dialog#dialogo-ajustes .acoes-dialogo,
     dialog#dialogo-orcamentos .acoes-dialogo { position: static; }
 }
+
+/* Present category and budget entries directly in the dialog body, without nested cards. */
+#dialogo-orcamentos .lista-categorias > li {
+    padding: 8px 0;
+    border: 0;
+    border-bottom: 1px solid var(--borda);
+    border-radius: 0;
+    background: transparent;
+}
+
+#dialogo-orcamentos .orcamento-edicao {
+    padding: 12px 0;
+    border: 0;
+    border-bottom: 1px solid var(--borda);
+    border-radius: 0;
+}
