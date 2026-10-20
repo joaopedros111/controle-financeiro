@@ -1410,24 +1410,24 @@ dialog#dialogo-receita #campo-repetir-receita { grid-column: 1 / -1; }
     }
 
     :root[data-tema="escuro"] {
-        --fundo: #0c1020;
-        --superficie: #141a2b;
-        --superficie-suave: #1b2336;
-        --texto: #f1f4fc;
-        --texto-secundario: #a0abc1;
-        --borda: #293249;
-        --primaria: #9694ff;
-        --primaria-hover: #b1afff;
-        --primaria-suave: #252447;
-        --verde: #46c8b2;
-        --verde-suave: #153630;
+        --fundo: #101512;
+        --superficie: #191f1b;
+        --superficie-suave: #232b26;
+        --texto: #edf5ef;
+        --texto-secundario: #a1b2a6;
+        --borda: #344239;
+        --primaria: #059669;
+        --primaria-hover: #047857;
+        --primaria-suave: #18382d;
+        --verde: #34d399;
+        --verde-suave: #193b2e;
         --vermelho: #ff8290;
         --vermelho-suave: #3a202c;
         --ambar: #f4bd66;
         --ambar-suave: #3a2d20;
-        --sombra-card: 0 10px 30px -16px rgba(0, 0, 0, .75);
-        --sombra-flutuante: 0 18px 44px -22px rgba(0, 0, 0, .85);
-        --foco: 0 0 0 4px rgba(150, 148, 255, .22);
+        --sombra-card: 0 10px 30px -16px rgba(0, 0, 0, .72), 0 2px 8px rgba(0, 0, 0, .2);
+        --sombra-flutuante: 0 18px 44px -22px rgba(0, 0, 0, .82);
+        --foco: 0 0 0 4px rgba(52, 211, 153, .24);
     }
 
     body {
@@ -1503,7 +1503,7 @@ dialog#dialogo-receita #campo-repetir-receita { grid-column: 1 / -1; }
     .grafico-barra-despesa { background: linear-gradient(180deg, #70dfca, #0f9f8f); color: #0f9f8f; }
 
     .btn { transition: transform .16s ease, background-color .18s ease, box-shadow .18s ease, border-color .18s ease; }
-    .btn-primario { background: linear-gradient(135deg, var(--primaria), color-mix(in srgb, var(--primaria) 74%, #282783)); box-shadow: 0 7px 16px -9px color-mix(in srgb, var(--primaria) 80%, transparent); }
+    .btn-primario { background: linear-gradient(135deg, var(--primaria), var(--primaria-hover)); box-shadow: 0 7px 16px -9px color-mix(in srgb, var(--primaria) 80%, transparent); }
     .btn-secundario { background: var(--superficie); }
     .btn-icone { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--borda) 76%, transparent); }
     .vazio { border-radius: 16px; background: color-mix(in srgb, var(--superficie-suave) 84%, transparent); }
@@ -1593,6 +1593,16 @@ dialog#dialogo-receita #campo-repetir-receita { grid-column: 1 / -1; }
 }
 
 @layer components {
+    :root[data-tema="escuro"] .marca-icone {
+        background: linear-gradient(145deg, #34d399, #059669 72%, #065f46);
+        box-shadow: 0 9px 20px -8px rgba(16, 185, 129, .42), inset 0 1px 0 rgba(255,255,255,.22);
+    }
+    :root[data-tema="escuro"] .grafico-barra-entrada { background: linear-gradient(180deg, #6ee7b7, #059669); color: #059669; }
+    :root[data-tema="escuro"] .grafico-barra-despesa { background: linear-gradient(180deg, #fda4af, #e45f70); color: #e45f70; }
+    :root[data-tema="escuro"] .legenda-entrada { background: #059669; }
+    :root[data-tema="escuro"] .legenda-despesa { background: #e45f70; }
+    :root[data-tema="escuro"] .resumo::before { background: linear-gradient(90deg, #34d399, #a3e635); }
+
     :root[data-tema="rosa"] .marca-icone {
         background: linear-gradient(145deg, #f276ad, #d74786 72%, #a92b65);
         box-shadow: 0 9px 20px -8px rgba(196, 47, 112, .62), inset 0 1px 0 rgba(255,255,255,.35);
