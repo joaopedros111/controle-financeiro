@@ -595,10 +595,14 @@ test("calendário do resumo seleciona um período e a edição acompanha o tecla
     assert.match(app, /window\.visualViewport\?\.addEventListener\("resize"/);
     assert.match(app, /document\.documentElement\.clientHeight\s*-\s*viewport\.height\s*-\s*viewport\.offsetTop/);
     assert.match(app, /campoAtivo\s*&&\s*alturaTeclado\s*>\s*80/);
+    assert.match(app, /corpo\.style\.position\s*=\s*"fixed"/);
+    assert.match(app, /function restaurarRolagemFundoEdicao\(\)[\s\S]*?window\.scrollTo\(estadoSalvo\.x, estadoSalvo\.y\)/);
+    assert.match(app, /dialogo\.addEventListener\("close"[\s\S]*?restaurarRolagemFundoEdicao\(\)/);
     assert.match(app, /dialogo\.style\.setProperty\("--dialogo-viewport-bottom"/);
     assert.match(controls, /dialog#dialogo-despesa:not\(\.teclado-virtual-ativo\)[\s\S]*?inset:\s*50% auto auto 50%[\s\S]*?transform:\s*translate\(-50%, -50%\)/);
     assert.match(controls, /dialog#dialogo-despesa\.teclado-virtual-ativo[\s\S]*?--dialogo-viewport-bottom/);
     assert.match(controls, /dialog#dialogo-receita\.teclado-virtual-ativo/);
+    assert.match(css, /dialog#dialogo-despesa,[\s\S]*?overscroll-behavior:\s*contain/);
     assert.match(controls, /dialog#dialogo-receita\.teclado-virtual-ativo[\s\S]*?padding-bottom:\s*0/);
     assert.match(css, /dialog#dialogo-despesa,[\s\S]*?inset:\s*auto auto max\(8px, env\(safe-area-inset-bottom, 0px\)\) 50%;/);
     assert.doesNotMatch(css, /dialog#dialogo-despesa,[\s\S]*?inset:\s*50% auto auto 50%/);

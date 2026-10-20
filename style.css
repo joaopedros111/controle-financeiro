@@ -19,6 +19,8 @@ dialog#dialogo-receita {
     height: fit-content;
     min-height: 0;
     max-height: min(86dvh, 600px);
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
 }
 dialog#dialogo-despesa .dialogo-corpo,
 dialog#dialogo-receita .dialogo-corpo { height: auto; min-height: 0; padding: 14px; }
@@ -645,7 +647,7 @@ dialog#dialogo-receita .acoes-dialogo { position: static; margin-top: 12px; padd
 
 .resumo-cabecalho { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
 .resumo-cabecalho .resumo-titulo { margin-bottom: 10px; }
-.resumo-acoes { position: relative; display: flex; flex: 0 0 auto; align-items: center; gap: 6px; }
+.resumo-acoes { position: relative; display: flex; flex: 0 0 auto; align-items: center; gap: 8px; }
 .resumo-visibilidade { width: 34px; min-width: 34px; height: 34px; min-height: 34px; padding: 6px; margin: -5px -4px 4px 0; }
 .resumo-visibilidade svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 html.app-inicializando .container { visibility: hidden; }

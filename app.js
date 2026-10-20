@@ -241,6 +241,38 @@ function agendarAjusteDialogoEdicao() {
     requestAnimationFrame(atualizarPosicaoEdicaoComTeclado);
 }
 
+let estadoRolagemFundoEdicao = null;
+const estilosBloqueioRolagem = ["position", "top", "left", "width", "overflow"];
+
+function bloquearRolagemFundoEdicao() {
+    if (estadoRolagemFundoEdicao) return;
+    const corpo = document.body;
+    estadoRolagemFundoEdicao = {
+        x: window.scrollX,
+        y: window.scrollY,
+        estilos: Object.fromEntries(estilosBloqueioRolagem.map((propriedade) => [
+            propriedade,
+            [corpo.style.getPropertyValue(propriedade), corpo.style.getPropertyPriority(propriedade)]
+        ]))
+    };
+    corpo.style.position = "fixed";
+    corpo.style.top = `${-estadoRolagemFundoEdicao.y}px`;
+    corpo.style.left = `${-estadoRolagemFundoEdicao.x}px`;
+    corpo.style.width = "100%";
+    corpo.style.overflow = "hidden";
+}
+
+function restaurarRolagemFundoEdicao() {
+    if (!estadoRolagemFundoEdicao) return;
+    const estadoSalvo = estadoRolagemFundoEdicao;
+    estadoRolagemFundoEdicao = null;
+    for (const [propriedade, [valor, prioridade]] of Object.entries(estadoSalvo.estilos)) {
+        if (valor) document.body.style.setProperty(propriedade, valor, prioridade);
+        else document.body.style.removeProperty(propriedade);
+    }
+    window.scrollTo(estadoSalvo.x, estadoSalvo.y);
+}
+
 window.visualViewport?.addEventListener("resize", agendarAjusteDialogoEdicao);
 window.visualViewport?.addEventListener("scroll", agendarAjusteDialogoEdicao);
 document.addEventListener("focusin", agendarAjusteDialogoEdicao);
@@ -250,6 +282,7 @@ for (const dialogo of [ui.dialogoDespesa, ui.dialogoReceita]) {
         dialogo.classList.remove("teclado-virtual-ativo");
         dialogo.style.removeProperty("--dialogo-viewport-bottom");
         dialogo.style.removeProperty("--dialogo-viewport-height");
+        restaurarRolagemFundoEdicao();
     });
 }
 
@@ -1443,6 +1476,7 @@ function abrirDialogoReceita(id) {
 
 
 
+    bloquearRolagemFundoEdicao();
     ui.dialogoReceita.showModal();
 
     ui.receitaNome.focus();
@@ -1821,6 +1855,7 @@ function abrirDialogoDespesa(id) {
 
 
 
+    bloquearRolagemFundoEdicao();
     ui.dialogoDespesa.showModal();
 
     ui.despesaNome.focus();
