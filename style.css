@@ -644,6 +644,7 @@ dialog#dialogo-receita .acoes-dialogo { position: static; margin-top: 12px; padd
 
 .resumo-cabecalho { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .resumo-cabecalho .resumo-titulo { margin-bottom: 10px; }
+.resumo-acoes { position: relative; display: flex; flex: 0 0 auto; align-items: center; gap: 6px; }
 .resumo-visibilidade { width: 34px; min-width: 34px; height: 34px; min-height: 34px; padding: 6px; margin: -5px -4px 4px 0; }
 .resumo-visibilidade svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 html.app-inicializando .container { visibility: hidden; }
@@ -757,13 +758,6 @@ body #dialogo-ajustes .ajuste-controle { gap: var(--densidade-opcoes-controle-ga
     .densidade-controle input[type="range"] { min-height: 44px; margin: 0; cursor: pointer; }
     .densidade-controle output { margin-left: 6px; font-variant-numeric: tabular-nums; }
     .ajuste-controle.ajuste-alternancia { min-height: 44px; }
-    .densidade-extremos {
-        display: flex;
-        justify-content: space-between;
-        gap: 8px;
-        font-size: .72rem;
-    }
-    .densidade-extremos span:last-child { text-align: right; }
 
     .indicadores {
         display: grid;

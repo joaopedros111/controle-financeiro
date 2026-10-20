@@ -59,12 +59,10 @@ const ui = {
     densidadeInterface: $("densidade-interface"),
     valorDensidadeInterface: $("valor-densidade-interface"),
     mostrarGraficos: $("mostrar-graficos"),
+    mostrarResumo: $("mostrar-resumo-mes"),
     mostrarDespesas: $("mostrar-despesas-mes"),
     mostrarEntradas: $("mostrar-entradas"),
-    telaInicial: $("tela-inicial"),
-    referenciaMes: $("referencia-mes"),
     ocultarAoIniciar: $("ocultar-ao-iniciar"),
-    alternarValores: $("alternar-valores"),
     escopoCsv: $("escopo-csv"),
     diagnosticoDados: $("diagnostico-dados"),
     ultimaOperacaoDados: $("ultima-operacao-dados"),
@@ -82,6 +80,8 @@ const ui = {
     painelLimitesOrcamento: $("painel-limites-orcamento"),
     listaOrcamentos: $("lista-orcamentos"),
     abrirCalculadora: $("abrir-calculadora"),
+    abrirCalendarioResumo: $("abrir-calendario-resumo"),
+    dataCalendarioResumo: $("data-calendario-resumo"),
     dialogoCalculadora: $("dialogo-calculadora"),
     fecharCalculadora: $("fechar-calculadora"),
     visorCalculadora: $("visor-calculadora"),
@@ -217,6 +217,41 @@ const ui = {
     aviso: $("aviso")
 
 };
+
+function atualizarPosicaoEdicaoComTeclado() {
+    const viewport = window.visualViewport;
+    if (!viewport || !window.matchMedia("(max-width: 600px)").matches) return;
+    const dialogo = [ui.dialogoDespesa, ui.dialogoReceita].find((item) => item.open);
+    if (!dialogo) return;
+    const campoAtivo = dialogo.contains(document.activeElement)
+        && document.activeElement.matches("input:not([type=checkbox]), textarea");
+    const alturaTeclado = window.innerHeight - viewport.height - viewport.offsetTop;
+    const tecladoVisivel = campoAtivo && alturaTeclado > 80;
+    dialogo.classList.toggle("teclado-virtual-ativo", tecladoVisivel);
+    if (tecladoVisivel) {
+        dialogo.style.setProperty("--dialogo-viewport-bottom", `${Math.max(0, alturaTeclado)}px`);
+        dialogo.style.setProperty("--dialogo-viewport-height", `${viewport.height}px`);
+    } else {
+        dialogo.style.removeProperty("--dialogo-viewport-bottom");
+        dialogo.style.removeProperty("--dialogo-viewport-height");
+    }
+}
+
+function agendarAjusteDialogoEdicao() {
+    requestAnimationFrame(atualizarPosicaoEdicaoComTeclado);
+}
+
+window.visualViewport?.addEventListener("resize", agendarAjusteDialogoEdicao);
+window.visualViewport?.addEventListener("scroll", agendarAjusteDialogoEdicao);
+document.addEventListener("focusin", agendarAjusteDialogoEdicao);
+document.addEventListener("focusout", () => setTimeout(agendarAjusteDialogoEdicao, 0));
+for (const dialogo of [ui.dialogoDespesa, ui.dialogoReceita]) {
+    dialogo.addEventListener("close", () => {
+        dialogo.classList.remove("teclado-virtual-ativo");
+        dialogo.style.removeProperty("--dialogo-viewport-bottom");
+        dialogo.style.removeProperty("--dialogo-viewport-height");
+    });
+}
 
 /* Preencher seletor de anos */
 for (let ano = 2000; ano <= 2100; ano++) {
@@ -943,7 +978,7 @@ function renderDespesas() {
     ])));
     ui.vazioDespesas.hidden = despesas.length > 0;
     ui.vazioDespesas.textContent =
-    "Nenhuma despesa neste mês. Toque em “+ Despesa” para começar.";
+    "Toque em Adicionar para começar";
 }
 
 
@@ -3162,8 +3197,6 @@ function aplicarPrivacidade() {
     const rotulo = valoresOcultos ? "Mostrar valores" : "Ocultar valores";
     ui.alternarVisibilidadeResumo.setAttribute("aria-label", rotulo + " do resumo");
     ui.alternarVisibilidadeResumo.title = rotulo + " do resumo";
-    ui.alternarValores.textContent = rotulo + " financeiros";
-    ui.alternarValores.setAttribute("aria-pressed", String(valoresOcultos));
 }
 function aplicarPreferenciasVisuais() {
     const espacamentos = calcularEspacamentosDensidade(preferenciasMenu.densidade);
@@ -3176,6 +3209,7 @@ function aplicarPreferenciasVisuais() {
     document.body.classList.toggle("graficos-ocultos", !preferenciasMenu.mostrarGraficos);
 }
 function aplicarVisibilidadeSecoes() {
+    document.querySelector(".resumo").hidden = !preferenciasMenu.mostrarResumo;
     $("secao-despesas").hidden = !preferenciasMenu.mostrarDespesas;
     $("secao-entradas").hidden = !preferenciasMenu.mostrarEntradas;
 }
@@ -3236,10 +3270,9 @@ function aplicarPreferenciasMenu() {
     ui.valorTamanhoBotaoMenu.value = preferenciasMenu.tamanhoBotao + " px";
     ui.densidadeInterface.value = preferenciasMenu.densidade;
     ui.mostrarGraficos.checked = preferenciasMenu.mostrarGraficos;
+    ui.mostrarResumo.checked = preferenciasMenu.mostrarResumo;
     ui.mostrarDespesas.checked = preferenciasMenu.mostrarDespesas;
     ui.mostrarEntradas.checked = preferenciasMenu.mostrarEntradas;
-    ui.telaInicial.value = preferenciasMenu.telaInicial;
-    ui.referenciaMes.value = preferenciasMenu.referenciaMes;
     ui.ocultarAoIniciar.checked = preferenciasMenu.ocultarAoIniciar;
     ui.escopoCsv.value = preferenciasMenu.escopoCsv;
     aplicarVisibilidadeSecoes();
@@ -3285,6 +3318,11 @@ ui.densidadeInterface.addEventListener("input", () => {
     salvarPreferenciasMenu();
 });
 ui.mostrarGraficos.addEventListener("change", () => { preferenciasMenu.mostrarGraficos = ui.mostrarGraficos.checked; aplicarPreferenciasVisuais(); salvarPreferenciasMenu(); });
+ui.mostrarResumo.addEventListener("change", () => {
+    preferenciasMenu.mostrarResumo = ui.mostrarResumo.checked;
+    aplicarVisibilidadeSecoes();
+    salvarPreferenciasMenu();
+});
 ui.mostrarDespesas.addEventListener("change", () => {
     preferenciasMenu.mostrarDespesas = ui.mostrarDespesas.checked;
     aplicarVisibilidadeSecoes();
@@ -3293,15 +3331,6 @@ ui.mostrarDespesas.addEventListener("change", () => {
 ui.mostrarEntradas.addEventListener("change", () => {
     preferenciasMenu.mostrarEntradas = ui.mostrarEntradas.checked;
     aplicarVisibilidadeSecoes();
-    salvarPreferenciasMenu();
-});
-ui.telaInicial.addEventListener("change", () => {
-    preferenciasMenu.telaInicial = ui.telaInicial.value;
-    salvarPreferenciasMenu();
-});
-ui.referenciaMes.addEventListener("change", () => {
-    preferenciasMenu.referenciaMes = ui.referenciaMes.value;
-    if (preferenciasMenu.referenciaMes === "ultimo") preferenciasMenu.ultimoPeriodo = chaveMes(periodo.ano, periodo.mes);
     salvarPreferenciasMenu();
 });
 ui.ocultarAoIniciar.addEventListener("change", () => { preferenciasMenu.ocultarAoIniciar = ui.ocultarAoIniciar.checked; salvarPreferenciasMenu(); });
@@ -3377,6 +3406,19 @@ ui.abrirAjustes.addEventListener("click", (evento) => {
 });
 ui.fecharAjustes.addEventListener("click", () => ui.dialogoAjustes.close());
 ui.abrirCalculadora.addEventListener("click", () => ui.dialogoCalculadora.showModal());
+ui.abrirCalendarioResumo.addEventListener("click", () => {
+    ui.dataCalendarioResumo.value = `${periodo.ano}-${String(periodo.mes).padStart(2, "0")}-01`;
+    try {
+        if (typeof ui.dataCalendarioResumo.showPicker === "function") ui.dataCalendarioResumo.showPicker();
+        else ui.dataCalendarioResumo.click();
+    } catch (_) {
+        ui.dataCalendarioResumo.click();
+    }
+});
+ui.dataCalendarioResumo.addEventListener("change", () => {
+    const correspondencia = /^(\d{4})-(\d{2})-\d{2}$/.exec(ui.dataCalendarioResumo.value);
+    if (correspondencia) mudarPeriodo(Number(correspondencia[1]), Number(correspondencia[2]));
+});
 ui.fecharCalculadora.addEventListener("click", () => ui.dialogoCalculadora.close());
 document.querySelectorAll("[data-calculadora]").forEach((tecla) => {
     tecla.addEventListener("click", () => {
@@ -3406,7 +3448,6 @@ ui.alternarVisibilidadeResumo.addEventListener("click", () => {
     valoresOcultos = !valoresOcultos;
     renderTudo(false);
 });
-ui.alternarValores.addEventListener("click", () => { valoresOcultos = !valoresOcultos; renderTudo(false); });
 async function verificarAtualizacao({ automatico = false } = {}) {
     if (verificacaoAtualizacaoAtiva) return "em-andamento";
     verificacaoAtualizacaoAtiva = true;

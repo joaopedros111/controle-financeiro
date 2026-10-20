@@ -1,6 +1,6 @@
 const PADRAO = {
     posicao: "centro", transparencia: 45, tamanhoBotao: 58, x: null, y: null,
-    densidade: 50, mostrarGraficos: true, telaInicial: "resumo",
+    densidade: 50, mostrarGraficos: true, mostrarResumo: true, telaInicial: "resumo",
     mostrarPlanejamento: true, mostrarDespesas: true, mostrarEntradas: true,
     ultimaTelaUtilizada: null,
     referenciaMes: "atual", ultimoPeriodo: null, ocultarAoIniciar: false,
@@ -84,6 +84,7 @@ export function normalizarPreferenciasMenu(salvas) {
     if (!["pt-BR", "en", "es", "fr", "de", "ja"].includes(preferencias.idioma)) preferencias.idioma = PADRAO.idioma;
     if (!["BRL", "USD", "EUR", "JPY"].includes(preferencias.moeda)) preferencias.moeda = PADRAO.moeda;
     preferencias.mostrarGraficos = preferencias.mostrarGraficos !== false;
+    preferencias.mostrarResumo = preferencias.mostrarResumo !== false;
     preferencias.mostrarPlanejamento = preferencias.mostrarPlanejamento !== false;
     preferencias.mostrarDespesas = preferencias.mostrarDespesas !== false;
     preferencias.mostrarEntradas = preferencias.mostrarEntradas !== false;

@@ -30,7 +30,10 @@ test("traduções localizam frases da interface e preservam o português como pa
     assert.equal(textoTraduzido("Idioma e moeda", "pt-BR"), "Idioma e moeda");
     assert.equal(textoTraduzido("Máxima compactação", "en"), "Maximum compactness");
     assert.equal(textoTraduzido("Muito confortável", "ja"), "とてもゆったり");
-    assert.equal(textoTraduzido("Mostrar gráficos", "en"), "Show charts");
+    assert.equal(textoTraduzido("Exibir gráficos na tela inicial", "en"), "Show charts on the home screen");
+    assert.equal(textoTraduzido("Exibir resumo do mês na tela de início", "ja"), "ホーム画面に月次概要を表示");
+    assert.equal(textoTraduzido("Selecionar data no calendário", "en"), "Select a date from the calendar");
+    assert.equal(textoTraduzido("Toque em Adicionar para começar", "en"), "Tap Add to get started");
     assert.equal(textoTraduzido("Rótulo personalizado", "fr"), "Rótulo personalizado");
     assert.equal(textoTraduzido("Exibir Entradas na tela inicial", "en"), "Show Income on the home screen");
     assert.equal(textoTraduzido("Gerenciar categorias", "en"), "Manage categories");

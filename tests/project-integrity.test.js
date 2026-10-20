@@ -103,11 +103,11 @@ test("controles das preferências incrementais têm implementação e cache atua
     const [html, app, css, serviceWorker] = await Promise.all([
         read("index.html"), read("app.js"), read("style.css"), read("sw.js")
     ]);
-    for (const id of ["densidade-interface", "valor-densidade-interface", "mostrar-graficos", "tela-inicial", "referencia-mes", "ocultar-ao-iniciar", "alternar-valores", "escopo-csv", "diagnostico-dados"]) {
+    for (const id of ["densidade-interface", "valor-densidade-interface", "mostrar-graficos", "mostrar-resumo-mes", "ocultar-ao-iniciar", "escopo-csv", "diagnostico-dados"]) {
         assert.match(html, new RegExp(`id="${id}"`), `controle ${id} ausente`);
         assert.ok(app.includes(`$("${id}")`), `controle ${id} sem conexão com o app`);
     }
-    assert.match(html, /for="mostrar-graficos">\s*<span>Mostrar gráficos<\/span>/);
+    assert.match(html, /for="mostrar-graficos">\s*<span>Exibir gráficos na tela inicial<\/span>/);
     assert.match(html, /id="densidade-interface" type="range" min="0" max="100" step="1"/);
     assert.match(app, /calcularEspacamentosDensidade\(preferenciasMenu\.densidade\)/);
     assert.match(app, /ui\.densidadeInterface\.addEventListener\("input"/);
@@ -118,6 +118,8 @@ test("controles das preferências incrementais têm implementação e cache atua
     assert.match(resumo, /<dl class="indicadores">/);
     assert.match(app, /preferenciasMenu\.ocultarAoIniciar/);
     assert.match(app, /preferenciasMenu\.ultimoPeriodo/);
+    assert.doesNotMatch(html, /Preferências financeiras|id="tela-inicial"|id="referencia-mes"/);
+    assert.doesNotMatch(html, /id="alternar-valores"/);
     assert.match(serviceWorker, /const CACHE = PREFIXO_CACHE \+ "v\d+"/);
     assert.equal((serviceWorker.match(/"\.\/preferences\.js"/g) || []).length, 1, "preferences.js deve ser precacheado uma vez");
 });
@@ -128,8 +130,8 @@ test("densidade usa slider progressivo, mapeia preferências antigas e preserva 
     ]);
     assert.match(html, /<label class="ajuste-linha ajuste-controle densidade-controle" for="densidade-interface">/);
     assert.match(html, /<output id="valor-densidade-interface" for="densidade-interface" aria-live="polite">50%<\/output>/);
-    assert.match(html, /id="densidade-interface" type="range" min="0" max="100" step="1" value="50" aria-valuetext="50%" aria-describedby="densidade-extremos"/);
-    assert.match(html, /id="densidade-extremos" class="densidade-extremos"[\s\S]*Máxima compactação[\s\S]*Muito confortável/);
+    assert.match(html, /id="densidade-interface" type="range" min="0" max="100" step="1" value="50" aria-valuetext="50%"/);
+    assert.doesNotMatch(html, /id="densidade-extremos"|Máxima compactação|Muito confortável/);
     for (const [valor, esperado] of [
         ["muito-compacta", 0], ["compacta", 25], ["padrao", 50],
         ["confortavel", 75], ["muito-confortavel", 100]
@@ -331,18 +333,11 @@ test("valores monetários usam formatação centralizada nas listas, resumos e g
     assert.match(html, /class="app-inicializando"/);
 });
 
-test("tela inicial reutiliza as seções e o estado de navegação existentes", async () => {
+test("preferências antigas de tela inicial continuam compatíveis sem controles no menu", async () => {
     const [html, app, serviceWorker] = await Promise.all([
         read("index.html"), read("app.js"), read("sw.js")
     ]);
-    for (const [valor, rotulo] of [
-        ["resumo", "Resumo do mês"],
-        ["lancamentos", "Lançamentos"],
-        ["graficos", "Gráficos"],
-        ["ultimo", "Última tela utilizada"]
-    ]) {
-        assert.match(html, new RegExp(`<option value="${valor}">${rotulo}</option>`));
-    }
+    assert.doesNotMatch(html, /id="tela-inicial"|id="referencia-mes"|titulo-preferencias-financeiras/);
     assert.match(app, /resolverTelaInicial\(preferenciasMenu\)/);
     assert.match(app, /telaSolicitada === "lancamentos" && !lancamentosVisiveis \? "resumo" : telaSolicitada/);
     assert.match(app, /preferenciasMenu\.mostrarDespesas \? "#titulo-despesas" : "#titulo-receitas"/);
@@ -495,8 +490,11 @@ test("visibilidade altera somente apresentação e tem controles persistentes in
     }
     assert.match(aparencia, /id="ocultar-ao-iniciar" type="checkbox"/);
     assert.doesNotMatch(html, /mostrar-planejamento|secao-planejamento/);
-    assert.match(aparencia, /id="alternar-valores"/);
+    assert.doesNotMatch(aparencia, /id="alternar-valores"/);
     assert.match(aparencia, /class="ajuste-linha ajuste-controle ajuste-alternancia" for="mostrar-graficos"[\s\S]*?id="mostrar-graficos" type="checkbox"/);
+    assert.match(aparencia, /for="mostrar-resumo-mes"[\s\S]*?id="mostrar-resumo-mes" type="checkbox" checked/);
+    assert.match(preferences, /mostrarResumo: true/);
+    assert.match(app, /preferenciasMenu\.mostrarResumo = ui\.mostrarResumo\.checked/);
     assert.match(preferences, /mostrarPlanejamento: true, mostrarDespesas: true, mostrarEntradas: true/);
     assert.match(app, /const CHAVE_PREFERENCIAS_MENU = "controleFinanceiro:preferencias-menu"/);
     assert.match(controls, /ajuste-controle\.ajuste-alternancia/);
@@ -505,10 +503,11 @@ test("visibilidade altera somente apresentação e tem controles persistentes in
     assert.match(layout, /--densidade-opcoes-secao-gap/);
     assert.match(controls, /\.ajuste-controle select \{ width: 100%; min-width: 0;/);
 
-    const handlers = app.slice(app.indexOf('ui.mostrarDespesas.addEventListener'), app.indexOf('ui.telaInicial.addEventListener'));
+    const handlers = app.slice(app.indexOf('ui.mostrarDespesas.addEventListener'), app.indexOf('ui.ocultarAoIniciar.addEventListener'));
     assert.match(handlers, /aplicarVisibilidadeSecoes\(\)[\s\S]*salvarPreferenciasMenu\(\)/);
     assert.doesNotMatch(handlers, /salvar\(\)|renderTudo\(|renderDespesas\(|renderReceitas\(|atualizarResumo\(/);
     const visibilidade = app.slice(app.indexOf("function aplicarVisibilidadeSecoes"), app.indexOf("function abrirSecaoInicial"));
+    assert.match(visibilidade, /document\.querySelector\("\.resumo"\)\.hidden = !preferenciasMenu\.mostrarResumo/);
     assert.match(visibilidade, /secao-despesas/);
     assert.match(visibilidade, /secao-entradas/);
     assert.doesNotMatch(visibilidade, /planejamento/i);
@@ -583,4 +582,25 @@ test("estado financeiro não é salvo automaticamente após leitura inválida", 
     assert.match(app, /if \(recuperacaoFinanceira\.protegido\) return/);
     assert.match(app, /recuperacaoFinanceira\.restaurar\(\{/);
     assert.match(storage, /dadosProtegidos\.has\(chave\) && !substituirProtegido/);
+});
+
+test("calendário do resumo seleciona um período e a edição acompanha o teclado virtual", async () => {
+    const [html, app, controls] = await Promise.all([
+        read("index.html"), read("app.js"), read("controls.css")
+    ]);
+    assert.match(html, /id="abrir-calendario-resumo"[^>]*aria-label="Selecionar data no calendário"/);
+    assert.match(html, /id="data-calendario-resumo"[^>]*type="date"/);
+    assert.match(app, /ui\.abrirCalendarioResumo\.addEventListener\("click"[\s\S]*?\.showPicker\(\)/);
+    assert.match(app, /ui\.dataCalendarioResumo\.addEventListener\("change"[\s\S]*?mudarPeriodo\(/);
+    assert.match(app, /window\.visualViewport\?\.addEventListener\("resize"/);
+    assert.match(app, /dialogo\.style\.setProperty\("--dialogo-viewport-bottom"/);
+    assert.match(controls, /dialog#dialogo-despesa\.teclado-virtual-ativo[\s\S]*?--dialogo-viewport-bottom/);
+    assert.match(controls, /dialog#dialogo-receita\.teclado-virtual-ativo/);
+});
+
+test("mensagem vazia de despesas usa o rótulo atual do botão Adicionar", async () => {
+    const [app, localization] = await Promise.all([read("app.js"), read("localization.js")]);
+    assert.match(app, /ui\.vazioDespesas\.hidden\s*=\s*despesas\.length\s*>\s*0;[\s\S]*?ui\.vazioDespesas\.textContent\s*=\s*"Toque em Adicionar para começar"/);
+    assert.doesNotMatch(app, /\+ Despesa/);
+    assert.match(localization, /\["Toque em Adicionar para começar", "Tap Add to get started"/);
 });

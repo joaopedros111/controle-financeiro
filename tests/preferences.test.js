@@ -62,6 +62,7 @@ test("escala de densidade varia progressivamente e preserva os valores do extrem
 test("seções da tela inicial ficam visíveis por padrão em preferências existentes", () => {
     const padrao = normalizarPreferenciasMenu({});
     assert.equal(padrao.mostrarPlanejamento, true);
+    assert.equal(padrao.mostrarResumo, true);
     assert.equal(padrao.mostrarDespesas, true);
     assert.equal(padrao.mostrarEntradas, true);
     assert.deepEqual(normalizarPreferenciasMenu({
@@ -80,6 +81,7 @@ test("preferências de visibilidade são independentes e persistem após recarre
     const chave = "controleFinanceiro:preferencias-menu";
     const preferencias = normalizarPreferenciasMenu({
         mostrarPlanejamento: false,
+        mostrarResumo: false,
         mostrarDespesas: true,
         mostrarEntradas: false,
         densidade: "confortavel",
@@ -90,14 +92,15 @@ test("preferências de visibilidade são independentes e persistem após recarre
 
     const restauradas = normalizarPreferenciasMenu(criarArmazenamento(local).lerJson(chave));
     assert.equal(restauradas.mostrarPlanejamento, false);
+    assert.equal(restauradas.mostrarResumo, false);
     assert.equal(restauradas.mostrarDespesas, true);
     assert.equal(restauradas.mostrarEntradas, false);
     assert.equal(restauradas.densidade, 75);
     assert.equal(restauradas.mostrarGraficos, false);
     assert.equal(restauradas.telaInicial, "graficos");
     assert.deepEqual(
-        normalizarPreferenciasMenu({ mostrarPlanejamento: false }),
-        { ...normalizarPreferenciasMenu({}), mostrarPlanejamento: false }
+        normalizarPreferenciasMenu({ mostrarPlanejamento: false, mostrarResumo: false }),
+        { ...normalizarPreferenciasMenu({}), mostrarPlanejamento: false, mostrarResumo: false }
     );
 });
 
