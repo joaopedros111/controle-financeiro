@@ -598,7 +598,7 @@ test("calendário do resumo seleciona um período e a edição acompanha o tecla
     assert.match(controls, /dialog#dialogo-despesa\.teclado-virtual-ativo[\s\S]*?--dialogo-viewport-bottom/);
     assert.match(controls, /dialog#dialogo-receita\.teclado-virtual-ativo/);
     assert.match(controls, /dialog#dialogo-receita\.teclado-virtual-ativo[\s\S]*?padding-bottom:\s*0/);
-    assert.match(css, /dialog#dialogo-despesa,[\s\S]*?inset:\s*auto 0 0;[\s\S]*?transform:\s*none/);
+    assert.match(css, /dialog#dialogo-despesa,[\s\S]*?inset:\s*auto auto max\(8px, env\(safe-area-inset-bottom, 0px\)\) 50%;/);
     assert.doesNotMatch(css, /dialog#dialogo-despesa,[\s\S]*?inset:\s*50% auto auto 50%/);
     assert.match(css, /\.lista-categorias\s*\{[^}]*gap:\s*6px/);
     assert.match(css, /\.lista-categorias\s*>\s*li\s+button\s*\{[^}]*min-height:\s*40px/);
