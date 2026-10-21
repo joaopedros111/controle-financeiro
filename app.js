@@ -1065,7 +1065,7 @@ function renderListaOrcamentos() {
             criarEl("legend", { text: categoria }),
             criarEl("label", { class: "orcamento-campo" }, [
                 criarEl("input", {
-                    type: valoresOcultos ? "password" : "number", min: "0", step: "0.01", inputMode: "decimal",
+                    type: "number", min: "0", step: "0.01", inputMode: "decimal",
                     value: limitePadrao, placeholder: "Sem limite",
                     dataset: { orcamentoCampo: "padrao" },
                     "aria-label": `Limite mensal padrão para ${categoria}`
@@ -3253,8 +3253,7 @@ function aplicarPrivacidade() {
     document.querySelector(".resumo").classList.toggle("valores-ocultos", valoresOcultos);
     [
         ui.receitaValor,
-        ui.despesaValor,
-        ...ui.dialogoOrcamentos.querySelectorAll(".orcamento-campo input")
+        ui.despesaValor
     ].forEach((campo) => {
         const valorAtual = campo.value;
         campo.type = valoresOcultos ? "password" : "number";
