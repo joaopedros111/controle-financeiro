@@ -1,7 +1,77 @@
+import { mesFinanceiroValido, validarBackup } from "./finance-core.js";
+
+// Only complete, server-sourced snapshots without local writes can settle a queue.
+export const snapshotConfirmed = (metadata) => metadata?.fromCache === false && metadata?.hasPendingWrites === false;
+export const unicodeWellFormed = (text) => typeof text === "string" && [...text].every((char) => {
+    const code = char.codePointAt(0); return code < 0xD800 || code > 0xDFFF;
+});
+export const validSyncIdentity = (id) => typeof id === "string" && !!id.trim() && id.length <= 128 && unicodeWellFormed(id);
+export function recordEntityKey(entry) {
+    return [...new TextEncoder().encode(`${entry.month}/${entry.type}/${entry.id}`)]
+        .map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+export function inspectRemoteKeys(records) {
+    const seen = new Set(), duplicates = [], mismatches = [];
+    for (const item of records) {
+        if (!item || typeof item !== "object") { mismatches.push(null); continue; }
+        const key = recordEntityKey(item);
+        if (seen.has(key)) duplicates.push(key);
+        seen.add(key);
+        if (typeof item._docId !== "string" || item._docId !== key) mismatches.push(key);
+    }
+    return { duplicates, mismatches };
+}
+
+export function validConflictRecord(item, { remote = false } = {}) {
+    if (!item || typeof item !== "object" || Array.isArray(item)
+        || !mesFinanceiroValido(item.month) || !["receitas", "despesas"].includes(item.type)
+        || typeof item.id !== "string" || !item.id.trim() || typeof item.deleted !== "boolean") return false;
+    if (remote && (typeof item.revision !== "string" || !item.revision || item.revision.length > 128 || !validTimestamp(item.updatedAt))) return false;
+    if (item.deleted) return !Object.hasOwn(item, "record");
+    if (!item.record || typeof item.record !== "object" || Array.isArray(item.record) || item.record.id !== item.id) return false;
+    if (Object.keys(item.record).some((key) => !["id", "nome", "valor", "serie", "categoria", "pago", "fixa", "parcela"].includes(key))) return false;
+    if (item.record.serie != null && (typeof item.record.serie !== "string" || item.record.serie.length > 128)
+        || item.record.categoria !== undefined && (typeof item.record.categoria !== "string" || item.record.categoria.length > 40)) return false;
+    return validarBackup({ versao: 3, meses: { [item.month]: {
+        receitas: item.type === "receitas" ? [item.record] : [],
+        despesas: item.type === "despesas" ? [item.record] : []
+    } } });
+}
+
 const canonical = (value) => Array.isArray(value) ? value.map(canonical)
     : value && typeof value === "object" ? Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonical(value[key])])) : value;
 const json = (value) => JSON.stringify(canonical(value));
 export const jsonCanonico = json;
+export const recordsEquivalent = (a, b) => json(a) === json(b);
+
+export function readSyncMetadata(storage, uid) {
+    chaveLocalConta(uid);
+    let value;
+    try {
+        const raw = storage.getItem(`controleFinanceiro:sync:${uid}`);
+        value = raw === null ? {} : JSON.parse(raw);
+    } catch { throw new Error("Não foi possível ler a fila local. O conteúdo existente foi preservado."); }
+    if (!value || typeof value !== "object" || Array.isArray(value)
+        || value.outbox !== undefined && (!Array.isArray(value.outbox) || value.outbox.some((op) =>
+            !op || typeof op.id !== "string" || !op.id || typeof op.entityKey !== "string" || !op.entityKey
+            || !validConflictRecord(op.value) || op.entityKey !== recordEntityKey(op.value)
+            || op.baseRevision !== null && (typeof op.baseRevision !== "string" || !op.baseRevision)))
+        || value.conflicts !== undefined && !Array.isArray(value.conflicts)) {
+        throw new Error("A fila local contém dados inválidos. A sincronização foi pausada sem sobrescrever o conteúdo.");
+    }
+    return value;
+}
+
+export function conflictEntityKey(conflict) {
+    if (conflict?.kind === "settings") return null;
+    const item = conflict?.operation?.value || (conflict?.local?.month ? conflict.local : conflict);
+    return item?.month && item?.type && item?.id ? recordEntityKey(item) : null;
+}
+export function blockedConflictKeys(conflicts = [], reviewed = null) {
+    const reviewedId = reviewed?.operationId || reviewed?.operation?.id;
+    return new Set(conflicts.filter(item => !reviewed || !(recordsEquivalent(item, reviewed)
+        || reviewedId && (item.operationId || item.operation?.id) === reviewedId)).map(conflictEntityKey).filter(Boolean));
+}
 
 export function createSyncSessionGuard() {
     let current = 0;
@@ -53,7 +123,7 @@ export function mergeRemoteSettings(state, settings) {
 export function validRemoteTombstone(item) {
     const allowed = ["month", "type", "id", "deleted", "revision", "updatedAt", "_docId", "hasPendingWrites"];
     return !!item && Object.keys(item).every((key) => allowed.includes(key)) && item.deleted === true && typeof item.month === "string"
-        && /^\d{4}-(0[1-9]|1[0-2])$/.test(item.month)
+        && mesFinanceiroValido(item.month)
         && typeof item.id === "string" && item.id.length > 0 && item.id.length <= 128
         && ["receitas", "despesas"].includes(item.type)
         && typeof item.revision === "string" && item.revision.length > 0 && item.revision.length <= 128
@@ -98,13 +168,8 @@ export function validateRemoteConflicts(items) {
             || item.remote !== null && (!item.remote || typeof item.remote !== "object" || Array.isArray(item.remote))
             || !validTimestampShape(item.createdAt)
             || (item._docId !== undefined && item._docId !== item.operationId)) return null;
-        if (typeof item.local.month !== "string" || !/^\d{4}-(0[1-9]|1[0-2])$/.test(item.local.month)
-            || !["receitas", "despesas"].includes(item.local.type) || typeof item.local.id !== "string"
-            || typeof item.local.deleted !== "boolean" || (!item.local.deleted && (!item.local.record || typeof item.local.record !== "object"))) return null;
-        if (item.remote && (typeof item.remote.month !== "string" || !/^\d{4}-(0[1-9]|1[0-2])$/.test(item.remote.month)
-            || !["receitas", "despesas"].includes(item.remote.type) || typeof item.remote.id !== "string"
-            || typeof item.remote.deleted !== "boolean" || typeof item.remote.revision !== "string"
-            || !validTimestampShape(item.remote.updatedAt) || (!item.remote.deleted && (!item.remote.record || typeof item.remote.record !== "object")))) return null;
+        if (!validConflictRecord(item.local) || item.remote && (!validConflictRecord(item.remote, { remote: true })
+            || item.remote.month !== item.local.month || item.remote.type !== item.local.type || item.remote.id !== item.local.id)) return null;
         if (item.resolved === true) {
             if (!["local", "remote", "both"].includes(item.resolution) || !validTimestampShape(item.resolvedAt)) return null;
         } else if (Object.hasOwn(item, "resolved") || Object.hasOwn(item, "resolution") || Object.hasOwn(item, "resolvedAt")) return null;
@@ -124,7 +189,7 @@ export const caminhoConta = (uid, collection, id) => {
 export function registrosFinanceiros(state) {
     const result = [];
     for (const [month, data] of Object.entries(state?.meses || {})) {
-        if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) continue;
+        if (!mesFinanceiroValido(month)) continue;
         for (const type of ["receitas", "despesas"]) {
             for (const record of data?.[type] || []) if (record?.id) result.push({ month, type, id: record.id, record });
         }
@@ -151,7 +216,8 @@ export function combinarRegistros(local, remoto, { deduplicarExatos = false } = 
         const sameId = merged.get(key);
         if (sameId) {
             if (json(sameId.record) !== json(item.record)) {
-                const preserved = { ...structuredClone(item), id: `${item.id}-local-${operationId(key, null, item.record)}` };
+                const id = `local-${operationId(key, null, item.record)}`;
+                const preserved = { ...structuredClone(item), id, record: { ...structuredClone(item.record), id } };
                 merged.set(`${item.month}/${item.type}/${preserved.id}`, preserved);
                 conflitos.push({ kind: "same-id", local: item, remote: sameId, preserved });
             }
@@ -199,8 +265,8 @@ export function applyRemoteRecord(state, item) {
 
 export function createSyncQueue(storage, uid) {
     const key = `controleFinanceiro:sync:${uid}`;
-    const read = () => storage.get(key) || { enabled: true, outbox: [], conflicts: [], lastConfirmed: null, initialized: false };
-    const write = (value) => storage.set(key, value);
+    const read = () => structuredClone(storage.get(key) || { enabled: true, outbox: [], conflicts: [], lastConfirmed: null, initialized: false });
+    const write = (value) => { if (storage.set(key, value) === false) throw new Error("Não foi possível persistir a fila de sincronização."); };
     return {
         state: read,
         enqueue(operation) {
@@ -213,26 +279,41 @@ export function createSyncQueue(storage, uid) {
             const current = read(); current.outbox = current.outbox.filter((entry) => entry.id !== id);
             current.lastConfirmed = confirmedAt; write(current); return current;
         },
-        addConflict(conflict) { const current = read(); current.conflicts.push(conflict); write(current); return current; }
+        addConflict(conflict) {
+            const current = read(), id = conflict.operation?.id || conflict.operationId;
+            if (!id || !current.conflicts.some((entry) => (entry.operation?.id || entry.operationId) === id)) current.conflicts.push(conflict);
+            write(current); return current;
+        }
     };
 }
 
-export function coalesceOutbox(existing, candidates) {
-    const result = structuredClone(existing || []);
+export function coalesceOutbox(existing, candidates = [], settledEntityKeys = []) {
+    const candidatesByEntity = new Map(candidates.map((candidate) => [candidate.entityKey, candidate]));
+    const settled = new Set(settledEntityKeys);
+    const result = structuredClone(existing || []).filter((operation) =>
+        candidatesByEntity.has(operation.entityKey) || !settled.has(operation.entityKey)
+    );
     for (const candidate of candidates) {
         const index = result.findIndex((operation) => operation.entityKey === candidate.entityKey);
-        if (index >= 0) result[index] = { ...structuredClone(candidate), baseRevision: result[index].baseRevision };
+        if (index >= 0) {
+            const baseRevision = result[index].baseRevision;
+            result[index] = { ...structuredClone(candidate), baseRevision,
+                id: operationId(candidate.entityKey, baseRevision, candidate.value) };
+        }
         else result.push(structuredClone(candidate));
     }
     return result;
 }
 
-export async function flushSyncQueue(uid, storage, commit, now = () => new Date().toISOString()) {
+export async function flushSyncQueue(uid, storage, commit, now = () => new Date().toISOString(), { confirm = true, isCurrent = () => true, canSend = () => true } = {}) {
     const queue = createSyncQueue(storage, uid);
     for (const operation of queue.state().outbox) {
+        if (!isCurrent()) break;
+        if (!canSend(operation)) continue;
         const result = await commit(uid, operation);
+        if (result?.acknowledged !== true) throw new Error("A operação não recebeu confirmação do servidor.");
         if (result?.conflict) queue.addConflict({ kind: "concurrent-change", operation, remote: result.remote || null });
-        queue.acknowledge(operation.id, now());
+        queue.acknowledge(operation.id, confirm && !result.conflict ? now() : queue.state().lastConfirmed);
     }
     return queue.state();
 }
@@ -242,4 +323,10 @@ export function migrationBackup(state, storage, uid) {
     if (storage.get?.(key)) return key;
     if (!storage.set(key, structuredClone(state))) throw new Error("Não foi possível guardar o backup anterior à migração.");
     return key;
+}
+
+// Navigating an empty month changes only the view, not the financial snapshot.
+export function financialStatesEquivalent(a,b) {
+    const compact = value => ({...value, meses:Object.fromEntries(Object.entries(value?.meses || {}).filter(([,month]) => month.receitas?.length || month.despesas?.length))});
+    return recordsEquivalent(compact(a),compact(b));
 }

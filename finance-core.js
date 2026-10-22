@@ -9,6 +9,14 @@ const ANO_MAXIMO = 2100;
 export const LIMITE_MONETARIO_SEGURO = 2 ** 44;
 const LIMITE_CENTAVOS_SEGURO = BigInt(LIMITE_MONETARIO_SEGURO) * 100n;
 
+export function mesFinanceiroValido(chave) {
+    if (typeof chave !== "string") return false;
+    const match = /^(\d{4})-(0[1-9]|1[0-2])$/.exec(chave);
+    if (!match) return false;
+    const ano = Number(match[1]);
+    return ano >= ANO_MINIMO && ano <= ANO_MAXIMO;
+}
+
 const gerarId = () => globalThis.crypto?.randomUUID?.()
     || Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
 
@@ -155,9 +163,7 @@ function orcamentosValidos(orcamentos, permitirTextoNumerico = false) {
     if (orcamentos.meses === undefined) return true;
     if (!orcamentos.meses || typeof orcamentos.meses !== "object" || Array.isArray(orcamentos.meses)) return false;
     return Object.entries(orcamentos.meses).every(([chave, mapa]) => {
-        const ano = Number(chave.slice(0, 4));
-        return /^\d{4}-(0[1-9]|1[0-2])$/.test(chave)
-            && ano >= ANO_MINIMO && ano <= ANO_MAXIMO
+        return mesFinanceiroValido(chave)
             && mapaOrcamentosValido(mapa, permitirTextoNumerico);
     });
 }
@@ -201,8 +207,7 @@ export function validarBackup(bruto, { permitirTextoNumerico = false } = {}) {
         || bruto.categorias.some((categoria) => typeof categoria !== "string" || !categoria.trim() || categoria.length > 40))) return false;
 
     return Object.entries(bruto.meses).every(([chave, mes]) => {
-        const ano = Number(chave.slice(0, 4));
-        if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(chave) || ano < ANO_MINIMO || ano > ANO_MAXIMO
+        if (!mesFinanceiroValido(chave)
             || !mes || typeof mes !== "object" || Array.isArray(mes)) return false;
         for (const [campo, registros] of [["receitas", mes.receitas], ["despesas", mes.despesas]]) {
             if (registros === undefined) continue;
@@ -289,8 +294,7 @@ export function normalizarEstado(bruto, criarId = gerarId) {
     };
 
     for (const [chave, mes] of Object.entries(meses)) {
-        const ano = Number(chave.slice(0, 4));
-        if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(chave) || ano < ANO_MINIMO || ano > ANO_MAXIMO
+        if (!mesFinanceiroValido(chave)
             || !mes || typeof mes !== "object" || Array.isArray(mes)) continue;
         estado.meses[chave] = {
             receitas: listaValida(mes.receitas).map((item) => normalizarRegistro(item, "receita")),

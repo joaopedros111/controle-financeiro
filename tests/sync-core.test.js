@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { chaveLocalConta, caminhoConta, registrosFinanceiros, combinarRegistros, operationId, makeOperation, applyRemoteRecord, createSyncQueue, migrationBackup, revisionMatches, coalesceOutbox, flushSyncQueue, createSyncSessionGuard, validateRemoteSettings, mergeRemoteSettings, validRemoteTombstone, reconcileRemoteConflicts, validateRemoteConflicts } from "../sync-core.js";
+import { chaveLocalConta, caminhoConta, registrosFinanceiros, combinarRegistros, operationId, makeOperation, applyRemoteRecord, createSyncQueue, migrationBackup, revisionMatches, recordsEquivalent, coalesceOutbox, flushSyncQueue, createSyncSessionGuard, validateRemoteSettings, mergeRemoteSettings, validRemoteTombstone, reconcileRemoteConflicts, validateRemoteConflicts } from "../sync-core.js";
 
 const income = (id, extra = {}) => ({ month: "2026-10", type: "receitas", id, record: { id, nome: "Salário", valor: 1000, ...extra } });
 const state = (records = []) => ({ versao: 3, tema: "claro", categorias: [], orcamentos: { padrao: {}, meses: {} }, meses: { "2026-10": { receitas: records, despesas: [] } } });
@@ -104,9 +104,48 @@ test("fila offline mantém operação após falha e reenvia até receber confirm
 test("edição concorrente é reconhecida como conflito e não é marcada como resolução silenciosa", async () => {
     const store = new Map(), storage = { get: (key) => store.get(key), set: (key, value) => store.set(key, structuredClone(value)) };
     const op = makeOperation("record", { record: { valor: 20 } }, "revision-a"); createSyncQueue(storage, "user-a").enqueue(op);
-    const result = await flushSyncQueue("user-a", storage, async () => ({ conflict: true, remote: { revision: "revision-b", record: { valor: 10 } } }), () => "confirmed");
+    const result = await flushSyncQueue("user-a", storage, async () => ({ acknowledged: true, conflict: true, remote: { revision: "revision-b", record: { valor: 10 } } }), () => "confirmed");
     assert.equal(result.outbox.length, 0);
     assert.equal(result.conflicts[0].remote.revision, "revision-b");
+});
+
+test("reverter B para A antes de reconectar remove a operação obsoleta da fila", async () => {
+    const entityKey = "2026-10/receitas/r1";
+    const remoteA = income("r1", { nome: "Salário", valor: 1000 });
+    const pendingB = makeOperation(entityKey, {
+        month: "2026-10", type: "receitas", id: "r1",
+        record: { ...remoteA.record, valor: 1200 }, deleted: false
+    }, "revision-a");
+    const data = new Map();
+    const storage = {
+        get: (key) => data.get(key),
+        set: (key, value) => data.set(key, structuredClone(value))
+    };
+    const queue = createSyncQueue(storage, "user-a");
+    queue.enqueue(pendingB);
+
+    // O snapshot remoto e o estado local voltaram a ser exatamente A.
+    const localA = { valor: 1000, nome: "Salário", id: "r1" };
+    const settled = recordsEquivalent(remoteA.record, localA) ? [entityKey] : [];
+    const reconciled = coalesceOutbox(queue.state().outbox, [], settled);
+    data.set("controleFinanceiro:sync:user-a", { ...queue.state(), outbox: reconciled });
+    const sent = [];
+    const result = await flushSyncQueue("user-a", storage, async (_uid, operation) => {
+        sent.push(operation);
+        return { acknowledged: true };
+    }, () => "confirmed");
+
+    assert.deepEqual(sent, []);
+    assert.deepEqual(result.outbox, []);
+});
+
+test("equivalência de registros ignora ordem das chaves, mas compara todos os campos", () => {
+    const remote = { id: "r1", nome: "Salário", valor: 1000, serie: "serie-a" };
+    const sameData = { serie: "serie-a", valor: 1000, nome: "Salário", id: "r1" };
+    const changedMetadata = { ...sameData, serie: "serie-b" };
+
+    assert.equal(recordsEquivalent(remote, sameData), true);
+    assert.equal(recordsEquivalent(remote, changedMetadata), false);
 });
 
 test("nova edição coalesce a pendência da mesma entidade sem trocar a revisão-base", () => {
@@ -115,6 +154,22 @@ test("nova edição coalesce a pendência da mesma entidade sem trocar a revisã
     const result = coalesceOutbox([first], [second]);
     assert.equal(result.length, 1);
     assert.equal(result[0].value.record.valor, 20);
+    assert.equal(result[0].baseRevision, "revision-a");
+});
+
+test("exclusão local substitui atualização pendente por tombstone mantendo a revisão-base", () => {
+    const update = makeOperation("record", {
+        month: "2026-10", type: "receitas", id: "r1",
+        record: { id: "r1", nome: "Salário", valor: 1200 }, deleted: false
+    }, "revision-a");
+    const deletion = makeOperation("record", {
+        month: "2026-10", type: "receitas", id: "r1", deleted: true
+    }, "revision-b");
+    const result = coalesceOutbox([update], [deletion]);
+
+    assert.equal(result.length, 1);
+    assert.deepEqual(result[0].value, deletion.value);
+    assert.equal(result[0].value.deleted, true);
     assert.equal(result[0].baseRevision, "revision-a");
 });
 

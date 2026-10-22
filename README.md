@@ -53,6 +53,8 @@ Abra `http://localhost:8000`. Para instalar o PWA em outros dispositivos, publiq
 
 ## Testes
 
+O procedimento completo e as limitações conhecidas estão em [docs/HOMOLOGACAO.md](docs/HOMOLOGACAO.md). `npm run test:rules` agora executa em cópia temporária externa e preserva os logs do repositório. `npm run test:e2e` prepara um site sintético com Auth/Firestore Emulator e executa Playwright nos navegadores instalados, sem usar a configuração Firebase real.
+
 Para desenvolvimento e testes automatizados, é necessário Node.js 20 ou superior. Execute os testes e a verificação sintática definidos no projeto:
 
 ```sh
@@ -84,6 +86,8 @@ Sem configurar o Firebase e entrar com Google, o app funciona somente com o arma
 
 ### Configurar sincronização Firebase
 
+**Estado desta missão:** a seção de sincronização estava comentada no início e foi reativada pelo responsável pelo projeto durante a execução. Essa edição foi preservada. As regras publicadas continuam intencionalmente fechadas. A homologação local usa somente cópia temporária com configuração sintética e emuladores. A configuração Web existente não é um ambiente remoto de testes comprovado; as etapas abaixo são referência para uma futura configuração autorizada.
+
 A integração usa o SDK Web modular do Firebase, carregado de um bundle local gerado pelo build. A aplicação não precisa de Firebase para abrir ou continuar funcionando offline. As configurações do cliente Web são públicas; o isolamento dos dados depende obrigatoriamente das regras `firestore.rules` versionadas neste repositório.
 
 1. Crie um projeto em [Firebase Console](https://console.firebase.google.com/) e adicione um aplicativo Web. Copie `apiKey`, `authDomain`, `projectId` e `appId` para `firebase-config.js`, substituindo os valores `CONFIGURE_*`. Não coloque chaves de conta de serviço ou credenciais administrativas no frontend.
@@ -94,9 +98,9 @@ A integração usa o SDK Web modular do Firebase, carregado de um bundle local g
 6. Instale dependências com `npm ci`. Para desenvolvimento local, gere `firebase-sync.bundle.js` com `npm run build:sync` antes de servir o PWA. O workflow do Pages gera o bundle automaticamente dentro do artefato.
 7. Abra Opções → Sincronização entre dispositivos e entre com Google. No primeiro vínculo, o app busca a conta autenticada, apresenta quantidades e candidatos a duplicidade e pede confirmação. Ele guarda uma cópia recuperável do estado financeiro local antes de enviar.
 
-O Firestore guarda cada lançamento separadamente em `/users/{uid}/records`, configurações financeiras em `/users/{uid}/settings/finance`, operações idempotentes em `operations` e conflitos em `conflicts`. Exclusões são tombstones; não são apagadas fisicamente. Operações locais não confirmadas permanecem numa fila local e são reenviadas quando a conexão retorna. Alterações concorrentes são comparadas por revisão transacional do documento, sem decidir pelo relógio do dispositivo. Conflitos preservam as duas versões; revise-os antes de continuar usando os dados divergentes.
+O Firestore guarda cada lançamento separadamente em `/users/{uid}/records`, configurações financeiras em `/users/{uid}/settingsV2/finance` com documentos de categorias por geração, operações idempotentes em `operations` e conflitos em `conflicts`. O documento antigo `settings/finance` é somente fallback de leitura. Exclusões são tombstones; não são apagadas fisicamente. Operações locais não confirmadas permanecem numa fila local e são reenviadas quando a conexão retorna. Alterações concorrentes são comparadas por revisão transacional do documento, sem decidir pelo relógio do dispositivo. Conflitos preservam as duas versões; revise-os antes de continuar usando os dados divergentes.
 
-O login e a sincronização real não foram testados contra uma configuração Firebase deste usuário: os valores de configuração permanecem como marcadores até serem preenchidos e as regras só passam a proteger o banco após sua publicação. Os testes locais usam mocks/casos puros e o Emulator Suite, sem conta Google nem banco de produção.
+O login Google e a infraestrutura remota não foram homologados nesta missão. A configuração Web existente foi preservada e não foi usada nos testes. Os testes locais usam módulos reais, dados sintéticos e o Emulator Suite; o navegador usa autenticação de teste do Auth Emulator, sem conta Google ou banco de produção.
 
 Os backups existentes continuam contendo apenas o estado financeiro no formato atual. Eles não incluem tokens, fila, estado de autenticação ou metadados de sincronização. Restaurar enquanto uma conta está vinculada fica somente local e suspende a sincronização automática; a seção de sincronização oferece a combinação explícita com os dados remotos. Essa combinação preserva registros remotos ausentes no backup e solicita confirmação antes do envio.
 

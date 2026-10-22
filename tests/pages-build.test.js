@@ -45,6 +45,8 @@ test("Pages build emits synchronized per-run version and cache without changing 
             assert.ok(htmlGerado.includes(`${recurso}?_release=${release.version}`), `${recurso} sem URL versionada`);
         }
         assert.match(appGerado, new RegExp(`from "./finance-core.js\\?_release=${release.version}"`));
+        const syncGerado = await readFile(path.join(saida, "sync-core.js"), "utf8");
+        assert.match(syncGerado, new RegExp(`from "./finance-core.js\\?_release=${release.version}"`), "imports transitivos precisam estar no precache versionado para recarga offline");
         assert.equal(manifestGerado.start_url, `./index.html?_release=${release.version}`);
         assert.ok(manifestGerado.icons.every((icone) => icone.src.includes(`?_release=${release.version}`)));
         assert.match(serviceWorkerGerado, /new Request\(url, \{ cache: "reload" \}\)/);

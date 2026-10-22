@@ -14,6 +14,10 @@ const STATIC_FILES = [
     "localization.js",
     "storage.js",
     "sync-core.js",
+    "indexeddb-persistence.js",
+    "transactional-state.js",
+    "financial-intents.js",
+    "financial-atomic-service.js",
     "firebase-config.js",
     "update-manager.js",
     "sw.js",
@@ -83,6 +87,13 @@ export async function prepararArtefatoPages({ diretorioFonte, diretorioSaida, nu
     );
     app = app.replace(/(from\s*["'])(\.\/firebase-config\.js|\.\/sync-core\.js)(["'])/g, (_match, before, resource, after) => `${before}${resource}?_release=${versaoPublicada}${after}`);
     await writeFile(path.join(saida, "app.js"), app);
+    // Version transitive imports too: the SW precaches only release URLs.
+    for (const arquivo of STATIC_FILES.filter((nome) => nome.endsWith(".js") && nome !== "app.js")) {
+        const destino = path.join(saida, arquivo);
+        const modulo = await readFile(destino, "utf8");
+        await writeFile(destino, modulo.replace(/(from\s*["'])(\.\/[^"']+\.js)(["'])/g,
+            (_match, antes, recurso, depois) => `${antes}${recurso}?_release=${versaoPublicada}${depois}`));
+    }
 
     const manifest = JSON.parse(await readFile(path.join(saida, "manifest.json"), "utf8"));
     manifest.start_url = `./index.html?_release=${versaoPublicada}`;

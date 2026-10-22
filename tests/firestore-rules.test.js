@@ -2,7 +2,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { initializeTestEnvironment, assertSucceeds } from "@firebase/rules-unit-testing";
-import { doc, setDoc, getDoc, deleteDoc, updateDoc, serverTimestamp, Timestamp } from "firebase/firestore";
+import { doc, setDoc, getDoc, deleteDoc, updateDoc, runTransaction, serverTimestamp, Timestamp } from "firebase/firestore";
+import { LIMITE_MONETARIO_SEGURO, mesFinanceiroValido, normalizarEstado, validarBackup } from "../finance-core.js";
+import { makeOperation } from "../sync-core.js";
 
 const host = process.env.FIRESTORE_EMULATOR_HOST;
 async function assertDenied(operation) {
@@ -13,6 +15,42 @@ async function assertDenied(operation) {
         return true;
     });
 }
+
+function backupWithRecords(month, type, records) {
+    return { versao: 3, meses: { [month]: { receitas: type === "receitas" ? records : [], despesas: type === "despesas" ? records : [] } } };
+}
+
+function recordEntityKey(month, type, id) {
+    const value = `${month}/${type}/${id}`;
+    return [...new TextEncoder().encode(value)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+// Mirrors the transaction contract in firebase-sync-entry.js while using the
+// authenticated Firestore instance supplied by rules-unit-testing.
+async function commitOperation(db, uid, operation) {
+    const operationRef = doc(db, "users", uid, "operations", operation.id);
+    const recordRef = doc(db, "users", uid, "records", operation.entityKey);
+    return runTransaction(db, async (transaction) => {
+        const [prior, current] = await Promise.all([transaction.get(operationRef), transaction.get(recordRef)]);
+        if (prior.exists()) return { acknowledged: true, duplicate: true };
+        const remote = current.exists() ? current.data() : null;
+        if ((remote?.revision || null) !== operation.baseRevision) {
+            transaction.set(doc(db, "users", uid, "conflicts", operation.id), {
+                operationId: operation.id,
+                entityKey: operation.entityKey,
+                local: operation.value,
+                remote,
+                createdAt: serverTimestamp()
+            });
+            transaction.set(operationRef, { status: "conflict", createdAt: serverTimestamp() });
+            return { acknowledged: true, conflict: true, remote };
+        }
+        transaction.set(recordRef, { ...operation.value, revision: operation.id, updatedAt: serverTimestamp() });
+        transaction.set(operationRef, { status: "applied", createdAt: serverTimestamp() });
+        return { acknowledged: true };
+    });
+}
+
 test("Firestore rules have no public grants and deny unknown user paths", async () => {
     const rules = await readFile(new URL("../firestore.rules", import.meta.url), "utf8");
     assert.match(rules, /request\.auth != null && request\.auth\.uid == uid/);
@@ -20,8 +58,47 @@ test("Firestore rules have no public grants and deny unknown user paths", async 
     assert.match(rules, /allow delete: if false;/);
     assert.doesNotMatch(rules, /allow\s+read\s*,\s*write\s*:\s*if\s+true/);
 });
+
+test("núcleo financeiro define limites de mês, ID, nome, precisão e agregado", () => {
+    const records = (type, month, values) => backupWithRecords(month, type, values.map(({ id, nome = "Registro", valor }) => ({ id, nome, valor })));
+    assert.equal(validarBackup(records("receitas", "2000-01", [{ id: "inicio", valor: 1 }])), true);
+    assert.equal(validarBackup(records("receitas", "2100-12", [{ id: "fim", valor: 1 }])), true);
+    assert.equal(validarBackup(records("receitas", "1999-12", [{ id: "antes", valor: 1 }])), false);
+    assert.equal(validarBackup(records("receitas", "2101-01", [{ id: "depois", valor: 1 }])), false);
+    assert.equal(mesFinanceiroValido("2000-01"), true);
+    assert.equal(mesFinanceiroValido("2100-12"), true);
+    assert.equal(mesFinanceiroValido("1999-12"), false);
+    assert.equal(mesFinanceiroValido("2101-01"), false);
+    assert.equal(mesFinanceiroValido("2026-13"), false);
+
+    const longId = "i".repeat(129);
+    assert.equal(validarBackup(records("receitas", "2026-10", [{ id: "i".repeat(128), valor: 1 }])), true);
+    assert.equal(validarBackup(records("receitas", "2026-10", [{ id: longId, valor: 1 }])), true);
+    assert.equal(normalizarEstado(records("receitas", "2026-10", [{ id: longId, valor: 1 }])).meses["2026-10"].receitas[0].id, longId);
+    assert.equal(validarBackup(records("receitas", "2026-10", [{ id: "", valor: 1 }])), true);
+    assert.notEqual(normalizarEstado(records("receitas", "2026-10", [{ id: "", valor: 1 }])).meses["2026-10"].receitas[0].id, "");
+    assert.equal(validarBackup(records("receitas", "2026-10", [{ id: "empty-name", nome: "", valor: 1 }])), false);
+    assert.equal(validarBackup(records("receitas", "2026-10", [{ id: "space-name", nome: "   ", valor: 1 }])), false);
+
+    assert.equal(validarBackup(records("receitas", "2026-10", [{ id: "negative", valor: -0.01 }])), false);
+    assert.equal(validarBackup(records("receitas", "2026-10", [{ id: "zero", valor: 0 }])), true);
+    assert.equal(validarBackup(records("receitas", "2026-10", [{ id: "maximum", valor: LIMITE_MONETARIO_SEGURO }])), true);
+    assert.equal(validarBackup(records("receitas", "2026-10", [{ id: "sub-cent", valor: 0.001 }])), true);
+    assert.equal(normalizarEstado(records("receitas", "2026-10", [{ id: "sub-cent", valor: 0.001 }])).meses["2026-10"].receitas[0].valor, 0);
+
+    for (const type of ["receitas", "despesas"]) {
+        const aggregate = records(type, "2026-10", [
+            { id: `${type}-a`, valor: LIMITE_MONETARIO_SEGURO / 2 },
+            { id: `${type}-b`, valor: LIMITE_MONETARIO_SEGURO / 2 },
+            { id: `${type}-c`, valor: 0.01 }
+        ]);
+        assert.equal(validarBackup(aggregate), false, `the ${type} monthly total must be bounded`);
+    }
+});
+
 test("Firestore rules restrict records by UID and require tombstones", { skip: !host && "Requires Firestore Emulator" }, async () => {
     const [hostname, port] = host.split(":");
+    assert.match(hostname, /^(127\.0\.0\.1|localhost)$/, "Somente o Emulator local pode receber os testes.");
     const rules = await readFile(new URL("../firestore.rules", import.meta.url), "utf8");
     const env = await initializeTestEnvironment({ projectId: "demo-controle-financeiro", firestore: { host: hostname, port: Number(port), rules } });
     try {
@@ -33,7 +110,65 @@ test("Firestore rules restrict records by UID and require tombstones", { skip: !
         const pathAlice = doc(alice, "users/alice/records/key1");
         await assertSucceeds(setDoc(pathAlice, entry));
         await assertSucceeds(getDoc(pathAlice));
+        await assertSucceeds(setDoc(doc(alice, "users/alice/records/key-zero"), {
+            ...entry, record: { ...entry.record, valor: 0 }, updatedAt: serverTimestamp()
+        }));
+        await assertSucceeds(setDoc(doc(alice, "users/alice/records/key-maximum"), {
+            ...entry, id: "maximum", record: { ...entry.record, id: "maximum", valor: LIMITE_MONETARIO_SEGURO }, updatedAt: serverTimestamp()
+        }));
+        await assertSucceeds(setDoc(doc(alice, "users/alice/records/key-cent"), {
+            ...entry, id: "cent", record: { ...entry.record, id: "cent", valor: 0.01 }, updatedAt: serverTimestamp()
+        }));
+        await assertSucceeds(setDoc(doc(alice, "users/alice/records/key-cent-29"), {
+            ...entry, id: "cent-29", record: { ...entry.record, id: "cent-29", valor: 0.29 }, updatedAt: serverTimestamp()
+        }));
+        await assertDenied(setDoc(doc(alice, "users/alice/records/key-sub-cent"), {
+            ...entry, id: "sub-cent", record: { ...entry.record, id: "sub-cent", valor: 0.001 }, updatedAt: Timestamp.fromDate(new Date())
+        }));
+        await assertDenied(setDoc(doc(alice, "users/alice/records/key-before-core-range"), {
+            ...entry, month: "1999-12", id: "before-core-range", record: { ...entry.record, id: "before-core-range" }, updatedAt: Timestamp.fromDate(new Date())
+        }));
+        await assertDenied(setDoc(doc(alice, "users/alice/records/key-after-core-range"), {
+            ...entry, month: "2101-01", id: "after-core-range", record: { ...entry.record, id: "after-core-range" }, updatedAt: Timestamp.fromDate(new Date())
+        }));
+        await assertDenied(setDoc(doc(alice, "users/alice/records/key-empty-id"), {
+            ...entry, id: "", record: { ...entry.record, id: "" }, updatedAt: Timestamp.fromDate(new Date())
+        }));
+        await assertDenied(setDoc(doc(alice, "users/alice/records/key-space-name"), {
+            ...entry, id: "space-name", record: { ...entry.record, id: "space-name", nome: "   " }, updatedAt: Timestamp.fromDate(new Date())
+        }));
+        await assertDenied(setDoc(doc(alice, "users/alice/records/key-unicode-space-name"), {
+            ...entry, id: "unicode-space-name", record: { ...entry.record, id: "unicode-space-name", nome: "\u00a0" }, updatedAt: Timestamp.fromDate(new Date())
+        }));
+        await assertSucceeds(setDoc(doc(alice, "users/alice/records/key-id-128"), {
+            ...entry, id: "i".repeat(128), record: { ...entry.record, id: "i".repeat(128) }, updatedAt: serverTimestamp()
+        }));
+        for (const type of ["receitas", "despesas"]) {
+            const amounts = [LIMITE_MONETARIO_SEGURO / 2, LIMITE_MONETARIO_SEGURO / 2, 0.01];
+            for (const [index, valor] of amounts.entries()) {
+                const id = `aggregate-${type}-${index}`;
+                await assertSucceeds(setDoc(doc(alice, `users/alice/records/${id}`), {
+                    month: "2026-10", type, id,
+                    record: { id, nome: "Agregado", valor }, deleted: false,
+                    revision: `aggregate-revision-${type}-${index}`, updatedAt: serverTimestamp()
+                }));
+            }
+        }
+        // Current rules do not bind recordId to the client's derived entity key.
+        await assertSucceeds(setDoc(doc(alice, "users/alice/records/arbitrary-document-key"), entry));
+        await assertDenied(setDoc(doc(alice, "users/alice/records/key-negative"), {
+            ...entry, record: { ...entry.record, valor: -0.01 }, updatedAt: Timestamp.fromDate(new Date())
+        }));
+        await assertDenied(setDoc(doc(alice, "users/alice/records/key-over-limit"), {
+            ...entry, record: { ...entry.record, valor: 17592186044416.01 }, updatedAt: Timestamp.fromDate(new Date())
+        }));
         await assertDenied(setDoc(doc(alice, "users/alice/records/key2"), { ...entry, record: { ...entry.record, id: "other" }, updatedAt: clientStamp }));
+        await assertDenied(setDoc(doc(alice, "users/alice/records/key-long-id"), {
+            ...entry, id: "i".repeat(129), record: { ...entry.record, id: "i".repeat(129) }, updatedAt: clientStamp
+        }));
+        await assertDenied(setDoc(doc(alice, "users/alice/records/key-empty-name"), {
+            ...entry, record: { ...entry.record, nome: "" }, updatedAt: clientStamp
+        }));
         await assertDenied(setDoc(doc(alice, "users/alice/records/key2"), { ...entry, record: { ...entry.record, valor: "1000" }, updatedAt: Timestamp.fromDate(new Date()) }));
         await assertDenied(setDoc(doc(alice, "users/alice/records/key2"), { ...entry, unexpected: true, updatedAt: clientStamp }));
         await assertDenied(getDoc(doc(bob, "users/alice/records/key1")));
@@ -46,6 +181,38 @@ test("Firestore rules restrict records by UID and require tombstones", { skip: !
         await assertSucceeds(setDoc(doc(alice, "users/alice/records/key2"), tombstone));
         await assertDenied(setDoc(doc(alice, "users/alice/records/key3"), { ...tombstone, record: entry.record, updatedAt: clientStamp }));
         await assertDenied(setDoc(doc(alice, "users/alice/records/key4"), { ...tombstone, unexpected: true, updatedAt: clientStamp }));
+
+        const operationEntityKey = recordEntityKey("2026-10", "receitas", "transaction-record");
+        const activeValue = { month: "2026-10", type: "receitas", id: "transaction-record", record: { id: "transaction-record", nome: "Original", valor: 10 }, deleted: false };
+        const createOperation = makeOperation(operationEntityKey, activeValue, null);
+        assert.deepEqual(await commitOperation(alice, "alice", createOperation), { acknowledged: true });
+        const transactionRecordRef = doc(alice, "users/alice/records", operationEntityKey);
+        const createSnapshot = await getDoc(transactionRecordRef);
+        assert.equal(createSnapshot.data().revision, createOperation.id);
+        assert.equal((await getDoc(doc(alice, "users/alice/operations", createOperation.id))).data().status, "applied");
+
+        const updatedValue = { ...activeValue, record: { ...activeValue.record, valor: 20 } };
+        const updateOperation = makeOperation(operationEntityKey, updatedValue, createOperation.id);
+        assert.deepEqual(await commitOperation(alice, "alice", updateOperation), { acknowledged: true });
+        assert.equal((await getDoc(transactionRecordRef)).data().record.valor, 20);
+        assert.deepEqual(await commitOperation(alice, "alice", updateOperation), { acknowledged: true, duplicate: true });
+        assert.equal((await getDoc(transactionRecordRef)).data().revision, updateOperation.id);
+
+        const staleOperation = makeOperation(operationEntityKey, { ...activeValue, record: { ...activeValue.record, valor: 30 } }, "stale-revision");
+        const conflictResult = await commitOperation(alice, "alice", staleOperation);
+        assert.equal(conflictResult.conflict, true);
+        assert.equal((await getDoc(transactionRecordRef)).data().revision, updateOperation.id);
+        assert.equal((await getDoc(doc(alice, "users/alice/operations", staleOperation.id))).data().status, "conflict");
+        assert.equal((await getDoc(doc(alice, "users/alice/conflicts", staleOperation.id))).data().local.record.valor, 30);
+
+        const deleteOperation = makeOperation(operationEntityKey, {
+            month: "2026-10", type: "receitas", id: "transaction-record", deleted: true
+        }, updateOperation.id);
+        assert.deepEqual(await commitOperation(alice, "alice", deleteOperation), { acknowledged: true });
+        const tombstoneSnapshot = await getDoc(transactionRecordRef);
+        assert.equal(tombstoneSnapshot.data().deleted, true);
+        assert.equal(Object.hasOwn(tombstoneSnapshot.data(), "record"), false);
+
         const settingsRef = doc(alice, "users/alice/settings/finance");
         const legacySettings = { version: 3, categories: ["Casa"], theme: "claro", budgets: { padrao: { Casa: 20 }, meses: {} }, revision: "legacy-settings", updatedAt: clientStamp };
         await env.withSecurityRulesDisabled(async (context) => setDoc(doc(context.firestore(), "users/alice/settings/finance"), legacySettings));

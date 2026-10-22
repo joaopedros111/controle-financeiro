@@ -1,4 +1,5 @@
 import { initializeApp } from "firebase/app";
+import { snapshotConfirmed, validConflictRecord, recordEntityKey, validSyncIdentity, unicodeWellFormed } from "./sync-core.js";
 import { getAuth, GoogleAuthProvider, setPersistence, browserLocalPersistence, signInWithRedirect, getRedirectResult, onAuthStateChanged, signOut } from "firebase/auth";
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, memoryLocalCache, getFirestore, collection, doc, getDocs, getDocsFromServer, getDoc, getDocFromServer, onSnapshot, runTransaction, serverTimestamp, query, orderBy, setDoc, Timestamp } from "firebase/firestore";
 
@@ -14,8 +15,9 @@ async function readSettingsGeneration(db, uid, manifest, { serverOnly = false } 
         || typeof manifest.revision !== "string" || !manifest.revision || manifest.revision.length > 128) throw new Error("Manifesto de configurações remotas inválido.");
     const fetch = serverOnly ? getDocsFromServer : getDocs;
     const categorySnapshot = await fetch(generationCollection(db, uid, manifest.generation));
+    if (serverOnly && !snapshotConfirmed(categorySnapshot.metadata)) throw new Error("As categorias ainda não foram confirmadas pelo servidor.");
     if (categorySnapshot.size !== manifest.categoryCount) throw new Error("A geração de configurações remotas está incompleta.");
-    const categories = [], budgets = {};
+    const categories = [], budgets = Object.create(null);
     for (const item of categorySnapshot.docs) {
         const value = item.data();
         if (Object.keys(value).some((key) => !["name", "budget"].includes(key)) || typeof value.name !== "string" || !value.name.trim() || value.name.length > 40 || item.id !== settingsDocId("c", value.name) || categories.includes(value.name)) throw new Error("Documento de categoria remoto inválido.");
@@ -26,7 +28,7 @@ async function readSettingsGeneration(db, uid, manifest, { serverOnly = false } 
         }
     }
     if (Object.keys(budgets).length !== manifest.budgetCount) throw new Error("A geração de orçamentos remotos está incompleta.");
-    return { version: 3, categories, theme: manifest.theme, budgets: { padrao: budgets, meses: {} }, revision: manifest.revision, updatedAt: Timestamp.now() };
+    return { version: 3, categories: categories.sort(), theme: manifest.theme, budgets: { padrao: budgets, meses: {} }, revision: manifest.revision, updatedAt: Timestamp.now() };
 }
 function makeSettingsRevision(baseRevision, settings) {
     const source = `${baseRevision || "new"}|${JSON.stringify(settings)}`; let first = 2166136261, second = 2246822519, third = 3266489917, fourth = 668265263;
@@ -37,58 +39,82 @@ function makeSettingsRevision(baseRevision, settings) {
 export function criarFirebaseSync(config) {
     const app = initializeApp(config);
     const auth = getAuth(app);
+    const ensureUser = (uid) => { if (auth.currentUser?.uid !== uid) throw new Error("Conta não corresponde ao usuário autenticado."); };
     const provider = new GoogleAuthProvider();
     let db;
     try { db = initializeFirestore(app, { localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }) }); }
     catch { try { db = initializeFirestore(app, { localCache: memoryLocalCache() }); } catch { db = getFirestore(app); } }
     return {
-        async ready() { await setPersistence(auth, browserLocalPersistence); await getRedirectResult(auth); return auth.currentUser; },
+        async ready() {
+            await setPersistence(auth, browserLocalPersistence);
+            try { await getRedirectResult(auth); }
+            catch (error) {
+                if (globalThis.navigator?.onLine !== false || error?.code !== "auth/network-request-failed") throw error;
+            }
+            return auth.currentUser;
+        },
         onUser: (callback) => onAuthStateChanged(auth, callback),
         login: () => signInWithRedirect(auth, provider),
         logout: () => signOut(auth),
-        async list(uid, { serverOnly = false } = {}) {
+        async list(uid, { serverOnly = true } = {}) {
             if (auth.currentUser?.uid !== uid) throw new Error("Conta não corresponde ao usuário autenticado.");
-            const recordsQuery = query(collection(db, "users", uid, "records"), orderBy("month"));
+            // Do not orderBy: it silently omits malformed documents missing `month`.
+            const recordsQuery = collection(db, "users", uid, "records");
             const snap = serverOnly ? await getDocsFromServer(recordsQuery) : await getDocs(recordsQuery);
+            if (!snapshotConfirmed(snap.metadata)) throw new Error("Os lançamentos ainda não foram confirmados pelo servidor.");
             return snap.docs.map((entry) => ({ ...entry.data(), _docId: entry.id, hasPendingWrites: entry.metadata.hasPendingWrites }));
         },
-        async getSettings(uid, { serverOnly = false } = {}) {
+        async getSettings(uid, { serverOnly = true } = {}) {
             if (auth.currentUser?.uid !== uid) throw new Error("Conta não corresponde ao usuário autenticado.");
             const fetch = serverOnly ? getDocFromServer : getDoc;
             const manifest = await fetch(settingsV2Ref(db, uid));
+            if (serverOnly && !snapshotConfirmed(manifest.metadata)) throw new Error("O manifesto ainda não foi confirmado pelo servidor.");
             if (manifest.exists()) return readSettingsGeneration(db, uid, manifest.data(), { serverOnly });
             const legacy = await fetch(doc(db, "users", uid, "settings", "finance"));
+            if (serverOnly && !snapshotConfirmed(legacy.metadata)) throw new Error("As configurações ainda não foram confirmadas pelo servidor.");
             return legacy.exists() ? legacy.data() : null;
         },
         async saveSettings(uid, settings, baseRevision = null) {
             if (auth.currentUser?.uid !== uid) throw new Error("Conta não corresponde ao usuário autenticado.");
             const categories = settings?.categories, defaults = settings?.budgets?.padrao;
-            if (!Array.isArray(categories) || categories.length > 1000 || categories.some((name) => typeof name !== "string" || !name.trim() || name.length > 40)
+            if (!Array.isArray(categories) || categories.length > 1000 || categories.some((name) => typeof name !== "string" || !name.trim() || name.length > 40 || !unicodeWellFormed(name))
                 || new Set(categories).size !== categories.length || !defaults || typeof defaults !== "object" || Array.isArray(defaults)
                 || Object.entries(defaults).some(([name, amount]) => !categories.includes(name) || !Number.isFinite(amount) || amount < 0 || amount > 2 ** 44)
                 || !["claro", "escuro", "rosa", "floresta", "pangolim"].includes(settings.theme)) throw new TypeError("Configurações financeiras inválidas para sincronização.");
             const revision = makeSettingsRevision(baseRevision, settings), generation = revision;
             const categoriesRef = generationCollection(db, uid, generation);
             const writeInChunks = async (entries, makeWrite) => {
-                for (let offset = 0; offset < entries.length; offset += 20) await Promise.all(entries.slice(offset, offset + 20).map(makeWrite));
+                for (let offset = 0; offset < entries.length; offset += 20) {
+                    const results = await Promise.allSettled(entries.slice(offset, offset + 20).map(makeWrite));
+                    const failed = results.find((result) => result.status === "rejected");
+                    if (failed) throw failed.reason;
+                }
             };
             await writeInChunks(categories, async (name) => {
+                ensureUser(uid);
                 const reference = doc(categoriesRef, settingsDocId("c", name));
                 const value = Object.hasOwn(defaults, name) ? { name, budget: defaults[name] } : { name };
-                const existing = await getDocFromServer(reference);
+                return runTransaction(db, async (tx) => {
+                ensureUser(uid);
+                const existing = await tx.get(reference);
+                ensureUser(uid);
                 if (existing.exists()) {
                     const remote = existing.data();
                     if (remote.name !== value.name || Object.hasOwn(remote, "budget") !== Object.hasOwn(value, "budget")
                         || (Object.hasOwn(value, "budget") && remote.budget !== value.budget)) throw new Error("A geração de configurações existente contém dados diferentes.");
                     return;
                 }
-                await setDoc(reference, value);
+                tx.set(reference, value);
+                });
             });
             const target = settingsV2Ref(db, uid), legacyTarget = doc(db, "users", uid, "settings", "finance");
             return runTransaction(db, async (tx) => {
+                ensureUser(uid);
                 const [current, legacy] = await Promise.all([tx.get(target), tx.get(legacyTarget)]);
+                ensureUser(uid);
                 const active = current.exists() ? current.data() : legacy.exists() ? legacy.data() : null;
-                if ((active?.revision || null) !== baseRevision) return { conflict: true, remote: current.exists() ? await readSettingsGeneration(db, uid, active) : active };
+                if (active?.revision === revision) return { acknowledged: true, duplicate: true, revision };
+                if ((active?.revision || null) !== baseRevision) return { conflict: true, remote: current.exists() ? await readSettingsGeneration(db, uid, active, { serverOnly: true }) : active };
                 tx.set(target, { version: 4, theme: settings.theme, categoryCount: categories.length, budgetCount: Object.keys(defaults).length,
                     generation, revision });
                 return { acknowledged: true, revision };
@@ -96,51 +122,58 @@ export function criarFirebaseSync(config) {
         },
         listenSettings(uid, callback, failure) {
             if (auth.currentUser?.uid !== uid) throw new Error("Conta não corresponde ao usuário autenticado.");
-            let generationUnsubscribers = [];
-            const clearGeneration = () => { generationUnsubscribers.forEach((unsubscribe) => unsubscribe()); generationUnsubscribers = []; };
+            let generationUnsubscribers = [], active = true, generationToken = 0;
+            const clearGeneration = () => { generationToken += 1; generationUnsubscribers.forEach((unsubscribe) => unsubscribe()); generationUnsubscribers = []; };
             const legacyRef = doc(db, "users", uid, "settings", "finance");
-            const legacyUnsubscribe = onSnapshot(legacyRef, (legacy) => { if (!legacy.exists()) callback(null, legacy.metadata); }, failure);
-            const manifestUnsubscribe = onSnapshot(settingsV2Ref(db, uid), (manifest) => {
+            const manifestUnsubscribe = onSnapshot(settingsV2Ref(db, uid), { includeMetadataChanges: true }, (manifest) => {
+                if (!active || auth.currentUser?.uid !== uid) return;
                 clearGeneration();
+                const token = generationToken, current = () => active && token === generationToken && auth.currentUser?.uid === uid;
                 if (!manifest.exists()) {
-                    generationUnsubscribers.push(onSnapshot(legacyRef, (legacy) => callback(legacy.exists() ? legacy.data() : null, legacy.metadata), failure));
+                    generationUnsubscribers.push(onSnapshot(legacyRef, { includeMetadataChanges: true }, (legacy) => {
+                        if (current()) callback(legacy.exists() ? legacy.data() : null,
+                            { fromCache: manifest.metadata.fromCache || legacy.metadata.fromCache, hasPendingWrites: manifest.metadata.hasPendingWrites || legacy.metadata.hasPendingWrites });
+                    }, failure));
                     return;
                 }
-                const data = manifest.data(); let categories = null, emitted = false;
+                const data = manifest.data(); let categories = null;
                 const publish = () => {
-                    if (emitted || !categories) return;
-                    emitted = true;
+                    if (!current() || !categories) return;
                     try {
                         if (categories.size !== data.categoryCount) throw new Error("A geração de configurações remotas está incompleta.");
-                        const values = [], defaults = {};
+                        const values = [], defaults = Object.create(null);
                         for (const item of categories.docs) { const value = item.data(); if (Object.keys(value).some((key) => !["name", "budget"].includes(key)) || typeof value.name !== "string" || !value.name.trim() || value.name.length > 40 || item.id !== settingsDocId("c", value.name) || values.includes(value.name)) throw new Error("Documento de categoria remoto inválido."); values.push(value.name); if (Object.hasOwn(value, "budget")) { if (!Number.isFinite(value.budget) || value.budget < 0 || value.budget > 2 ** 44) throw new Error("Orçamento remoto inválido."); defaults[value.name] = value.budget; } }
                         if (Object.keys(defaults).length !== data.budgetCount) throw new Error("A geração de orçamentos remotos está incompleta.");
-                        callback({ version: 3, categories: values, theme: data.theme, budgets: { padrao: defaults, meses: {} }, revision: data.revision, updatedAt: Timestamp.now() }, manifest.metadata);
+                        callback({ version: 3, categories: values.sort(), theme: data.theme, budgets: { padrao: defaults, meses: {} }, revision: data.revision, updatedAt: Timestamp.now() },
+                            { fromCache: manifest.metadata.fromCache || categories.metadata.fromCache, hasPendingWrites: manifest.metadata.hasPendingWrites || categories.metadata.hasPendingWrites });
                     } catch (error) { failure?.(error); }
                 };
-                generationUnsubscribers.push(onSnapshot(generationCollection(db, uid, data.generation), (snapshot) => { categories = snapshot; publish(); }, failure));
+                generationUnsubscribers.push(onSnapshot(generationCollection(db, uid, data.generation), { includeMetadataChanges: true }, (snapshot) => { categories = snapshot; publish(); }, failure));
             }, failure);
-            return () => { clearGeneration(); legacyUnsubscribe(); manifestUnsubscribe(); };
+            return () => { active = false; clearGeneration(); manifestUnsubscribe(); };
         },
         listen(uid, callback, failure) {
             if (auth.currentUser?.uid !== uid) throw new Error("Conta não corresponde ao usuário autenticado.");
-            return onSnapshot(collection(db, "users", uid, "records"), (snapshot) => callback(snapshot.docs.map((entry) => ({ ...entry.data(), _docId: entry.id, hasPendingWrites: entry.metadata.hasPendingWrites })), snapshot.metadata), failure);
+            return onSnapshot(collection(db, "users", uid, "records"), { includeMetadataChanges: true }, (snapshot) => callback(snapshot.docs.map((entry) => ({ ...entry.data(), _docId: entry.id, hasPendingWrites: entry.metadata.hasPendingWrites })), snapshot.metadata), failure);
         },
-        async listConflicts(uid, { serverOnly = false } = {}) {
+        async listConflicts(uid, { serverOnly = true } = {}) {
             if (auth.currentUser?.uid !== uid) throw new Error("Conta não corresponde ao usuário autenticado.");
             const source = collection(db, "users", uid, "conflicts");
             const snap = serverOnly ? await getDocsFromServer(source) : await getDocs(source);
+            if (!snapshotConfirmed(snap.metadata)) throw new Error("Os conflitos ainda não foram confirmados pelo servidor.");
             return snap.docs.map((entry) => ({ ...entry.data(), _docId: entry.id }));
         },
         listenConflicts(uid, callback, failure) {
             if (auth.currentUser?.uid !== uid) throw new Error("Conta não corresponde ao usuário autenticado.");
-            return onSnapshot(collection(db, "users", uid, "conflicts"), (snapshot) => callback(snapshot.docs.map((entry) => ({ ...entry.data(), _docId: entry.id })), snapshot.metadata), failure);
+            return onSnapshot(collection(db, "users", uid, "conflicts"), { includeMetadataChanges: true }, (snapshot) => callback(snapshot.docs.map((entry) => ({ ...entry.data(), _docId: entry.id })), snapshot.metadata), failure);
         },
         async resolveConflict(uid, operationId, resolution) {
             if (auth.currentUser?.uid !== uid) throw new Error("Conta não corresponde ao usuário autenticado.");
             const target = doc(db, "users", uid, "conflicts", operationId);
             return runTransaction(db, async (tx) => {
+                ensureUser(uid);
                 const snapshot = await tx.get(target);
+                ensureUser(uid);
                 if (!snapshot.exists()) return false;
                 if (snapshot.data().resolved === true) return true;
                 tx.update(target, { resolved: true, resolution, resolvedAt: serverTimestamp() });
@@ -149,11 +182,21 @@ export function criarFirebaseSync(config) {
         },
         async commit(uid, op) {
             if (auth.currentUser?.uid !== uid) throw new Error("Conta não corresponde ao usuário autenticado.");
+            if (!op || typeof op.id !== "string" || !op.id || op.id.length > 128
+                || !validConflictRecord(op.value) || !validSyncIdentity(op.value.id)
+                || op.entityKey !== recordEntityKey(op.value)) throw new TypeError("Operação financeira inválida; os dados locais foram preservados.");
             const operationRef = doc(db, "users", uid, "operations", op.id);
             const recordRef = doc(db, "users", uid, "records", op.entityKey);
             return runTransaction(db, async (tx) => {
+                ensureUser(uid);
                 const [prior, current] = await Promise.all([tx.get(operationRef), tx.get(recordRef)]);
-                if (prior.exists()) return { acknowledged: true, duplicate: true };
+                ensureUser(uid);
+                if (prior.exists()) {
+                    const status = prior.data().status;
+                    if (!["applied", "conflict"].includes(status)) throw new Error("Confirmação remota de operação inválida.");
+                    return status === "conflict" ? { acknowledged: true, duplicate: true, conflict: true, remote: current.exists() ? current.data() : null }
+                        : { acknowledged: true, duplicate: true };
+                }
                 const old = current.exists() ? current.data() : null;
                 if ((old?.revision || null) !== op.baseRevision) {
                     const conflictRef = doc(db, "users", uid, "conflicts", op.id);

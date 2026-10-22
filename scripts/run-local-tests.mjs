@@ -1,0 +1,94 @@
+import { mkdtemp, copyFile, writeFile, readFile } from "node:fs/promises";
+import { createWriteStream } from "node:fs";
+import { createServer } from "node:http";
+import { createServer as createProbe } from "node:net";
+import { spawn } from "node:child_process";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { build } from "esbuild";
+import { prepararArtefatoPages } from "./prepare-pages.mjs";
+
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const browser = process.argv[2] === "browser";
+if (!["rules", "browser"].includes(process.argv[2])) throw new Error("Use rules ou browser.");
+const project = "demo-controle-financeiro";
+for (const port of browser ? [8080, 9099, 4400, 4500, 9150] : [8080, 4400, 4500, 9150]) {
+    await new Promise((resolve, reject) => {
+        const probe = createProbe().once("error", () => reject(new Error(`Porta local ${port} ocupada; nenhuma instância existente foi encerrada.`)));
+        probe.listen(port, "127.0.0.1", () => probe.close(resolve));
+    });
+}
+const work = await mkdtemp(path.join(tmpdir(), "controle-financeiro-homolog-"));
+console.log(`Artefatos e logs isolados: ${work}`);
+await copyFile(path.join(root, "firestore.rules"), path.join(work, "firestore.rules"));
+await writeFile(path.join(work, "firebase.json"), JSON.stringify({
+    firestore: { rules: "firestore.rules" }, emulators: { singleProjectMode: false,
+        firestore: { host: "127.0.0.1", port: 8080 }, ...(browser ? { auth: { host: "127.0.0.1", port: 9099 } } : {}) }
+}));
+const env = { ...process.env, CI: "true", FIREBASE_CLI_DISABLE_UPDATE_CHECK: "true" };
+delete env.DEBUG;
+for (const name of ["NO_PROXY", "no_grpc_proxy"]) env[name] = [env[name], "127.0.0.1", "localhost", "::1"].filter(Boolean).join(",");
+let server;
+if (browser) {
+    const site = path.join(work, "site");
+    await prepararArtefatoPages({ diretorioFonte: root, diretorioSaida: site, numeroExecucao: "1" });
+    const originalHTML = await readFile(path.join(site, "index.html"), "utf8");
+    // Enable the intentionally commented feature only in the synthetic test copy.
+    const testHTML = originalHTML.replace(/<!--\s*(<section class="ajustes-secao" aria-labelledby="titulo-sincronizacao">[\s\S]*?<\/section>)\s*-->/, "$1");
+    if (!testHTML.includes('id="entrar-google"')) throw new Error("A cópia de homologação não contém a interface de sincronização.");
+    await writeFile(path.join(site, "index.html"), testHTML);
+    await writeFile(path.join(site, "local-only.html"), testHTML.replace(/<section class="ajustes-secao" aria-labelledby="titulo-sincronizacao">[\s\S]*?<\/section>/, "<!-- Optional synchronization UI omitted for this local test. -->"));
+    await writeFile(path.join(site, "firebase-config.js"), `export const firebaseConfig=Object.freeze({apiKey:"demo-only",authDomain:"${project}.firebaseapp.com",projectId:"${project}",appId:"1:123:web:local"}); export const firebaseConfigurado=(c=firebaseConfig)=>c.projectId==="${project}";`);
+    const fixture = path.join(work, "firebase-browser-fixture.mjs");
+    await writeFile(fixture, `
+        import { criarFirebaseSync as production } from ${JSON.stringify(path.join(root, "firebase-sync-entry.js").replaceAll("\\", "/"))};
+        import {getAuth,connectAuthEmulator,signInWithEmailAndPassword} from "firebase/auth";
+        import {getFirestore,connectFirestoreEmulator} from "firebase/firestore";
+        export function criarFirebaseSync(config) {
+            if(config.projectId!=="${project}" || !["127.0.0.1","localhost"].includes(location.hostname)) throw new Error("Ambiente local inválido");
+            const client=production(config), auth=getAuth();
+            connectAuthEmulator(auth,"http://127.0.0.1:9099",{disableWarnings:true});
+            connectFirestoreEmulator(getFirestore(),"127.0.0.1",8080);
+            client.login=()=>signInWithEmailAndPassword(auth,window.__testEmail,"synthetic-password-only");
+            return client;
+        }
+    `);
+    await build({ entryPoints: [fixture], nodePaths: [path.join(root, "node_modules")], outfile: path.join(site, "firebase-sync.bundle.js"),
+        bundle: true, format: "esm", platform: "browser", target: "es2022" });
+    const types = { ".js": "text/javascript", ".css": "text/css", ".html": "text/html", ".json": "application/json", ".webmanifest": "application/manifest+json", ".png": "image/png" };
+    server = createServer(async (req, res) => {
+        try {
+            const pathname = decodeURIComponent(new URL(req.url, "http://127.0.0.1").pathname);
+            const file = path.resolve(site, `.${pathname === "/" ? "/index.html" : pathname}`);
+            if (!file.startsWith(site + path.sep)) { res.writeHead(403).end(); return; }
+            const body = await readFile(file);
+            res.writeHead(200, { "Content-Type": types[path.extname(file)] || "application/octet-stream", "Cache-Control": "no-store" }); res.end(body);
+        } catch { res.writeHead(404).end(); }
+    });
+    await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+    env.LOCAL_TEST_BASE_URL = `http://127.0.0.1:${server.address().port}`;
+    env.LOCAL_TEST_EMULATORS = "1"; env.LOCAL_TEST_OUTPUT = work;
+}
+const quote = (value) => `"${value.replaceAll('"', '')}"`;
+const command = browser
+    ? [process.execPath, path.join(root, "node_modules", "@playwright", "test", "cli.js"), "test", "--config", path.join(root, "playwright.config.mjs"), ...process.argv.slice(3)].map(quote).join(" ")
+    : [process.execPath, "--test", "--test-concurrency=1", path.join(root, "tests", "firestore-rules.test.js"), path.join(root, "tests", "firebase-sync-client.test.js")].map(quote).join(" ");
+const log = createWriteStream(path.join(work, "execution.log"));
+const child = spawn(process.execPath, [path.join(root, "node_modules", "firebase-tools", "lib", "bin", "firebase.js"),
+    "emulators:exec", "--only", browser ? "firestore,auth" : "firestore", "--project", project, "--config", path.join(work, "firebase.json"), command],
+{ cwd: work, env, windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
+for (const stream of [child.stdout, child.stderr]) stream.on("data", (data) => { log.write(data); process.stdout.write(data); });
+const interrupt = () => {
+    if (process.platform === "win32") spawn("taskkill", ["/PID", String(child.pid), "/T", "/F"], { windowsHide: true, stdio: "ignore" });
+    else child.kill("SIGINT");
+};
+process.once("SIGINT", interrupt); process.once("SIGTERM", interrupt);
+try {
+    process.exitCode = await new Promise((resolve, reject) => { child.once("error", reject); child.once("close", (code) => resolve(code ?? 1)); });
+} finally {
+    process.removeListener("SIGINT", interrupt); process.removeListener("SIGTERM", interrupt);
+    if (server) await new Promise((resolve) => server.close(resolve));
+    await new Promise((resolve) => log.end(resolve));
+    console.log(`Logs preservados fora do repositório: ${work}`);
+}

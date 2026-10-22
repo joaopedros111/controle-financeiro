@@ -125,19 +125,22 @@ export function criarRecuperacaoFinanceira(storage) {
             if (fontes.size > 0) return false;
             return exportar() !== false;
         },
-        restaurar({ chave, backup, validar, normalizar, confirmar }) {
+        restaurar({ chave, backup, validar, normalizar, confirmar, persistir }) {
             if (!validar(backup)) return { estado: "invalido", dados: null, persistido: false };
 
             const dados = normalizar(backup);
             if (!confirmar()) return { estado: "cancelado", dados: null, persistido: false };
 
             const substituirProtegido = fontes.has(chave);
-            const persistido = storage.escreverJson(chave, dados, { substituirProtegido });
-            if (persistido) {
-                fontes.forEach((_, fonte) => storage.desproteger(fonte));
-                fontes.clear();
-            }
-            return { estado: "restaurado", dados, persistido };
+            const concluir = (persistido) => {
+                if (persistido) {
+                    fontes.forEach((_, fonte) => storage.desproteger(fonte));
+                    fontes.clear();
+                }
+                return { estado: "restaurado", dados, persistido };
+            };
+            if (persistir) return Promise.resolve().then(() => persistir(chave, dados)).then(concluir);
+            return concluir(storage.escreverJson(chave, dados, { substituirProtegido }));
         }
     };
 }
