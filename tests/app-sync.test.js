@@ -23,7 +23,7 @@ function harness(items = [entry()], initial = financialState(entry())) {
     const context = vm.createContext({ ...sync, structuredClone, TextEncoder, console,
         validarBackup, normalizarEstado, normalizarValorMonetario, mesFinanceiroValido,
         CHAVE_ESTADO: "controleFinanceiro:v3", IDB_HOMOLOGACAO: false, idbBase: structuredClone(initial),
-        window: { addEventListener() {} }, idbPendente: Promise.resolve(), idbBloqueado: false,
+        setGoogleAuthUser() {}, updateGoogleLoginButton() {}, window: { addEventListener() {} }, idbPendente: Promise.resolve(), idbBloqueado: false,
         estado: structuredClone(initial), syncUser: { uid: "alice" }, syncRemoteRecords: items,
         syncRemoteRecordsLoaded: true, syncRemoteSettings: null, settingsConflictActive: false,
         applyingRemoteSync: false, chaveEstadoAtual: "account-alice", navigator: { onLine: true },
@@ -60,7 +60,7 @@ function harness(items = [entry()], initial = financialState(entry())) {
     context.idbBanco = db;
     context.idbServico = new ServicoFinanceiroAtomico(db, validarBackup, q => Array.isArray(q?.outbox) && Array.isArray(q?.conflicts));
     const part = (start, end) => source.slice(source.indexOf(start), source.indexOf(end));
-    vm.runInContext(part("function syncEntityKey(", "async function loadFirebaseSync("), context);
+    vm.runInContext(part("function syncEntityKey(", "let firebaseInitPromise ="), context);
     vm.runInContext(part("let syncPublishChain =", 'window.addEventListener("finance-local-change"'), context);
     vm.runInContext(part("async function resolveSyncConflict(", 'syncUi.conflicts.addEventListener'), context);
     return { context, values, statuses, commits, meta: () => context.readSyncMeta(),

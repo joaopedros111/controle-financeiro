@@ -3827,20 +3827,111 @@ function validarRegistrosRemotos(records) {
 function validarConfiguracoesRemotas(settings) {
     return validateRemoteSettings(settings);
 }
-async function loadFirebaseSync() {
-    if (IDB_HOMOLOGACAO) { setSyncStatus("Firebase desativado no ensaio IndexedDB."); return; }
-    if (!firebaseConfigurado(firebaseConfig)) { setSyncStatus("Configure o projeto Firebase neste dispositivo para habilitar o login."); return; }
-    try { setSyncStatus("Conectando ao Firebase…"); const sdk = await import(new URL(`./firebase-sync.bundle.js?_release=${encodeURIComponent(VERSAO_BUNDLE || "local")}`, import.meta.url)); firebaseClient = sdk.criarFirebaseSync(firebaseConfig); await firebaseClient.ready(); firebaseClient.onUser(onFirebaseUser); }
-    catch (error) { console.warn("Falha de sincronizacao.", error?.code || "unknown", error?.message); setSyncStatus("Firebase indisponível. Os dados locais continuam funcionando.", true); }
+function googleAuthMessage(error) {
+    switch (error?.code) {
+        case 'auth/popup-closed-by-user': case 'auth/cancelled-popup-request': return 'Login cancelado. Seus dados continuam neste dispositivo.';
+        case 'auth/popup-blocked': case 'auth/operation-not-supported-in-this-environment': return 'Permita popups e tente novamente. No iPhone/iPad ou aplicativo instalado, abra este mesmo endereco no Safari ou Chrome para entrar.';
+        case 'auth/network-request-failed': return 'Sem conexao com o Google. Verifique a internet e tente novamente.';
+        case 'auth/unauthorized-domain': return 'Este dominio nao esta autorizado no Firebase Authentication. Contate o responsavel pelo aplicativo.';
+        case 'auth/operation-not-allowed': return 'O login Google nao esta habilitado neste projeto Firebase.';
+        case 'auth/web-storage-unsupported': return 'O navegador bloqueou o armazenamento da sessao. Abra em uma janela normal do navegador.';
+        default: return 'Nao foi possivel entrar com Google. Tente novamente no navegador. Codigo: ' + (error?.code || 'indisponivel');
+    }
+}
+let firebaseInitPromise = null, firebaseReady = false, googleLoginPending = false;
+let googleAuthUser = null, googleAuthRevision = 0;
+let firebaseAuthStop = null, firebaseAuthGeneration = 0;
+function stopFirebaseAuthObserver() {
+    const stop = firebaseAuthStop;
+    firebaseAuthStop = null;
+    firebaseAuthGeneration += 1;
+    firebaseReady = false;
+    stop?.();
+}
+function updateGoogleLoginButton() {
+    syncUi.login.disabled = !!(firebaseInitPromise || googleLoginPending || googleAuthUser || syncUser);
+}
+function setGoogleAuthUser(user) {
+    googleAuthUser = user || null;
+    googleAuthRevision += 1;
+    updateGoogleLoginButton();
+}
+function loadFirebaseSync() {
+    if (firebaseInitPromise) return firebaseInitPromise;
+    if (firebaseReady) { updateGoogleLoginButton(); return Promise.resolve(); }
+    if (IDB_HOMOLOGACAO) { setSyncStatus("Firebase desativado no ensaio IndexedDB."); return Promise.resolve(); }
+    if (!firebaseConfigurado(firebaseConfig)) { setSyncStatus("Configure o projeto Firebase neste dispositivo para habilitar o login."); return Promise.resolve(); }
+    firebaseInitPromise = (async () => {
+        try {
+            setSyncStatus("Conectando ao Firebase...");
+            const sdk = await import(new URL(`./firebase-sync.bundle.js?_release=${encodeURIComponent(VERSAO_BUNDLE || "local")}`, import.meta.url));
+            firebaseClient = sdk.criarFirebaseSync(firebaseConfig);
+            const user = await firebaseClient.ready();
+            stopFirebaseAuthObserver();
+            const generation = firebaseAuthGeneration;
+            let observing = false, received = false, observedUser;
+            const deliver = user => {
+                if (generation !== firebaseAuthGeneration) return;
+                Promise.resolve(onFirebaseUser(user)).catch(error => {
+                    if (generation === firebaseAuthGeneration) setSyncStatus(googleAuthMessage(error), true);
+                });
+            };
+            firebaseAuthStop = firebaseClient.onUser(user => {
+                if (generation !== firebaseAuthGeneration) return;
+                if (!observing) { received = true; observedUser = user; return; }
+                deliver(user);
+            });
+            // Publish ready()'s provisional user only after observer registration succeeds.
+            observing = true;
+            firebaseReady = true;
+            if (received) deliver(observedUser);
+            else setGoogleAuthUser(user);
+        } catch (error) {
+            stopFirebaseAuthObserver();
+            firebaseClient = null;
+            console.warn("Falha de autenticacao.", error?.code || "unknown");
+            setSyncStatus(googleAuthMessage(error), true);
+        } finally {
+            firebaseInitPromise = null;
+            updateGoogleLoginButton();
+        }
+    })();
+    updateGoogleLoginButton();
+    return firebaseInitPromise;
+}
+function startGoogleLogin() {
+    if (firebaseInitPromise || googleLoginPending || googleAuthUser || syncUser) return;
+    if (!firebaseReady || !firebaseClient) { void loadFirebaseSync(); return; }
+    googleLoginPending = true;
+    const revision = googleAuthRevision;
+    updateGoogleLoginButton();
+    setSyncStatus('Aguardando entrada com Google...');
+    try {
+        // Keep this call synchronous in the user's click; no await before popup.
+        const popup = firebaseClient.login();
+        Promise.resolve(popup).then(result => {
+            if (revision === googleAuthRevision && result?.user) setGoogleAuthUser(result.user);
+        }).catch(error => {
+            if (revision === googleAuthRevision) setSyncStatus(googleAuthMessage(error), true);
+        }).finally(() => {
+            googleLoginPending = false;
+            updateGoogleLoginButton();
+        });
+    } catch (error) {
+        googleLoginPending = false;
+        if (revision === googleAuthRevision) setSyncStatus(googleAuthMessage(error), true);
+        updateGoogleLoginButton();
+    }
 }
 async function onFirebaseUser(user) {
+    setGoogleAuthUser(user);
     const previousUid = syncUser?.uid || null;
     const session = syncSessions.begin(), uid = user?.uid || null;
     let draining;
     do { draining = idbPendente; await draining.catch(() => {}); } while (draining !== idbPendente);
     if (!isCurrentSyncSession(session, previousUid)) return;
     idbBloqueado = true;
-    syncStopListener?.(); syncSettingsStop?.(); syncConflictsStop?.(); syncStopListener = null; syncSettingsStop = null; syncConflictsStop = null; syncUser = user || null; syncRemoteRecords = []; syncRemoteRecordsLoaded = false; syncRemoteSettings = null;
+    syncStopListener?.(); syncSettingsStop?.(); syncConflictsStop?.(); syncStopListener = null; syncSettingsStop = null; syncConflictsStop = null; syncUser = user || null; updateGoogleLoginButton(); syncRemoteRecords = []; syncRemoteRecordsLoaded = false; syncRemoteSettings = null;
     settingsConflictActive = false; syncUi.last.textContent = ""; syncUi.conflictList?.replaceChildren();
     if (previousUid !== uid) resetFinancialInteractions();
     try {
@@ -4122,7 +4213,7 @@ window.addEventListener("finance-backup-restored", () => {
 });
 window.addEventListener("finance-local-change", (event) => { if (!applyingRemoteSync && syncUser && event.detail.uid === syncUser.uid) { setSyncStatus(navigator.onLine ? "Aguardando envio." : "Offline — alterações pendentes."); if (syncUi.enabled.checked) void publishFirebaseState(event.detail.state, undefined, false, null, event.detail.deletedRecords || []).catch((error) => { console.warn("Falha de sincronizacao.", error?.code || "unknown", error?.message); setSyncStatus("Falha no envio. As alterações continuam salvas localmente.", true); }); } });
 window.addEventListener("online", () => { if (syncUser) void publishFirebaseState(estado).catch(() => setSyncStatus("Falha no envio. Tente novamente.", true)); });
-syncUi.login.addEventListener("click", () => { if (firebaseClient) void firebaseClient.login(); else void loadFirebaseSync().then(() => firebaseClient?.login()); });
+syncUi.login.addEventListener("click", startGoogleLogin);
 syncUi.logout.addEventListener("click", () => { if (firebaseClient) void firebaseClient.logout(); });
 syncUi.retry.addEventListener("click", () => { if (syncUser) void onFirebaseUser(syncUser); else void loadFirebaseSync(); });
 syncUi.restore.addEventListener("click", async () => {

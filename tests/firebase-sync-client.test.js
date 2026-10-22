@@ -176,3 +176,17 @@ test("Auth persistido continua acessível quando redirect falha somente por esta
     h.context.getRedirectResult = async () => { throw Object.assign(new Error("offline"), { code: "auth/network-request-failed" }); };
     assert.equal((await h.client.ready()).uid, "alice");
 });
+
+test('Google popup success preserves existing session and does not use redirect', async()=>{
+    const h=harness();let calls=0;h.context.signInWithPopup=async auth=>{calls++;return {user:auth.currentUser};};
+    h.context.signInWithRedirect=()=>{throw new Error('unexpected redirect');};
+    assert.equal((await h.client.login()).user.uid,'alice');assert.equal(calls,1);
+});
+for(const code of ['auth/popup-closed-by-user','auth/popup-blocked','auth/network-request-failed']) test('Google popup propagates '+code+' without clearing session',async()=>{
+    const h=harness();h.context.signInWithPopup=async()=>{throw Object.assign(new Error(code),{code});};
+    await assert.rejects(h.client.login(),error=>error.code===code);assert.equal(h.auth.currentUser.uid,'alice');assert.equal(h.data.size,0);
+});
+test('ready restores existing session even when no redirect result exists',async()=>{
+    const h=harness();h.context.setPersistence=async()=>{};h.context.browserLocalPersistence={};h.context.getRedirectResult=async()=>null;
+    assert.equal((await h.client.ready()).uid,'alice');
+});

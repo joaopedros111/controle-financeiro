@@ -1,6 +1,6 @@
 import { initializeApp } from "firebase/app";
 import { snapshotConfirmed, validConflictRecord, recordEntityKey, validSyncIdentity, unicodeWellFormed } from "./sync-core.js";
-import { getAuth, GoogleAuthProvider, setPersistence, browserLocalPersistence, signInWithRedirect, getRedirectResult, onAuthStateChanged, signOut } from "firebase/auth";
+import { getAuth, GoogleAuthProvider, setPersistence, browserLocalPersistence, signInWithPopup, signInWithRedirect, getRedirectResult, onAuthStateChanged, signOut } from "firebase/auth";
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, memoryLocalCache, getFirestore, collection, doc, getDocs, getDocsFromServer, getDoc, getDocFromServer, onSnapshot, runTransaction, serverTimestamp, query, orderBy, setDoc, Timestamp } from "firebase/firestore";
 
 const settingsV2Ref = (db, uid) => doc(db, "users", uid, "settingsV2", "finance");
@@ -54,7 +54,8 @@ export function criarFirebaseSync(config) {
             return auth.currentUser;
         },
         onUser: (callback) => onAuthStateChanged(auth, callback),
-        login: () => signInWithRedirect(auth, provider),
+        // Called directly from the click gesture: do not await initialization here.
+        login: () => signInWithPopup(auth, provider),
         logout: () => signOut(auth),
         async list(uid, { serverOnly = true } = {}) {
             if (auth.currentUser?.uid !== uid) throw new Error("Conta não corresponde ao usuário autenticado.");
