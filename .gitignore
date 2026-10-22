@@ -2,3 +2,9 @@ node_modules/
 firebase-sync.bundle.js
 _site/
 firebase-debug.log
+
+# Logs temporarios de testes
+*.log
+
+# Backups temporarios
+*.bak
