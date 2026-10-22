@@ -1,0 +1,718 @@
+diff --git a/app.js b/app.js
+index 2dc3753..0021d28 100644
+--- a/app.js
++++ b/app.js
+@@ -601,6 +601,9 @@ let idbBanco = null;
+ let idbBloqueado = false;
+ let idbBase = null;
+ let idbPendente = Promise.resolve();
++// The local-only application has no Firebase session. When synchronization is
++// available its closure also guards same-UID session changes during persistence.
++let capturarSessaoPersistencia = () => () => true;
+ 
+ 
+ 
+@@ -691,16 +694,19 @@ async function persistirEstadoFinanceiro(key, next, localEdit = false, restored
+     if (!idbServico || idbBloqueado || key !== chaveEstadoAtual) return false;
+     const uid = key === CHAVE_ESTADO ? (IDB_HOMOLOGACAO ? "local" : "@local") : key.split(":").at(-1);
+     const base = structuredClone(idbBase);
++    const sessionCurrent = capturarSessaoPersistencia();
++    const canPersist = () => sessionCurrent() && key === chaveEstadoAtual && !idbBloqueado;
+     try {
+         await idbPendente;
++        if (!canPersist()) return false;
+         const result = await idbServico.aplicarEdicao(uid, base, next, localEdit ? (changes, queue) => changes.map(value => {
+             const entityKey = recordEntityKey(value), baseRevision = queue.remoteRevisions?.[entityKey] || null;
+             return { id: operationId(entityKey, baseRevision, value), entityKey, baseRevision, value };
+-        }) : () => [], queue => { if (restored && key !== CHAVE_ESTADO) queue.restoredPending = true; });
+-        if (key !== chaveEstadoAtual) return false;
++        }) : () => [], queue => { if (restored && key !== CHAVE_ESTADO) queue.restoredPending = true; }, canPersist);
++        if (!canPersist()) return false;
+         idbBase = structuredClone(result.estado.dados);
+         return true;
+-    } catch { idbBloqueado = true; return false; }
++    } catch (error) { if (sessionCurrent() && key === chaveEstadoAtual && error?.code !== 'persistence/cancelled') idbBloqueado = true; return false; }
+ }
+ function avisarArmazenamentoTemporario() {
+     if (avisoArmazenamentoTemporarioExibido) return;
+@@ -3754,6 +3760,10 @@ if (Object.values(syncUi).every(Boolean)) {
+ let firebaseClient = null, syncUser = null, syncStopListener = null, syncSettingsStop = null, syncConflictsStop = null, syncRemoteRecords = [], syncRemoteSettings = null, syncRemoteRecordsLoaded = false, settingsConflictActive = false, applyingRemoteSync = false;
+ const syncSessions = createSyncSessionGuard();
+ const isCurrentSyncSession = (session, uid) => syncSessions.isCurrent(session) && (syncUser?.uid || null) === (uid || null);
++capturarSessaoPersistencia = () => {
++    const session = syncSessions.current(), uid = syncUser?.uid || null;
++    return () => isCurrentSyncSession(session, uid);
++};
+ const syncMetaKey = (uid) => `controleFinanceiro:sync:${uid}`;
+ const META_BASE = Symbol("metadata-base");
+ const readSyncMeta = async (uid) => { const value = await idbServico.lerFila(uid); return { ...value, [META_BASE]: structuredClone(value) }; };
+@@ -3812,16 +3822,21 @@ function updateSettingsConflictActive(uid, meta, session = syncSessions.current(
+     if (isCurrentSyncSession(session, uid)) settingsConflictActive = (meta.conflicts || []).some(item => item.kind === "settings");
+ }
+ async function registerSettingsConflict(uid, local, remote, source, session = syncSessions.current()) {
+-    const meta = await idbServico.registrarConflitoSettings(uid, { kind: "settings", local, remote, ...(source ? { source } : {}) });
++    let meta;
++    try { meta = await idbServico.registrarConflitoSettings(uid, { kind: "settings", local, remote, ...(source ? { source } : {}) }, () => isCurrentSyncSession(session, uid) && !idbBloqueado); }
++    catch (error) { if (isCurrentSyncSession(session, uid) && error?.code !== 'persistence/cancelled') idbBloqueado = true; throw error; }
+     updateSettingsConflictActive(uid, meta, session);
+     return meta;
+ }
+ async function rememberSettingsBaseline(uid, settings, session) {
+     const baseline = functionalSettings(settings);
+-    const meta = await idbServico.alterarFila(uid, queue => {
+-        if (!queue.conflicts.some(item => item.kind === "settings")) queue.settingsBaseline = baseline;
+-        return queue;
+-    });
++    let meta;
++    try { meta = await idbServico.alterarFila(uid, queue => {
++            if (!isCurrentSyncSession(session, uid) || idbBloqueado) throw Object.assign(new Error('Sessão de persistência invalidada'), { code: 'persistence/cancelled' });
++            if (!queue.conflicts.some(item => item.kind === "settings")) queue.settingsBaseline = baseline;
++            return queue;
++        });
++    } catch (error) { if (isCurrentSyncSession(session, uid) && error?.code !== 'persistence/cancelled') idbBloqueado = true; throw error; }
+     updateSettingsConflictActive(uid, meta, session);
+ }
+ function validarRegistrosRemotos(records) {
+@@ -3974,6 +3989,8 @@ async function onFirebaseUser(user) {
+     if (!isCurrentSyncSession(session, uid)) return;
+     idbBloqueado = false; estado = normalizarEstado(initialized.estado.dados); idbBase = structuredClone(estadoParaSalvar()); renderTudo(false);
+     const meta = (await readSyncMeta(user.uid)); syncUi.enabled.checked = meta.enabled !== false;
++    if (!isCurrentSyncSession(session, uid)) return;
++    updateSettingsConflictActive(uid, meta, session);
+     syncUi.restore.hidden = !meta.restoredPending;
+     if (false) { setSyncStatus("Não foi possível persistir os dados locais desta conta. A sincronização foi pausada.", true); return; }
+     else if (recuperacaoFinanceira.protegido) { setSyncStatus("Migração suspensa: recupere os dados locais protegidos antes de continuar.", true); return; }
+@@ -3992,8 +4009,8 @@ async function onFirebaseUser(user) {
+         }
+         const remoteSettings = await firebaseClient.getSettings(user.uid, { serverOnly: true });
+         if (!isCurrentSyncSession(session, uid)) return;
+-        syncRemoteSettings = remoteSettings;
+         if (!validarConfiguracoesRemotas(remoteSettings)) throw new Error("As configurações financeiras remotas são inválidas; nenhuma combinação foi aplicada.");
++        syncRemoteSettings = remoteSettings;
+         const remoteConflicts = await firebaseClient.listConflicts(user.uid, { serverOnly: true });
+         if (!isCurrentSyncSession(session, uid)) return;
+         if (!validateRemoteConflicts(remoteConflicts)) throw new Error("Há conflitos remotos inválidos; os conflitos locais foram preservados.");
+@@ -4061,7 +4078,22 @@ async function onFirebaseUser(user) {
+     } catch (error) { if (!isCurrentSyncSession(session, uid)) return; console.warn("Falha de sincronizacao.", error?.code || "unknown", error?.message); setSyncStatus("Falha ao carregar a conta. Os dados locais foram mantidos.", true); }
+ }
+ let syncPublishChain = Promise.resolve();
+-let syncSettingsChain = { session: null, pending: Promise.resolve() };
++let syncSettingsChain = { session: null, pending: Promise.resolve(), version: 0, count: 0, retry: false };
++function settingsCoordination(session) {
++    if (syncSettingsChain.session !== session) syncSettingsChain = { session, pending: Promise.resolve(), version: 0, count: 0, retry: false };
++    return syncSettingsChain;
++}
++function scheduleSettingsRetry(coordination, session, uid) {
++    if (!coordination.retry || coordination.count || coordination.scheduled || coordination !== syncSettingsChain
++        || !isCurrentSyncSession(session, uid) || idbBloqueado) return;
++    coordination.scheduled = true; coordination.retry = false;
++    // Enqueue only after staging has finished. No publisher awaits this retry,
++    // and no network read holds the snapshot chain or an IndexedDB transaction.
++    void Promise.resolve().then(() => {
++        coordination.scheduled = false;
++        if (coordination === syncSettingsChain && isCurrentSyncSession(session, uid) && !idbBloqueado) return publishFirebaseState(estado);
++    }).catch(() => { if (isCurrentSyncSession(session, uid)) setSyncStatus("Falha no envio. Os dados locais foram preservados.", true); });
++}
+ async function publishFirebaseState(financialState, remote = syncRemoteRecords, skipSettings = false, reviewedConflict = null, deletions = []) {
+     const session = syncSessions.current(), uid = syncUser?.uid;
+     financialState = structuredClone(financialState);
+@@ -4081,8 +4113,10 @@ async function publishFirebaseState(financialState, remote = syncRemoteRecords,
+     try { return await pending; } catch (error) { if (isCurrentSyncSession(session, uid)) throw error; }
+ }
+ async function stageFirebaseState(uid, financialState, remote, reviewedConflict = null, deletions = []) {
+-    const key = chaveEstadoAtual, base = structuredClone(idbBase);
+-    const result = await idbServico.prepararPublicacao(uid, base, financialState, remote, reviewedConflict, deletions);
++    const key = chaveEstadoAtual, base = structuredClone(idbBase), session = syncSessions.current();
++    const canStage = () => isCurrentSyncSession(session, uid) && key === chaveEstadoAtual && !idbBloqueado
++        && financialStatesEquivalent(financialState, estadoParaSalvar());
++    const result = await idbServico.prepararPublicacao(uid, base, financialState, remote, reviewedConflict, deletions, canStage);
+     if (key === chaveEstadoAtual && syncUser?.uid === uid && financialStatesEquivalent(estado, financialState)) {
+         idbBase = structuredClone(result.estado.dados);
+         estado = normalizarEstado(result.estado.dados);
+@@ -4092,6 +4126,20 @@ async function stageFirebaseState(uid, financialState, remote, reviewedConflict
+ async function publishFirebaseStateNow(financialState, remote = syncRemoteRecords, skipSettings = false, reviewedConflict = null) {
+     if (!syncUser || !syncUi.enabled.checked) return;
+     const uid = syncUser.uid, session = syncSessions.current();
++    const key = chaveEstadoAtual, coordination = settingsCoordination(session), version = coordination.version;
++    const expectedSettings = structuredClone(reviewedConflict?.kind === "settings" ? reviewedConflict.remote : syncRemoteSettings);
++    const persistence = idbPendente;
++    const current = () => isCurrentSyncSession(session, uid) && key === chaveEstadoAtual;
++    const canPublish = () => current() && !idbBloqueado && syncUi.enabled.checked && persistence === idbPendente
++        && coordination === syncSettingsChain && coordination.version === version && !coordination.count
++        && financialStatesEquivalent(financialState, estadoParaSalvar());
++    const defer = () => {
++        if (!current()) return;
++        coordination.retry = coordination.version !== version || !!coordination.count;
++        setSyncStatus(idbBloqueado ? "A persistência falhou. A sincronização foi pausada; os dados locais foram preservados." : "Aguardando envio.", idbBloqueado);
++        scheduleSettingsRetry(coordination, session, uid);
++    };
++    if (!canPublish()) { defer(); return; }
+     if ((await readSyncMeta(uid)).restoredPending) { setSyncStatus("Backup restaurado: confirme a combinação com a nuvem antes do envio."); return; }
+     if (!navigator.onLine) { setSyncStatus("Offline — alterações pendentes."); return; }
+     let unappliedRemote = false;
+@@ -4109,18 +4157,26 @@ async function publishFirebaseStateNow(financialState, remote = syncRemoteRecord
+     if (!isCurrentSyncSession(session, uid)) return;
+     const latestSettings = await firebaseClient.getSettings(uid, { serverOnly: true });
+     if (!isCurrentSyncSession(session, uid)) return;
+-    const formerSettings = syncRemoteSettings;
++    if (!canPublish()) { defer(); return; }
+     if (!validarConfiguracoesRemotas(latestSettings)) throw new Error("Configurações remotas inválidas; a confirmação foi suspensa.");
+-    syncRemoteSettings = latestSettings;
+     const settings = financialSettings(financialState);
+     const settingsMeta = await readSyncMeta(uid);
+     if (!isCurrentSyncSession(session, uid)) return;
+     updateSettingsConflictActive(uid, settingsMeta, session);
++    const durable = await idbBanco.ler(`estado:${uid}`);
++    if (!canPublish()) { defer(); return; }
++    if (!durable || !financialStatesEquivalent(durable.dados, financialState)) { setSyncStatus("Aguardando envio."); return; }
+     let settingsConflict = false;
+     if (!skipSettings && (!settingsConflictActive || reviewedConflict?.kind === "settings") && !settingsEquivalent(settings, latestSettings)) {
+-        const expectedSettings = reviewedConflict?.kind === "settings" ? reviewedConflict.remote : formerSettings;
+-        const savedSettings = await firebaseClient.saveSettings(uid, settings, expectedSettings?.revision || null);
++        const canWriteSettings = () => canPublish() && (!settingsConflictActive || reviewedConflict?.kind === "settings");
++        // No await between the final guard and SDK invocation. The SDK repeats
++        // this guard after its own asynchronous reads and transaction retries.
++        if (!canWriteSettings()) { defer(); return; }
++        let savedSettings;
++        try { savedSettings = await firebaseClient.saveSettings(uid, settings, expectedSettings?.revision || null, canWriteSettings); }
++        catch (error) { if (error?.code === 'sync/settings-stale') { defer(); return; } throw error; }
+         if (!isCurrentSyncSession(session, uid)) return;
++        if (!canPublish()) { defer(); return; }
+         if (savedSettings.conflict) {
+             if (!validarConfiguracoesRemotas(savedSettings.remote)) throw new Error("Configurações remotas inválidas após rejeição de revisão.");
+             if (!settingsEquivalent(settings, savedSettings.remote)) {
+@@ -4136,6 +4192,8 @@ async function publishFirebaseStateNow(financialState, remote = syncRemoteRecord
+             }
+         }
+         else { syncRemoteSettings = { ...settings, revision: savedSettings.revision }; await rememberSettingsBaseline(uid, settings, session); }
++    } else if (settingsEquivalent(settings, latestSettings)) {
++        syncRemoteSettings = latestSettings;
+     }
+     if (!isCurrentSyncSession(session, uid)) return;
+     const finalMeta = (await readSyncMeta(uid));
+@@ -4144,22 +4202,33 @@ async function publishFirebaseStateNow(financialState, remote = syncRemoteRecord
+     if (settingsConflict) setSyncStatus("Conflito de configurações preservado para revisão.", true);
+     else if (finalMeta.outbox?.length) setSyncStatus("Aguardando envio.");
+     else if (finalMeta.conflicts?.length) setSyncStatus(`Há ${finalMeta.conflicts.length} conflito(s) para revisar.`);
+-    else if (skipSettings || settingsConflictActive || unappliedRemote || !financialStatesEquivalent(financialState, estado)) setSyncStatus("Aguardando envio.");
++    else if (!canPublish() || skipSettings || settingsConflictActive || unappliedRemote
++        || !settingsEquivalent(settings, syncRemoteSettings)) { defer(); }
+     else {
+-        finalMeta.lastConfirmed = new Date().toISOString(); finalMeta.migrationPending = false;
+-        const confirmed = await writeSyncMeta(uid, finalMeta);
+-        if (confirmed.outbox.length || confirmed.conflicts.length) { setSyncStatus("Aguardando envio."); return; }
+-        syncUi.last.textContent = formatLastSync(confirmed.lastConfirmed);
++        let confirmation;
++        try { confirmation = await idbServico.confirmarSincronizacao(uid, financialState, new Date().toISOString(),
++            () => canPublish() && settingsEquivalent(settings, syncRemoteSettings)); }
++        catch (error) { if (current()) idbBloqueado = true; throw error; }
++        if (!current()) return;
++        updateSettingsConflictActive(uid, confirmation.fila, session);
++        if (!confirmation.confirmed || !canPublish()) { defer(); return; }
++        syncUi.last.textContent = formatLastSync(confirmation.fila.lastConfirmed);
+         setSyncStatus("Sincronizado");
+     }
++    return { settingsConfirmed: !skipSettings && canPublish() && settingsEquivalent(settings, syncRemoteSettings) };
+ }
+ function onRemoteSettings(remote, snapshotMetadata, session = syncSessions.current()) {
+     if (!isCurrentSyncSession(session, syncUser?.uid)) return Promise.resolve();
+     // Preserve callback order across asynchronous storage, without making a new
+     // account wait for a snapshot still running in the previous session.
+-    if (syncSettingsChain.session !== session) syncSettingsChain = { session, pending: Promise.resolve() };
+-    const pending = syncSettingsChain.pending.catch(() => {}).then(() => applyRemoteSettings(remote, snapshotMetadata, session));
+-    syncSettingsChain.pending = pending;
++    if (!remote || !snapshotConfirmed(snapshotMetadata)) return Promise.resolve();
++    const coordination = settingsCoordination(session), uid = syncUser?.uid;
++    coordination.version += 1; coordination.count += 1;
++    const pending = coordination.pending.catch(() => {}).then(() => applyRemoteSettings(remote, snapshotMetadata, session)).finally(() => {
++        coordination.count -= 1;
++        scheduleSettingsRetry(coordination, session, uid);
++    });
++    coordination.pending = pending;
+     return pending;
+ }
+ async function applyRemoteSettings(remote, snapshotMetadata, session) {
+@@ -4180,18 +4249,18 @@ async function applyRemoteSettings(remote, snapshotMetadata, session) {
+         syncRemoteSettings = remote;
+         setSyncStatus("Configurações alteradas em outro dispositivo; as duas versões foram preservadas.", true); return;
+     }
+-    syncRemoteSettings = remote;
+     // Pending conflicts are never resolved implicitly, even after convergence.
+-    if (settingsConflictActive || (!equivalent && localChanged)) return;
++    if (settingsConflictActive || (!equivalent && localChanged)) { syncRemoteSettings = remote; return; }
+     if (!equivalent) {
+         const mergedSettings = mergeRemoteSettings(estado, remote);
+         if (!validarBackup(mergedSettings.state)) { setSyncStatus("As configurações remotas são inválidas. A cópia local foi preservada.", true); return; }
+         const normalized = normalizarEstado(mergedSettings.state);
+-        if (!await persistirEstadoFinanceiro(capturedKey, normalized)) { setSyncStatus("Não foi possível salvar as configurações remotas. A cópia local foi preservada.", true); return; }
++        if (!await persistirEstadoFinanceiro(capturedKey, normalized)) { if (currentSession()) setSyncStatus("Não foi possível salvar as configurações remotas. A cópia local foi preservada.", true); return; }
+         if (!currentSession()) return;
+         applyingRemoteSync = true; estado = normalizarEstado(idbBase); renderTudo(false); applyingRemoteSync = false;
+     }
+     await rememberSettingsBaseline(capturedUid, incoming, session);
++    if (currentSession() && !idbBloqueado) syncRemoteSettings = remote;
+ }
+ async function onRemoteRecords(records, snapshotMetadata, session = null, preserveDivergent = false) {
+     const capturedUid = syncUser?.uid, capturedKey = chaveEstadoAtual;
+@@ -4386,7 +4455,13 @@ async function resolveSyncConflict(index, choice) {
+             if (!isCurrentSyncSession(session, conflictUserUid)) return;
+         } catch (error) { if (!isCurrentSyncSession(session, conflictUserUid)) return; console.warn("Falha de sincronizacao.", error?.code || "unknown", error?.message); setSyncStatus("A escolha foi salva localmente, mas não foi possível confirmar a resolução na nuvem. Tente novamente.", true); return; }
+     } else if (choice !== "remote") {
+-        try { await publishFirebaseState(estado, resolutionRemote, false, conflict, deletions); }
++        try {
++            const result = await publishFirebaseState(estado, resolutionRemote, false, conflict, deletions);
++            if (!isCurrentSyncSession(session, conflictUserUid)) return;
++            if (conflict.kind === "settings" && result?.settingsConfirmed !== true) {
++                setSyncStatus("A escolha continua pendente; o conflito foi preservado até a confirmação das configurações.", true); return;
++            }
++        }
+         catch (error) { if (!isCurrentSyncSession(session, conflictUserUid)) return; console.warn("Falha de sincronizacao.", error?.code || "unknown", error?.message); setSyncStatus("A escolha foi salva localmente e aguarda envio.", true); return; }
+     }
+     const latestMeta = (await readSyncMeta(conflictUserUid)), targetOperationId = conflict.operationId || conflict.operation?.id;
+diff --git a/financial-atomic-service.js b/financial-atomic-service.js
+index 546fa70..04c5e35 100644
+--- a/financial-atomic-service.js
++++ b/financial-atomic-service.js
+@@ -2,7 +2,7 @@
+ // Não altera o armazenamento legado e não realiza operações de rede.
+ import { ConflitoPersistencia } from './transactional-state.js';
+ import { combinarEdicaoFinanceira } from './financial-intents.js';
+-import { registrosFinanceiros, recordEntityKey, operationId, coalesceOutbox, recordsEquivalent, blockedConflictKeys, validSyncIdentity, functionalSettings, settingsEquivalent, validateRemoteSettings } from './sync-core.js';
++import { registrosFinanceiros, recordEntityKey, operationId, coalesceOutbox, recordsEquivalent, blockedConflictKeys, validSyncIdentity, functionalSettings, settingsEquivalent, validateRemoteSettings, financialStatesEquivalent } from './sync-core.js';
+ 
+ const copy = (value) => structuredClone(value);
+ const validRevision = (value) => Number.isSafeInteger(value) && value >= 0;
+@@ -34,13 +34,14 @@ export class ServicoFinanceiroAtomico {
+         return { estado: docs.get(stateKey), fila: docs.get(queueKey) };
+     }
+     // Merge transacional de intenções, sem exclusões decorrentes de snapshots velhos.
+-    async aplicarEdicao(uid, estadoBase, estadoEditado, criarOperacoes = () => [], editarFila = () => {}) {
++    async aplicarEdicao(uid, estadoBase, estadoEditado, criarOperacoes = () => [], editarFila = () => {}, isCurrent = () => true) {
+         if (typeof uid !== 'string' || !uid.trim() || uid.includes(':') ||
+             !this.validarEstado(estadoBase) || !this.validarEstado(estadoEditado)) {
+             throw new Error('Edição financeira inválida');
+         }
+         const stateKey = `estado:${uid}`, queueKey = `fila:${uid}`;
+         const docs = await this.db.alterarDocumentos([stateKey, queueKey], (records) => {
++            if (!isCurrent()) throw Object.assign(new Error('Sessão de persistência invalidada'), { code: 'persistence/cancelled' });
+             const previous = records.get(stateKey), queue = records.get(queueKey);
+             if (!previous || !validRevision(previous.revisao) || !this.validarEstado(previous.dados) ||
+                 !queue || !this.validarFila(queue) || !Array.isArray(queue.outbox)) {
+@@ -67,6 +68,7 @@ export class ServicoFinanceiroAtomico {
+             }
+             editarFila(newQueue, copy(merged.estado));
+             if (!this.validarFila(newQueue)) throw new Error('Fila resultante inválida');
++            if (!isCurrent()) throw Object.assign(new Error('Sessão de persistência invalidada'), { code: 'persistence/cancelled' });
+             const alterado = JSON.stringify(previous.dados) !== JSON.stringify(merged.estado);
+             records.set(stateKey, alterado ? { ...previous, revisao: previous.revisao + 1, dados: merged.estado } : previous);
+             records.set(queueKey, newQueue);
+@@ -74,7 +76,7 @@ export class ServicoFinanceiroAtomico {
+         });
+         return { estado: docs.get(stateKey), fila: docs.get(queueKey) };
+     }
+-    async prepararPublicacao(uid, base, desired, remote, reviewed = null, deletions = []) {
++    async prepararPublicacao(uid, base, desired, remote, reviewed = null, deletions = [], isCurrent = () => true) {
+         return this.aplicarEdicao(uid, base, desired, () => [], (queue, state) => {
+             const blocked = blockedConflictKeys(queue.conflicts, reviewed);
+             const former = new Map(remote.map(item => [recordEntityKey(item), item]));
+@@ -93,7 +95,7 @@ export class ServicoFinanceiroAtomico {
+             }
+             const attempted = queue.outbox.filter(op => queue.attempted?.[op.id]);
+             queue.outbox = [...attempted, ...coalesceOutbox(queue.outbox.filter(op => !queue.attempted?.[op.id]), candidates)];
+-        });
++        }, isCurrent);
+     }
+     async concluirOperacao(uid, operation, result) {
+         if (result?.acknowledged !== true) throw new Error('ACK ausente');
+@@ -169,6 +171,24 @@ export class ServicoFinanceiroAtomico {
+             throw new Error('Fila não inicializada ou inválida');
+         return copy(fila);
+     }
++    async confirmarSincronizacao(uid, estadoEsperado, quando, isCurrent) {
++        if (!/^[A-Za-z0-9_-]{1,128}$/.test(uid || '') || !this.validarEstado(estadoEsperado)
++            || typeof quando !== 'string' || typeof isCurrent !== 'function') throw new Error('Confirmação inválida');
++        let confirmed = false;
++        const stateKey = `estado:${uid}`, queueKey = `fila:${uid}`;
++        const result = await this.db.alterarDocumentos([stateKey, queueKey], docs => {
++            const state = docs.get(stateKey), queue = docs.get(queueKey);
++            if (!state || !this.validarEstado(state.dados) || !queue || !this.validarFila(queue)) throw new Error('Persistência inválida');
++            if (isCurrent() && financialStatesEquivalent(state.dados, estadoEsperado)
++                && !queue.outbox.length && !queue.conflicts.length && !queue.restoredPending) {
++                queue.lastConfirmed = !Number.isFinite(Date.parse(queue.lastConfirmed)) || quando > queue.lastConfirmed ? quando : queue.lastConfirmed;
++                queue.migrationPending = false;
++                confirmed = true;
++            }
++            return docs;
++        });
++        return { confirmed, fila: result.get(queueKey) };
++    }
+     async alterarFila(uid, transformar) {
+         if (!(uid === '@local' || /^[A-Za-z0-9_-]{1,128}$/.test(uid || '')) || typeof transformar !== 'function')
+             throw new Error('UID ou transformação inválida');
+@@ -193,11 +213,12 @@ export class ServicoFinanceiroAtomico {
+             return fila;
+         });
+     }
+-    async registrarConflitoSettings(uid, conflito) {
++    async registrarConflitoSettings(uid, conflito, isCurrent = () => true) {
+         const candidate = copy(conflito);
+         if (candidate?.kind !== 'settings' || !functionalSettings(candidate.local)
+             || !validateRemoteSettings(candidate.remote)) throw new Error('Conflito de configurações inválido');
+         return this.alterarFila(uid, fila => {
++            if (!isCurrent()) throw Object.assign(new Error('Sessão de persistência invalidada'), { code: 'persistence/cancelled' });
+             // Inspect the current queue inside the transaction, including entries
+             // added by another tab. Existing entries remain byte-for-byte intact.
+             if (!settingsEquivalent(candidate.local, candidate.remote) && !fila.conflicts.some(item =>
+diff --git a/firebase-sync-entry.js b/firebase-sync-entry.js
+index 6c09348..552a980 100644
+--- a/firebase-sync-entry.js
++++ b/firebase-sync-entry.js
+@@ -75,8 +75,13 @@ export function criarFirebaseSync(config) {
+             if (serverOnly && !snapshotConfirmed(legacy.metadata)) throw new Error("As configurações ainda não foram confirmadas pelo servidor.");
+             return legacy.exists() ? legacy.data() : null;
+         },
+-        async saveSettings(uid, settings, baseRevision = null) {
++        async saveSettings(uid, settings, baseRevision = null, canWrite = () => true) {
+             if (auth.currentUser?.uid !== uid) throw new Error("Conta não corresponde ao usuário autenticado.");
++            const ensureSettingsWrite = () => {
++                ensureUser(uid);
++                if (!canWrite()) throw Object.assign(new Error("Envio de configurações obsoleto ou persistência bloqueada."), { code: "sync/settings-stale" });
++            };
++            ensureSettingsWrite();
+             const categories = settings?.categories, defaults = settings?.budgets?.padrao;
+             if (!Array.isArray(categories) || categories.length > 1000 || categories.some((name) => typeof name !== "string" || !name.trim() || name.length > 40 || !unicodeWellFormed(name))
+                 || new Set(categories).size !== categories.length || !defaults || typeof defaults !== "object" || Array.isArray(defaults)
+@@ -92,13 +97,13 @@ export function criarFirebaseSync(config) {
+                 }
+             };
+             await writeInChunks(categories, async (name) => {
+-                ensureUser(uid);
++                ensureSettingsWrite();
+                 const reference = doc(categoriesRef, settingsDocId("c", name));
+                 const value = Object.hasOwn(defaults, name) ? { name, budget: defaults[name] } : { name };
+                 return runTransaction(db, async (tx) => {
+-                ensureUser(uid);
++                ensureSettingsWrite();
+                 const existing = await tx.get(reference);
+-                ensureUser(uid);
++                ensureSettingsWrite();
+                 if (existing.exists()) {
+                     const remote = existing.data();
+                     if (remote.name !== value.name || Object.hasOwn(remote, "budget") !== Object.hasOwn(value, "budget")
+@@ -110,9 +115,9 @@ export function criarFirebaseSync(config) {
+             });
+             const target = settingsV2Ref(db, uid), legacyTarget = doc(db, "users", uid, "settings", "finance");
+             return runTransaction(db, async (tx) => {
+-                ensureUser(uid);
++                ensureSettingsWrite();
+                 const [current, legacy] = await Promise.all([tx.get(target), tx.get(legacyTarget)]);
+-                ensureUser(uid);
++                ensureSettingsWrite();
+                 const active = current.exists() ? current.data() : legacy.exists() ? legacy.data() : null;
+                 if (active?.revision === revision) return { acknowledged: true, duplicate: true, revision };
+                 if ((active?.revision || null) !== baseRevision) return { conflict: true, remote: current.exists() ? await readSettingsGeneration(db, uid, active, { serverOnly: true }) : active };
+diff --git a/tests/firebase-sync-client.test.js b/tests/firebase-sync-client.test.js
+index 82a1377..671f3ff 100644
+--- a/tests/firebase-sync-client.test.js
++++ b/tests/firebase-sync-client.test.js
+@@ -112,6 +112,30 @@ test("falha parcial de geração não publica manifesto; repetição retoma sem
+     assert.ok(h.data.size > before); // orphan generation retained; no automatic cleanup
+ });
+ 
++test("settings SDK rechecks a cancelled write after category reads before writing any document", async () => {
++    const h = harness(); let valid = true;
++    const transaction = h.context.runTransaction;
++    h.context.runTransaction = (db, callback) => transaction(db, tx => callback({ ...tx,
++        get: async key => { const result = await tx.get(key); valid = false; return result; } }));
++    await assert.rejects(h.client.saveSettings("alice", { categories: ["Moto"], theme: "claro", budgets: { padrao: {}, meses: {} } }, null, () => valid),
++        error => error.code === 'sync/settings-stale');
++    assert.equal(h.data.size, 0);
++});
++
++test("settings SDK cancels at the manifest boundary and retains completed generation data for an idempotent retry", async () => {
++    const h = harness(); let valid = true;
++    const transaction = h.context.runTransaction;
++    h.context.runTransaction = (db, callback) => transaction(db, tx => callback({ ...tx,
++        get: async key => { const result = await tx.get(key); if (key === 'users/alice/settingsV2/finance') valid = false; return result; } }));
++    const settings = { categories: ["Moto", "Serasa"], theme: "claro", budgets: { padrao: {}, meses: {} } };
++    await assert.rejects(h.client.saveSettings("alice", settings, null, () => valid), error => error.code === 'sync/settings-stale');
++    assert.equal(h.data.has('users/alice/settingsV2/finance'), false); assert.equal(h.data.size, 2);
++    const generation = structuredClone([...h.data]); h.context.runTransaction = transaction;
++    const ack = await h.client.saveSettings("alice", settings, null, () => true);
++    assert.equal(ack.acknowledged, true);
++    for (const [key, value] of generation) assert.deepEqual(h.data.get(key), value);
++});
++
+ test("cliente de produção executa transações e configurações nas regras do Emulator", {
+     skip: !process.env.FIRESTORE_EMULATOR_HOST && "Requires Firestore Emulator"
+ }, async () => {
+diff --git a/e2e/idb-transactions.spec.mjs b/e2e/idb-transactions.spec.mjs
+index 5c12310..e8d0b15 100644
+--- a/e2e/idb-transactions.spec.mjs
++++ b/e2e/idb-transactions.spec.mjs
+@@ -87,3 +87,34 @@ test('IDB real: settings deduplication in two tabs preserves eight existing conf
+     const recovered=await page.evaluate(()=>qaService.lerFila('qa-alice'));
+     expect(recovered).toEqual(queue);
+ });
++
++test('IDB real: session invalidated while transaction reads are pending aborts state and queue together',async({page})=>{
++    await setup(page);
++    expect(await page.evaluate(async()=>{
++        await qaService.enfileirar('qa-alice',{id:'offline',entityKey:'offline'});
++        const before=JSON.stringify([await qaDb.ler('estado:qa-alice'),await qaService.lerFila('qa-alice')]);
++        let current=true;
++        const transaction=qaDb.alterarDocumentos.bind(qaDb);
++        qaDb.alterarDocumentos=(keys,callback)=>transaction(keys,docs=>{
++            // The transaction has opened and completed its reads. Invalidate the
++            // captured session before the service can issue its first write.
++            current=false;return callback(docs);
++        });
++        try {
++            await qaService.aplicarEdicao('qa-alice',qaState,{...qaState,tema:'escuro'},()=>[{id:'must-not-exist'}],()=>{},()=>current);
++            return false;
++        }catch(error){
++            return error.code==='persistence/cancelled' && before===JSON.stringify([await qaDb.ler('estado:qa-alice'),await qaService.lerFila('qa-alice')]);
++        }
++    })).toBe(true);
++    await page.reload();await setup(page);
++    expect(await page.evaluate(async()=>(await qaService.lerFila('qa-alice')).outbox.map(op=>op.id))).toEqual(['offline']);
++});
++
++test('IDB real: another tab changing durable settings prevents obsolete confirmation',async({context,page})=>{
++    await setup(page);const other=await context.newPage();await setup(other);
++    await other.evaluate(()=>qaService.aplicarEdicao('qa-alice',qaState,{...qaState,tema:'escuro'}));
++    const result=await page.evaluate(()=>qaService.confirmarSincronizacao('qa-alice',qaState,new Date().toISOString(),()=>true));
++    expect(result.confirmed).toBe(false);expect(result.fila.lastConfirmed).toBe(null);
++    expect(await other.evaluate(async()=>(await qaDb.ler('estado:qa-alice')).dados.tema)).toBe('escuro');
++});
+diff --git a/tests/settings-safety.test.js b/tests/settings-safety.test.js
+new file mode 100644
+--- /dev/null
++++ b/tests/settings-safety.test.js
+@@ -0,0 +1,226 @@
++import test from 'node:test';
++import assert from 'node:assert/strict';
++import vm from 'node:vm';
++import {readFile} from 'node:fs/promises';
++import * as sync from '../sync-core.js';
++import {ServicoFinanceiroAtomico} from '../financial-atomic-service.js';
++import {validarBackup,normalizarEstado,normalizarValorMonetario,mesFinanceiroValido} from '../finance-core.js';
++const source=await readFile(new URL('../app.js',import.meta.url),'utf8');
++const metadata={fromCache:false,hasPendingWrites:false};
++const entry=()=>{const item={month:'2026-10',type:'receitas',id:'r1',deleted:false,record:{id:'r1',nome:'Synthetic',valor:10},revision:'record-a',updatedAt:{seconds:10,nanoseconds:0}};return {...item,_docId:sync.recordEntityKey(item)};};
++const financialState=()=>normalizarEstado({versao:3,tema:'claro',categorias:['Casa','Moto','Serasa'],meses:{'2026-10':{receitas:[entry().record],despesas:[]}}});
++function deferred(){let resolve,reject;const promise=new Promise((a,b)=>{resolve=a;reject=b});return {promise,resolve,reject};}
++const snapshot=(value,revision)=>({...value,revision,updatedAt:{seconds:10,nanoseconds:0}});
++async function setup(){
++ const initial=financialState(entry());initial.categorias=['Casa','Moto','Serasa'];
++ const c=vm.createContext({...sync,structuredClone,TextEncoder,console,validarBackup,normalizarEstado,normalizarValorMonetario,mesFinanceiroValido,
++  CHAVE_ESTADO:'controleFinanceiro:v3',IDB_HOMOLOGACAO:false,idbBase:structuredClone(initial),estado:structuredClone(initial),
++  syncUser:{uid:'alice'},syncRemoteRecords:[entry()],syncRemoteRecordsLoaded:true,syncRemoteSettings:null,settingsConflictActive:false,
++  idbPendente:Promise.resolve(),idbBloqueado:false,applyingRemoteSync:false,navigator:{onLine:true},window:{addEventListener(){}},
++  syncUi:{enabled:{checked:true},last:{textContent:''}},setGoogleAuthUser(){},updateGoogleLoginButton(){},
++  localStorage:{getItem:()=>null},renderTudo(){},renderSyncConflicts(){},formatLastSync:x=>x});
++ const h={context:c,statuses:[],commits:[]},docs=new Map();let serial=Promise.resolve();
++ c.estadoParaSalvar=()=>structuredClone(c.estado);c.setSyncStatus=message=>h.statuses.push(message);
++ c.firebaseClient={list:async()=>[entry()],commit:async()=>({acknowledged:true}),saveSettings:async()=>({acknowledged:true,revision:'saved'})};
++ vm.runInContext(source.slice(source.indexOf('function syncEntityKey('),source.indexOf('let firebaseInitPromise =')),c);
++ vm.runInContext(source.slice(source.indexOf('let syncPublishChain ='),source.indexOf('window.addEventListener("finance-local-change"')),c);
++ const db={
++  ler:async key=>structuredClone(docs.get(key)??null),
++  alterarDocumentos(keys,transform){const run=serial.then(()=>{const input=new Map(keys.map(k=>[k,structuredClone(docs.get(k)??null)]));const output=transform(input);for(const k of keys)docs.set(k,structuredClone(output.get(k)));return output;});serial=run.catch(()=>{});return run;},
++  alterar(key,transform){return this.alterarDocumentos([key],m=>{m.set(key,transform(m.get(key)));return m;}).then(m=>m.get(key));}
++ };
++ c.idbBanco=db;c.idbServico=new ServicoFinanceiroAtomico(db,validarBackup,q=>Array.isArray(q?.conflicts)&&Array.isArray(q?.outbox));
++ vm.runInContext(source.slice(source.indexOf('const syncSessions ='),source.indexOf('const syncMetaKey =')),c);
++ c.syncSessions=vm.runInContext('syncSessions',c);c.syncSessions.begin();
++ c.isCurrentSyncSession=vm.runInContext('isCurrentSyncSession',c);
++ c.chaveEstadoAtual=sync.chaveLocalConta('alice');
++ c.readSyncMeta=uid=>structuredClone(docs.get('fila:'+(uid||'alice')));
++ c.writeSyncMeta=(uid,value)=>{docs.set('fila:'+uid,structuredClone(value));return value;};
++ vm.runInContext(source.slice(source.indexOf('const syncMetaKey ='),source.indexOf('function setSyncStatus(')),c);
++ vm.runInContext(source.slice(source.indexOf('async function persistirEstadoFinanceiro('),source.indexOf('function avisarArmazenamentoTemporario(')),c);
++ const bob={...structuredClone(initial),tema:'rosa'};
++ for(const [uid,state] of [['alice',initial],['bob',bob],['@local',initial]])await c.idbServico.inicializar(uid,state,{initialized:true,outbox:[],conflicts:[],lastConfirmed:null,settingsBaseline:c.financialSettings(state)});
++ h.docs=docs;h.db=db;h.queue=uid=>structuredClone(docs.get('fila:'+(uid||'alice')));
++ h.server=new Map([['alice',snapshot(c.financialSettings(initial),'alice-s0')],['bob',snapshot(c.financialSettings(bob),'bob-s0')]]);
++ c.firebaseClient.getSettings=async uid=>structuredClone(h.server.get(uid));
++ c.firebaseClient.listConflicts=async()=>[];
++ for(const name of ['listen','listenSettings','listenConflicts'])c.firebaseClient[name]=()=>()=>{};
++ c.syncRemoteSettings=structuredClone(h.server.get('alice'));
++ h.installUserHandler=()=>{
++  for(const name of ['account','login','logout','enabledLine','restore'])c.syncUi[name]={};
++  Object.assign(c,{syncStopListener:null,syncSettingsStop:null,syncConflictsStop:null,resetFinancialInteractions(){},
++   lerEstadoPersistido:key=>({estado:'valido',valor:structuredClone(docs.get('estado:'+(key===c.CHAVE_ESTADO?'@local':key.split(':').at(-1))).dados)}),
++   recuperacaoFinanceira:{protegido:false}});
++  vm.runInContext(source.slice(source.indexOf('async function onFirebaseUser('),source.indexOf('let syncPublishChain =')),c);
++ };
++ return h;
++}
++
++test('storage failure stops an in-flight settings publisher and cannot confirm synchronization',async()=>{
++ const h=await setup(),c=h.context,readEntered=deferred(),readRelease=deferred();
++ const local=c.financialSettings(),remote=snapshot({...local,theme:'escuro'},'server-new');h.server.set('alice',remote);
++ c.firebaseClient.getSettings=async()=>{readEntered.resolve();await readRelease.promise;return structuredClone(remote);};
++ const writes=[];
++ c.firebaseClient.saveSettings=async(uid,value,base)=>{writes.push({value:structuredClone(value),base});assert.equal(base,h.server.get(uid).revision);h.server.set(uid,snapshot(value,'client-revert'));return {acknowledged:true,revision:'client-revert'};};
++ const sending=c.publishFirebaseState(c.estado);await readEntered.promise;
++ const original=h.db.alterarDocumentos.bind(h.db);let rejectState=true;
++ h.db.alterarDocumentos=(keys,fn)=>{if(rejectState&&keys.includes('estado:alice')){rejectState=false;return Promise.reject(new Error('synthetic interrupted state write'));}return original(keys,fn);};
++ await c.onRemoteSettings(remote,metadata,1);
++ assert.equal(c.estado.tema,'claro');assert.equal(h.docs.get('estado:alice').dados.tema,'claro');
++ assert.equal(c.idbBloqueado,true);assert.equal(h.queue().conflicts.length,0);
++ readRelease.resolve();await sending;
++ assert.equal(writes.length,0);assert.equal(h.server.get('alice').theme,'escuro');assert.notEqual(h.statuses.at(-1),'Sincronizado');
++});
++
++test('a successfully applied snapshot invalidates a publisher that captured older settings',async()=>{
++ const h=await setup(),c=h.context,readEntered=deferred(),release=deferred(),remote=snapshot({...c.financialSettings(),theme:'escuro'},'server-new');
++ c.firebaseClient.getSettings=async()=>{readEntered.resolve();await release.promise;return remote;};
++ h.server.set('alice',remote);
++ const writes=[];c.firebaseClient.saveSettings=async(uid,value,base)=>{assert.equal(base,h.server.get(uid).revision);writes.push({value,base});h.server.set(uid,snapshot(value,'revert'));return {acknowledged:true,revision:'revert'};};
++ const sending=c.publishFirebaseState(c.estado);await readEntered.promise;
++ await c.onRemoteSettings(remote,metadata,1);assert.equal(c.estado.tema,'escuro');
++ release.resolve();await sending;
++ assert.equal(writes.length,0);assert.equal(h.server.get('alice').theme,'escuro');assert.notEqual(h.statuses.at(-1),'Sincronizado');assert.equal(h.queue().conflicts.length,0);
++ await c.onRemoteSettings(h.server.get('alice'),metadata,1);
++ assert.equal(c.estado.tema,'escuro');assert.equal(h.queue().conflicts.length,0);
++});
++
++test('logout cancels a snapshot waiting for idbPendente before it can submit a state write',async()=>{
++ const h=await setup(),c=h.context,blocked=deferred();h.installUserHandler();
++ const remote=snapshot({...c.financialSettings(),theme:'escuro'},'server-new');c.idbPendente=blocked.promise;
++ const original=c.idbServico.aplicarEdicao.bind(c.idbServico),calls=[];
++ c.idbServico.aplicarEdicao=(uid,...args)=>{calls.push({uid,valid:c.isCurrentSyncSession(1,'alice')});return original(uid,...args);};
++ const persistEntered=deferred(),persist=c.persistirEstadoFinanceiro;
++ c.persistirEstadoFinanceiro=(...args)=>{persistEntered.resolve();return persist(...args);};
++ const old=c.onRemoteSettings(remote,metadata,1);await persistEntered.promise;
++ const logout=c.onFirebaseUser(null);assert.equal(c.syncSessions.isCurrent(1),false);
++ blocked.resolve();await Promise.all([old,logout]);
++ assert.equal(calls.length,0);assert.equal(h.docs.get('estado:alice').dados.tema,'claro');
++ assert.equal(c.syncUser,null);assert.equal(c.estado.tema,'claro');assert.equal(c.settingsConflictActive,false);
++});
++
++test('reconnection hydrates persisted conflicts before a failing remote read',async()=>{
++ const h=await setup(),c=h.context;h.installUserHandler();
++ await c.idbServico.registrarConflitoSettings('alice',{kind:'settings',local:c.financialSettings(),remote:snapshot({...c.financialSettings(),theme:'escuro'},'conflict')});
++ c.settingsConflictActive=true;c.firebaseClient.list=async()=>{throw new Error('synthetic network failure');};
++ await c.onFirebaseUser({uid:'alice'});
++ assert.equal(h.queue().conflicts.length,1);assert.equal(c.settingsConflictActive,true);
++});
++
++test('account switch cancels snapshot persistence waiting on idbPendente without changing either account',async()=>{
++ const h=await setup(),c=h.context,blocked=deferred(),entered=deferred();h.installUserHandler();
++ const before=JSON.stringify(h.docs.get('estado:alice')),bob=JSON.stringify(h.docs.get('estado:bob'));
++ c.idbPendente=blocked.promise;const persist=c.persistirEstadoFinanceiro;
++ c.persistirEstadoFinanceiro=(...args)=>{entered.resolve();return persist(...args);};
++ const old=c.onRemoteSettings(snapshot({...c.financialSettings(),theme:'escuro'},'old'),metadata,1);await entered.promise;
++ const change=c.onFirebaseUser({uid:'bob'});blocked.resolve();await Promise.all([old,change]);
++ assert.equal(JSON.stringify(h.docs.get('estado:alice')),before);assert.equal(JSON.stringify(h.docs.get('estado:bob')),bob);
++ assert.equal(c.syncUser.uid,'bob');assert.equal(c.estado.tema,'rosa');assert.equal(c.idbBloqueado,false);
++});
++
++test('a transaction queued before invalidation rechecks the session before changing state or queue',async()=>{
++ const h=await setup(),c=h.context,before=JSON.stringify([...h.docs]);
++ const original=h.db.alterarDocumentos.bind(h.db);
++ h.db.alterarDocumentos=(keys,fn)=>original(keys,docs=>{if(keys.includes('estado:alice'))c.syncSessions.begin();return fn(docs);});
++ await c.onRemoteSettings(snapshot({...c.financialSettings(),theme:'escuro'},'new'),metadata,1);
++ assert.equal(JSON.stringify([...h.docs]),before);assert.equal(c.idbBloqueado,false);
++});
++
++test('storage blocked during a network read prevents any subsequent settings write or visual confirmation',async()=>{
++ const h=await setup(),c=h.context;let writes=0;
++ c.firebaseClient.getSettings=async()=>{c.idbBloqueado=true;return snapshot({...c.financialSettings(),theme:'escuro'},'new');};
++ c.firebaseClient.saveSettings=async()=>{writes++;return {acknowledged:true,revision:'bad'};};
++ await c.publishFirebaseState(c.estado);
++ assert.equal(writes,0);assert.notEqual(h.statuses.at(-1),'Sincronizado');assert.equal(h.queue().lastConfirmed,null);
++});
++
++test('a durable edit from another tab prevents publication and confirmation of the old UI state',async()=>{
++ const h=await setup(),c=h.context;let writes=0;
++ c.firebaseClient.getSettings=async()=>{
++  const base=structuredClone(c.estado);await c.idbServico.aplicarEdicao('alice',base,{...base,tema:'rosa'});
++  return snapshot({...c.financialSettings(),theme:'escuro'},'new');
++ };
++ c.firebaseClient.saveSettings=async()=>{writes++;return {acknowledged:true,revision:'bad'};};
++ await c.publishFirebaseState(c.estado);
++ assert.equal(writes,0);assert.equal(h.docs.get('estado:alice').dados.tema,'rosa');assert.equal(h.queue().lastConfirmed,null);
++ assert.notEqual(h.statuses.at(-1),'Sincronizado');
++});
++
++test('a financial operation inserted at the confirmation boundary survives and prevents Synced',async()=>{
++ const h=await setup(),c=h.context,confirm=c.idbServico.confirmarSincronizacao.bind(c.idbServico);
++ const {month,type,id,record}=entry();
++ const operation=sync.makeOperation(sync.recordEntityKey(entry()),{month,type,id,record,deleted:false},null);
++ c.idbServico.confirmarSincronizacao=async(...args)=>{await c.idbServico.enfileirar('alice',operation);return confirm(...args);};
++ await c.publishFirebaseState(c.estado);
++ assert.deepEqual(h.queue().outbox,[operation]);assert.equal(h.queue().lastConfirmed,null);assert.notEqual(h.statuses.at(-1),'Sincronizado');
++});
++
++test('eight existing conflicts and pending financial operations remain exact through failed loading and equivalent snapshots',async()=>{
++ const h=await setup(),c=h.context;h.installUserHandler();const local=c.financialSettings();
++ const conflicts=Array.from({length:8},(_,i)=>({kind:'settings',local,remote:snapshot(i<2?{...local,categories:['Casa']}:local,String(i))}));
++ const {month,type,id,record}=entry();
++ const outbox=[sync.makeOperation(sync.recordEntityKey(entry()),{month,type,id,record,deleted:false},null)];
++ await c.idbServico.alterarFila('alice',q=>({...q,conflicts,outbox}));const before=JSON.stringify(h.queue());
++ c.firebaseClient.list=async()=>{throw new Error('synthetic network failure');};
++ await c.onFirebaseUser({uid:'alice'});
++ for(let i=0;i<3;i++)await c.onRemoteSettings(snapshot(local,'equivalent-'+i),metadata,c.syncSessions.current());
++ assert.equal(JSON.stringify(h.queue()),before);assert.equal(c.settingsConflictActive,true);
++ assert.ok(c.estado.categorias.includes('Moto'));assert.ok(c.estado.categorias.includes('Serasa'));
++});
++
++test('a snapshot arriving inside the SDK cancels the old settings transaction without a deadlock',async()=>{
++ const h=await setup(),c=h.context,entered=deferred(),release=deferred();let writes=0;
++ const previous=snapshot({...c.financialSettings(),theme:'escuro'},'previous');c.syncRemoteSettings=previous;h.server.set('alice',previous);
++ c.firebaseClient.saveSettings=async(_uid,_value,_base,canWrite)=>{
++  entered.resolve();await release.promise;
++  if(!canWrite())throw Object.assign(new Error('stale'),{code:'sync/settings-stale'});
++  writes++;return {acknowledged:true,revision:'bad'};
++ };
++ const sending=c.publishFirebaseState(c.estado);await entered.promise;
++ await c.onRemoteSettings(snapshot({...c.financialSettings(),theme:'rosa'},'other-device'),metadata,1);
++ release.resolve();await sending;
++ assert.equal(writes,0);assert.equal(h.queue().conflicts.length,1);assert.notEqual(h.statuses.at(-1),'Sincronizado');
++});
++
++test('snapshot-first publication confirms the current durable state without rewriting remote settings',async()=>{
++ const h=await setup(),c=h.context,remote=snapshot({...c.financialSettings(),theme:'escuro'},'new');h.server.set('alice',remote);let writes=0;
++ c.firebaseClient.saveSettings=async()=>{writes++;throw new Error('must not rewrite');};
++ await c.onRemoteSettings(remote,metadata,1);await c.publishFirebaseState(c.estado);
++ assert.equal(writes,0);assert.equal(h.statuses.at(-1),'Sincronizado');assert.ok(h.queue().lastConfirmed);
++});
++
++test('a persisted settings conflict arriving during the SDK also revokes automatic write permission',async()=>{
++ const h=await setup(),c=h.context,entered=deferred(),release=deferred();let writes=0;
++ const remote=snapshot({...c.financialSettings(),theme:'escuro'},'remote');h.server.set('alice',remote);c.syncRemoteSettings=remote;
++ c.firebaseClient.saveSettings=async(_uid,_value,_base,canWrite)=>{
++  entered.resolve();await release.promise;
++  if(!canWrite())throw Object.assign(new Error('stale'),{code:'sync/settings-stale'});
++  writes++;return {acknowledged:true,revision:'bad'};
++ };
++ const sending=c.publishFirebaseState(c.estado);await entered.promise;
++ await c.registerSettingsConflict('alice',c.financialSettings(),remote,undefined,1);
++ release.resolve();await sending;
++ assert.equal(writes,0);assert.equal(h.queue().conflicts.length,1);assert.notEqual(h.statuses.at(-1),'Sincronizado');
++});
++
++test('a deferred manual settings publication cannot remove any of the eight stored conflicts',async()=>{
++ const h=await setup(),c=h.context,local=c.financialSettings();
++ const conflicts=Array.from({length:8},(_,i)=>({kind:'settings',local,remote:snapshot({...local,theme:'escuro'},String(i))}));
++ await c.idbServico.alterarFila('alice',q=>({...q,conflicts}));c.navigator.onLine=false;
++ vm.runInContext(source.slice(source.indexOf('async function resolveSyncConflict('),source.indexOf('syncUi.conflicts.addEventListener')),c);
++ await c.resolveSyncConflict(0,'local');
++ assert.equal(JSON.stringify(h.queue().conflicts),JSON.stringify(conflicts));assert.notEqual(h.statuses.at(-1),'Sincronizado');
++});
++
++test('a local edit while staging reads metadata cannot be reverted by the old publisher',async()=>{
++ const h=await setup(),c=h.context,entered=deferred(),release=deferred(),read=c.idbServico.lerFila.bind(c.idbServico);let first=true;
++ c.idbServico.lerFila=async uid=>{const value=await read(uid);if(first){first=false;entered.resolve();await release.promise;}return value;};
++ const sending=c.publishFirebaseState(c.estado);await entered.promise;
++ const base=structuredClone(c.estado),next=structuredClone(base);next.meses['2026-10'].receitas[0].valor=20;
++ const item={...entry(),record:next.meses['2026-10'].receitas[0]},operation=sync.makeOperation(sync.recordEntityKey(item),{month:item.month,type:item.type,id:item.id,record:item.record,deleted:false},'record-a');
++ await c.idbServico.aplicarEdicao('alice',base,next,()=>[operation]);c.estado=next;c.idbBase=structuredClone(next);
++ release.resolve();await assert.rejects(sending,error=>error.code==='persistence/cancelled');
++ assert.equal(h.docs.get('estado:alice').dados.meses['2026-10'].receitas[0].valor,20);
++ assert.deepEqual(h.queue().outbox,[operation]);
++});
++

@@ -1,9 +1,33 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { functionalSettings, settingsEquivalent } from "../sync-core.js";
 import { chaveLocalConta, caminhoConta, registrosFinanceiros, combinarRegistros, operationId, makeOperation, applyRemoteRecord, createSyncQueue, migrationBackup, revisionMatches, recordsEquivalent, coalesceOutbox, flushSyncQueue, createSyncSessionGuard, validateRemoteSettings, mergeRemoteSettings, validRemoteTombstone, reconcileRemoteConflicts, validateRemoteConflicts } from "../sync-core.js";
 
 const income = (id, extra = {}) => ({ month: "2026-10", type: "receitas", id, record: { id, nome: "Salário", valor: 1000, ...extra } });
 const state = (records = []) => ({ versao: 3, tema: "claro", categorias: [], orcamentos: { padrao: {}, meses: {} }, meses: { "2026-10": { receitas: records, despesas: [] } } });
+
+test("settings equivalence ignores transport metadata and category/key order without mutating inputs", () => {
+    const a = { version: 3, categories: ["Serasa", "Moto"], theme: "claro", budgets: { padrao: { Serasa: 200, Moto: 100 }, meses: {} }, revision: "a", updatedAt: { seconds: 1, nanoseconds: 0 } };
+    const b = { version: 3, categories: ["Moto", "Serasa"], theme: "claro", budgets: { meses: {}, padrao: { Moto: 100, Serasa: 200 } }, revision: "b", updatedAt: { seconds: 9, nanoseconds: 0 } };
+    const before = JSON.stringify([a, b]);
+    assert.equal(settingsEquivalent(a, b), true);
+    assert.deepEqual(functionalSettings(a).categories, ["Moto", "Serasa"]);
+    assert.equal(JSON.stringify([a, b]), before);
+    assert.equal(Object.hasOwn(functionalSettings(a), "revision"), false);
+});
+
+test("settings equivalence preserves real differences, version, exact names and missing versus zero budgets", () => {
+    const a = { version: 3, categories: ["Moto", "Serasa"], theme: "claro", budgets: { padrao: {}, meses: {} } };
+    for (const changed of [{ ...a, version: 2 }, { ...a, categories: ["Moto"] },
+        { ...a, categories: ["moto", "Serasa"] }, { ...a, categories: ["Moto ", "Serasa"] },
+        { ...a, theme: "escuro" }, { ...a, budgets: { padrao: { Moto: 0 }, meses: {} } }]) {
+        assert.equal(settingsEquivalent(a, changed), false);
+    }
+    for (const invalid of [{ ...a, categories: ["Moto", "Moto"] }, { ...a, theme: "invalid" },
+        { ...a, budgets: { padrao: { Moto: -1 }, meses: {} } }, {}, undefined]) {
+        assert.equal(settingsEquivalent(invalid, invalid), false);
+    }
+});
 
 test("contas têm chaves e caminhos estritamente isolados por UID", () => {
     assert.notEqual(chaveLocalConta("user-a"), chaveLocalConta("user-b"));

@@ -1,0 +1,199 @@
+diff --git a/app.js b/app.js
+index 343862f..91b8efe 100644
+--- a/app.js
++++ b/app.js
+@@ -3838,21 +3838,76 @@ function googleAuthMessage(error) {
+         default: return 'Nao foi possivel entrar com Google. Tente novamente no navegador. Codigo: ' + (error?.code || 'indisponivel');
+     }
+ }
+-async function loadFirebaseSync() {
+-    if (IDB_HOMOLOGACAO) { setSyncStatus("Firebase desativado no ensaio IndexedDB."); return; }
+-    if (!firebaseConfigurado(firebaseConfig)) { setSyncStatus("Configure o projeto Firebase neste dispositivo para habilitar o login."); return; }
+-    syncUi.login.disabled = true;
+-    try { setSyncStatus("Conectando ao Firebase…"); const sdk = await import(new URL(`./firebase-sync.bundle.js?_release=${encodeURIComponent(VERSAO_BUNDLE || "local")}`, import.meta.url)); firebaseClient = sdk.criarFirebaseSync(firebaseConfig); await firebaseClient.ready(); firebaseClient.onUser(onFirebaseUser); }
+-    catch (error) { console.warn("Falha de sincronizacao.", error?.code || "unknown", error?.message); setSyncStatus("Firebase indisponível. Os dados locais continuam funcionando.", true); }
++let firebaseInitPromise = null, firebaseReady = false, googleLoginPending = false;
++let googleAuthUser = null, googleAuthRevision = 0;
++function updateGoogleLoginButton() {
++    syncUi.login.disabled = !!(firebaseInitPromise || googleLoginPending || googleAuthUser || syncUser);
++}
++function setGoogleAuthUser(user) {
++    googleAuthUser = user || null;
++    googleAuthRevision += 1;
++    updateGoogleLoginButton();
++}
++function loadFirebaseSync() {
++    if (firebaseInitPromise) return firebaseInitPromise;
++    if (firebaseReady) { updateGoogleLoginButton(); return Promise.resolve(); }
++    if (IDB_HOMOLOGACAO) { setSyncStatus("Firebase desativado no ensaio IndexedDB."); return Promise.resolve(); }
++    if (!firebaseConfigurado(firebaseConfig)) { setSyncStatus("Configure o projeto Firebase neste dispositivo para habilitar o login."); return Promise.resolve(); }
++    firebaseInitPromise = (async () => {
++        try {
++            setSyncStatus("Conectando ao Firebase...");
++            const sdk = await import(new URL(`./firebase-sync.bundle.js?_release=${encodeURIComponent(VERSAO_BUNDLE || "local")}`, import.meta.url));
++            firebaseClient = sdk.criarFirebaseSync(firebaseConfig);
++            const user = await firebaseClient.ready();
++            setGoogleAuthUser(user);
++            firebaseReady = true;
++            firebaseClient.onUser(onFirebaseUser);
++        } catch (error) {
++            firebaseReady = false;
++            firebaseClient = null;
++            console.warn("Falha de autenticacao.", error?.code || "unknown");
++            setSyncStatus(googleAuthMessage(error), true);
++        } finally {
++            firebaseInitPromise = null;
++            updateGoogleLoginButton();
++        }
++    })();
++    updateGoogleLoginButton();
++    return firebaseInitPromise;
++}
++function startGoogleLogin() {
++    if (firebaseInitPromise || googleLoginPending || googleAuthUser || syncUser) return;
++    if (!firebaseReady || !firebaseClient) { void loadFirebaseSync(); return; }
++    googleLoginPending = true;
++    const revision = googleAuthRevision;
++    updateGoogleLoginButton();
++    setSyncStatus('Aguardando entrada com Google...');
++    try {
++        // Keep this call synchronous in the user's click; no await before popup.
++        const popup = firebaseClient.login();
++        Promise.resolve(popup).then(result => {
++            if (revision === googleAuthRevision && result?.user) setGoogleAuthUser(result.user);
++        }).catch(error => {
++            if (revision === googleAuthRevision) setSyncStatus(googleAuthMessage(error), true);
++        }).finally(() => {
++            googleLoginPending = false;
++            updateGoogleLoginButton();
++        });
++    } catch (error) {
++        googleLoginPending = false;
++        if (revision === googleAuthRevision) setSyncStatus(googleAuthMessage(error), true);
++        updateGoogleLoginButton();
++    }
+ }
+ async function onFirebaseUser(user) {
++    setGoogleAuthUser(user);
+     const previousUid = syncUser?.uid || null;
+     const session = syncSessions.begin(), uid = user?.uid || null;
+     let draining;
+     do { draining = idbPendente; await draining.catch(() => {}); } while (draining !== idbPendente);
+     if (!isCurrentSyncSession(session, previousUid)) return;
+     idbBloqueado = true;
+-    syncStopListener?.(); syncSettingsStop?.(); syncConflictsStop?.(); syncStopListener = null; syncSettingsStop = null; syncConflictsStop = null; syncUser = user || null; syncRemoteRecords = []; syncRemoteRecordsLoaded = false; syncRemoteSettings = null;
++    syncStopListener?.(); syncSettingsStop?.(); syncConflictsStop?.(); syncStopListener = null; syncSettingsStop = null; syncConflictsStop = null; syncUser = user || null; updateGoogleLoginButton(); syncRemoteRecords = []; syncRemoteRecordsLoaded = false; syncRemoteSettings = null;
+     settingsConflictActive = false; syncUi.last.textContent = ""; syncUi.conflictList?.replaceChildren();
+     if (previousUid !== uid) resetFinancialInteractions();
+     try {
+@@ -4134,15 +4189,7 @@ window.addEventListener("finance-backup-restored", () => {
+ });
+ window.addEventListener("finance-local-change", (event) => { if (!applyingRemoteSync && syncUser && event.detail.uid === syncUser.uid) { setSyncStatus(navigator.onLine ? "Aguardando envio." : "Offline — alterações pendentes."); if (syncUi.enabled.checked) void publishFirebaseState(event.detail.state, undefined, false, null, event.detail.deletedRecords || []).catch((error) => { console.warn("Falha de sincronizacao.", error?.code || "unknown", error?.message); setSyncStatus("Falha no envio. As alterações continuam salvas localmente.", true); }); } });
+ window.addEventListener("online", () => { if (syncUser) void publishFirebaseState(estado).catch(() => setSyncStatus("Falha no envio. Tente novamente.", true)); });
+-syncUi.login.addEventListener("click", () => {
+-    if (!firebaseClient) { void loadFirebaseSync(); return; }
+-    syncUi.login.disabled = true;
+-    setSyncStatus('Aguardando entrada com Google...');
+-    try {
+-        Promise.resolve(firebaseClient.login()).catch(error => setSyncStatus(googleAuthMessage(error), true))
+-            .finally(() => { syncUi.login.disabled = false; });
+-    } catch (error) { syncUi.login.disabled = false; setSyncStatus(googleAuthMessage(error), true); }
+-});
++syncUi.login.addEventListener("click", startGoogleLogin);
+ syncUi.logout.addEventListener("click", () => { if (firebaseClient) void firebaseClient.logout(); });
+ syncUi.retry.addEventListener("click", () => { if (syncUser) void onFirebaseUser(syncUser); else void loadFirebaseSync(); });
+ syncUi.restore.addEventListener("click", async () => {
+diff --git a/tests/app-sync.test.js b/tests/app-sync.test.js
+index a6cb6b6..e0fd16d 100644
+--- a/tests/app-sync.test.js
++++ b/tests/app-sync.test.js
+@@ -23,7 +23,7 @@ function harness(items = [entry()], initial = financialState(entry())) {
+     const context = vm.createContext({ ...sync, structuredClone, TextEncoder, console,
+         validarBackup, normalizarEstado, normalizarValorMonetario, mesFinanceiroValido,
+         CHAVE_ESTADO: "controleFinanceiro:v3", IDB_HOMOLOGACAO: false, idbBase: structuredClone(initial),
+-        window: { addEventListener() {} }, idbPendente: Promise.resolve(), idbBloqueado: false,
++        setGoogleAuthUser() {}, updateGoogleLoginButton() {}, window: { addEventListener() {} }, idbPendente: Promise.resolve(), idbBloqueado: false,
+         estado: structuredClone(initial), syncUser: { uid: "alice" }, syncRemoteRecords: items,
+         syncRemoteRecordsLoaded: true, syncRemoteSettings: null, settingsConflictActive: false,
+         applyingRemoteSync: false, chaveEstadoAtual: "account-alice", navigator: { onLine: true },
+@@ -60,7 +60,7 @@ function harness(items = [entry()], initial = financialState(entry())) {
+     context.idbBanco = db;
+     context.idbServico = new ServicoFinanceiroAtomico(db, validarBackup, q => Array.isArray(q?.outbox) && Array.isArray(q?.conflicts));
+     const part = (start, end) => source.slice(source.indexOf(start), source.indexOf(end));
+-    vm.runInContext(part("function syncEntityKey(", "async function loadFirebaseSync("), context);
++    vm.runInContext(part("function syncEntityKey(", "let firebaseInitPromise ="), context);
+     vm.runInContext(part("let syncPublishChain =", 'window.addEventListener("finance-local-change"'), context);
+     vm.runInContext(part("async function resolveSyncConflict(", 'syncUi.conflicts.addEventListener'), context);
+     return { context, values, statuses, commits, meta: () => context.readSyncMeta(),
+diff --git a/tests/auth-button.test.js b/tests/auth-button.test.js
+new file mode 100644
+--- /dev/null
++++ b/tests/auth-button.test.js
+@@ -0,0 +1,67 @@
++import test from 'node:test';
++import assert from 'node:assert/strict';
++import vm from 'node:vm';
++import {readFile} from 'node:fs/promises';
++const source=await readFile(new URL('../app.js',import.meta.url),'utf8');
++const deferred=()=>{let resolve,reject;const promise=new Promise((a,b)=>{resolve=a;reject=b;});return {promise,resolve,reject};};
++const tick=()=>new Promise(resolve=>setImmediate(resolve));
++function harness(){
++    const ready=deferred(),popup=deferred();let imports=0,logins=0,callback;
++    const client={ready:()=>ready.promise,onUser:fn=>{callback=fn;},login:()=>{logins++;return popup.promise;}};
++    const statuses=[];
++    const c=vm.createContext({firebaseClient:null,syncUser:null,syncUi:{login:{disabled:false}},IDB_HOMOLOGACAO:false,
++        firebaseConfigurado:()=>true,firebaseConfig:{},console,Promise,setSyncStatus:message=>statuses.push(message),
++        importFirebaseSdk:async()=>{imports++;return {criarFirebaseSync:()=>client};},onFirebaseUser:user=>{c.syncUser=user;vm.runInContext('setGoogleAuthUser(syncUser)',c);}});
++    let code=source.slice(source.indexOf('let firebaseInitPromise ='),source.indexOf('async function onFirebaseUser('));
++    const importLine = code.split('\n').find(line => line.includes('const sdk = await import('));
++    assert.ok(importLine, 'only the SDK import boundary is stubbed');
++    code = code.replace(importLine, 'const sdk = await importFirebaseSdk();');
++    vm.runInContext(source.slice(source.indexOf('function googleAuthMessage('),source.indexOf('let firebaseInitPromise ='))+code,c);
++    return {c,ready,popup,client,statuses,imports:()=>imports,logins:()=>logins,emit:user=>callback(user)};
++}
++test('initialization is shared and enables login after ready without a user',async()=>{
++    const h=harness();const a=h.c.loadFirebaseSync(),b=h.c.loadFirebaseSync();assert.equal(a,b);assert.equal(h.c.syncUi.login.disabled,true);
++    h.c.startGoogleLogin();assert.equal(h.logins(),0);h.ready.resolve(null);await a;
++    assert.equal(h.imports(),1);assert.equal(h.c.syncUi.login.disabled,false);
++});
++test('failed initialization allows retry on the same page without opening a delayed popup',async()=>{
++    const h=harness();const a=h.c.loadFirebaseSync();h.ready.reject({code:'auth/network-request-failed'});await a;
++    assert.equal(h.c.syncUi.login.disabled,false);assert.match(h.statuses.at(-1),/conexao/);
++    h.client.ready=async()=>null;h.c.startGoogleLogin();await tick();assert.equal(h.imports(),2);assert.equal(h.logins(),0);
++    assert.equal(h.c.syncUi.login.disabled,false);h.c.startGoogleLogin();assert.equal(h.logins(),1);
++    h.popup.resolve({});await tick();
++});
++for(const code of ['auth/popup-closed-by-user','auth/network-request-failed','auth/popup-blocked'])test('popup recovery: '+code,async()=>{
++    const h=harness();h.ready.resolve(null);await h.c.loadFirebaseSync();
++    h.c.startGoogleLogin();assert.equal(h.logins(),1,'popup must open before returning from the gesture');
++    h.c.startGoogleLogin();assert.equal(h.logins(),1);assert.equal(h.c.syncUi.login.disabled,true);
++    h.popup.reject({code});await tick();assert.equal(h.c.syncUi.login.disabled,false);
++    assert.match(h.statuses.at(-1),code.includes('closed')?/cancelado/:code.includes('network')?/conexao/:/popups/);
++});
++test('success and restored sessions never re-enable authenticated login',async()=>{
++    const h=harness();h.ready.resolve(null);await h.c.loadFirebaseSync();h.c.startGoogleLogin();
++    h.emit({uid:'alice'});h.popup.resolve({user:{uid:'alice'}});await tick();assert.equal(h.c.syncUi.login.disabled,true);
++    h.c.startGoogleLogin();assert.equal(h.logins(),1);h.emit(null);assert.equal(h.c.syncUi.login.disabled,false);
++    const restored=harness();restored.ready.resolve({uid:'alice'});await restored.c.loadFirebaseSync();assert.equal(restored.c.syncUi.login.disabled,true);
++});
++test('synchronous popup failure resets busy state',async()=>{
++    const h=harness();h.ready.resolve(null);await h.c.loadFirebaseSync();h.client.login=()=>{throw {code:'auth/popup-blocked'};};
++    h.c.startGoogleLogin();assert.equal(h.c.syncUi.login.disabled,false);assert.match(h.statuses.at(-1),/popups/);
++});
++test('real auth callback disables login before awaiting financial writes',async()=>{
++    const h=harness(),pending=deferred();Object.assign(h.c,{idbPendente:pending.promise,syncSessions:{begin:()=>1},isCurrentSyncSession:()=>false});
++    vm.runInContext(source.slice(source.indexOf('async function onFirebaseUser('),source.indexOf('let syncPublishChain =')),h.c);
++    const result=h.c.onFirebaseUser({uid:'alice'});assert.equal(h.c.syncUi.login.disabled,true);
++    pending.resolve();await result;
++});
++
++test('late popup rejection cannot enable login after an authenticated callback',async()=>{
++    const h=harness();h.ready.resolve(null);await h.c.loadFirebaseSync();h.c.startGoogleLogin();
++    h.emit({uid:'alice'});h.popup.reject({code:'auth/popup-closed-by-user'});await tick();
++    assert.equal(h.c.syncUi.login.disabled,true);assert.equal(h.c.syncUser.uid,'alice');
++});
++test('late popup success cannot restore a session superseded by logout',async()=>{
++    const h=harness();h.ready.resolve(null);await h.c.loadFirebaseSync();h.c.startGoogleLogin();
++    h.emit(null);h.popup.resolve({user:{uid:'old-alice'}});await tick();
++    assert.equal(h.c.syncUi.login.disabled,false);assert.equal(h.c.syncUser,null);
++});

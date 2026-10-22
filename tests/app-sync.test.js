@@ -1,3 +1,4 @@
+import { settingsLocks } from './helpers/settings-locks.js';
 import { ServicoFinanceiroAtomico } from "../financial-atomic-service.js";
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -58,7 +59,7 @@ function harness(items = [entry()], initial = financialState(entry())) {
         alterar(key, transform) {return this.alterarDocumentos([key],m=>{m.set(key,transform(m.get(key)));return m;}).then(m=>m.get(key));}
     };
     context.idbBanco = db;
-    context.idbServico = new ServicoFinanceiroAtomico(db, validarBackup, q => Array.isArray(q?.outbox) && Array.isArray(q?.conflicts));
+    context.idbServico = new ServicoFinanceiroAtomico(db, validarBackup, q => Array.isArray(q?.outbox) && Array.isArray(q?.conflicts),settingsLocks());
     const part = (start, end) => source.slice(source.indexOf(start), source.indexOf(end));
     vm.runInContext(part("function syncEntityKey(", "let firebaseInitPromise ="), context);
     vm.runInContext(part("let syncPublishChain =", 'window.addEventListener("finance-local-change"'), context);
@@ -347,6 +348,201 @@ test("nova revisão de configurações equivalentes não cria conflito artificia
     assert.equal(h.meta().conflicts.length, 0);
 });
 
+// Use the production metadata merge as well as the production application
+// handlers. The adapter is in-memory; no user storage or Firebase is accessed.
+function settingsHarness() {
+    const initial = financialState(entry()); initial.categorias = ["Casa", "Moto", "Serasa"];
+    const h = harness([entry()], initial);
+    vm.runInContext(source.slice(source.indexOf("const syncMetaKey ="), source.indexOf("function setSyncStatus(")), h.context);
+    return h;
+}
+const settingsSnapshot = (value, revision) => ({ ...value, revision: String(revision),
+    updatedAt: { seconds: 100, nanoseconds: Number(revision) || 0 } });
+function eightSettingsConflicts(local) {
+    return Array.from({ length: 8 }, (_, i) => ({ kind: "settings", local: structuredClone(local),
+        remote: settingsSnapshot(i < 2 ? { ...local, categories: ["Casa"] } : local, i) }));
+}
+
+test("settings: eight preexisting conflicts, categories and pending operations survive equivalent and repeated snapshots", async () => {
+    const h = settingsHarness(); h.pending();
+    const local = h.context.financialSettings(), conflicts = eightSettingsConflicts(local);
+    h.context.writeSyncMeta("alice", { ...h.meta(), conflicts });
+    const before = JSON.stringify(h.meta()), stateBefore = JSON.stringify(h.context.estado);
+    for (let i = 10; i < 18; i++) await h.context.onRemoteSettings(settingsSnapshot({ ...local, categories: [...local.categories].reverse() }, i), metadata);
+    // A real but already recorded pair is also reused, without replacing metadata.
+    await h.context.onRemoteSettings(settingsSnapshot({ ...local, categories: ["Casa"] }, 18), metadata);
+    assert.equal(JSON.stringify(h.meta()), before);
+    assert.equal(JSON.stringify(h.context.estado), stateBefore);
+    assert.equal(h.context.settingsConflictActive, true);
+    assert.equal(h.context.syncRemoteSettings.revision, "18");
+    assert.ok(h.context.estado.categorias.includes("Moto")); assert.ok(h.context.estado.categorias.includes("Serasa"));
+});
+
+test("settings: two genuine observations and six converged snapshots create only one conflict", async () => {
+    const h = settingsHarness(), local = h.context.financialSettings();
+    h.context.syncRemoteSettings = settingsSnapshot({ ...local, theme: "escuro" }, 0);
+    for (let i = 1; i <= 2; i++) await h.context.onRemoteSettings(settingsSnapshot({ ...local, categories: ["Casa"] }, i), metadata);
+    const original = JSON.stringify(h.meta().conflicts);
+    for (let i = 3; i <= 8; i++) await h.context.onRemoteSettings(settingsSnapshot(local, i), metadata);
+    assert.equal(h.meta().conflicts.length, 1);
+    assert.equal(JSON.stringify(h.meta().conflicts), original);
+    assert.equal(h.context.syncRemoteSettings.revision, "8");
+    assert.equal(h.context.settingsConflictActive, true);
+});
+
+test("settings: concurrent callbacks deduplicate and preserve a concurrent financial inclusion", async () => {
+    const h = settingsHarness(), local = h.context.financialSettings();
+    h.context.syncRemoteSettings = settingsSnapshot({ ...local, theme: "escuro" }, 0);
+    const op = sync.makeOperation(sync.recordEntityKey(entry("new")), { month: "2026-10", type: "receitas", id: "new", record: entry("new").record, deleted: false }, null);
+    await Promise.all([h.context.onRemoteSettings(settingsSnapshot({ ...local, categories: ["Casa"] }, 1), metadata),
+        h.context.onRemoteSettings(settingsSnapshot({ ...local, categories: ["Casa"] }, 2), metadata),
+        h.context.idbServico.enfileirar("alice", op)]);
+    assert.equal(h.meta().conflicts.length, 1);
+    assert.equal(h.meta().outbox[0].id, op.id);
+});
+
+test("settings: asynchronous snapshots retain callback order and do not advance a baseline over a concurrent conflict", async () => {
+    const h = settingsHarness(), local = h.context.financialSettings();
+    h.context.syncRemoteSettings = settingsSnapshot(local, 0);
+    const read = h.context.idbServico.lerFila.bind(h.context.idbServico);
+    let release, entered, reads = 0;
+    const waiting = new Promise(resolve => { entered = resolve; });
+    h.context.idbServico.lerFila = async uid => {
+        const meta = await read(uid);
+        if (++reads === 1) { entered(); await new Promise(resolve => { release = resolve; }); }
+        return meta;
+    };
+    const first = h.context.onRemoteSettings(settingsSnapshot(local, 1), metadata);
+    await waiting;
+    const second = h.context.onRemoteSettings(settingsSnapshot(local, 2), metadata);
+    const conflict = { kind: "settings", local, remote: settingsSnapshot({ ...local, categories: ["Casa"] }, 9) };
+    await h.context.idbServico.registrarConflitoSettings("alice", conflict);
+    release(); await Promise.all([first, second]);
+    assert.equal(h.context.syncRemoteSettings.revision, "2");
+    assert.equal(h.context.settingsConflictActive, true);
+    assert.equal(h.meta().settingsBaseline, undefined);
+    assert.equal(JSON.stringify(h.meta().conflicts), JSON.stringify([conflict]));
+});
+
+test("settings: convergence against an old baseline creates no conflict and keeps the confirmed revision", async () => {
+    const h = settingsHarness(), local = h.context.financialSettings();
+    h.context.syncRemoteSettings = settingsSnapshot({ ...local, theme: "escuro" }, 0);
+    await h.context.onRemoteSettings(settingsSnapshot(local, 1), metadata);
+    assert.equal(h.meta().conflicts.length, 0);
+    assert.equal(h.context.syncRemoteSettings.revision, "1");
+    assert.equal(sync.settingsEquivalent(h.meta().settingsBaseline, local), true);
+});
+
+test("settings: persisted conflicts block automatic publication even if the in-memory flag is false", async () => {
+    const h = settingsHarness(), local = h.context.financialSettings(), conflicts = eightSettingsConflicts(local);
+    h.context.writeSyncMeta("alice", { ...h.meta(), conflicts });
+    h.context.firebaseClient.getSettings = async () => settingsSnapshot({ ...local, categories: ["Casa"] }, 10);
+    let writes = 0; h.context.firebaseClient.saveSettings = async () => { writes++; throw new Error("must not send"); };
+    await h.context.publishFirebaseState(h.context.estado);
+    assert.equal(writes, 0);
+    assert.equal(JSON.stringify(h.meta().conflicts), JSON.stringify(conflicts));
+    assert.equal(h.context.settingsConflictActive, true);
+});
+
+test("settings: a conflict from another tab during a remote read blocks settings publication", async () => {
+    const h = settingsHarness(), local = h.context.financialSettings();
+    h.context.firebaseClient.getSettings = async () => {
+        await h.context.idbServico.registrarConflitoSettings("alice", { kind: "settings", local, remote: settingsSnapshot({ ...local, theme: "escuro" }, 1) });
+        return settingsSnapshot({ ...local, theme: "escuro" }, 2);
+    };
+    let writes = 0; h.context.firebaseClient.saveSettings = async () => { writes++; };
+    await h.context.publishFirebaseState(h.context.estado);
+    assert.equal(writes, 0); assert.equal(h.meta().conflicts.length, 1);
+    assert.equal(h.context.settingsConflictActive, true);
+});
+
+test("settings: revision rejection with the desired server result causes no conflict or retry", async () => {
+    const h = settingsHarness(), local = h.context.financialSettings();
+    h.context.syncRemoteSettings = settingsSnapshot({ ...local, theme: "escuro" }, 0);
+    h.context.firebaseClient.getSettings = async () => settingsSnapshot({ ...local, theme: "escuro" }, 1);
+    let writes = 0;
+    h.context.firebaseClient.saveSettings = async () => { writes++; return { conflict: true, remote: settingsSnapshot(local, 2) }; };
+    await h.context.publishFirebaseState(h.context.estado);
+    assert.equal(writes, 1); assert.equal(h.meta().conflicts.length, 0);
+    assert.equal(h.context.syncRemoteSettings.revision, "2");
+    await h.context.onRemoteSettings(settingsSnapshot(local, 3), metadata);
+    assert.equal(h.meta().conflicts.length, 0);
+});
+
+test("settings: a genuine CAS difference persists a conflict and blocks subsequent automatic settings writes", async () => {
+    const h = settingsHarness(), local = h.context.financialSettings();
+    h.context.firebaseClient.getSettings = async () => settingsSnapshot({ ...local, theme: "escuro" }, 1);
+    let writes = 0; h.context.firebaseClient.saveSettings = async () => { writes++; return { conflict: true, remote: settingsSnapshot({ ...local, theme: "rosa" }, 2) }; };
+    await h.context.publishFirebaseState(h.context.estado); await h.context.publishFirebaseState(h.context.estado);
+    assert.equal(writes, 1); assert.equal(h.meta().conflicts.length, 1);
+    assert.equal(h.context.settingsConflictActive, true);
+});
+
+test("settings: confirmed observations do not overwrite a local change or accept cache/pending snapshots", async () => {
+    const h = settingsHarness(), local = h.context.financialSettings();
+    const remote = settingsSnapshot({ ...local, theme: "escuro" }, 0);
+    h.context.syncRemoteSettings = remote;
+    await h.context.onRemoteSettings({ ...remote, revision: "1" }, metadata);
+    assert.equal(h.context.estado.tema, "claro"); assert.equal(h.meta().conflicts.length, 0);
+    for (const flags of [{ fromCache: true, hasPendingWrites: false }, { fromCache: false, hasPendingWrites: true }])
+        await h.context.onRemoteSettings(settingsSnapshot({ ...local, theme: "rosa" }, 2), flags);
+    assert.equal(h.context.syncRemoteSettings.revision, "1");
+});
+
+test("settings: storage failure preserves conflicts and queue; an obsolete session cannot replace another account's reference", async () => {
+    const h = settingsHarness(); h.pending(); const local = h.context.financialSettings();
+    h.context.syncRemoteSettings = settingsSnapshot({ ...local, theme: "escuro" }, 0);
+    const before = JSON.stringify(h.meta()), stateBefore = JSON.stringify(h.context.estado);
+    h.context.idbServico.registrarConflitoSettings = async () => { throw new Error("quota"); };
+    await assert.rejects(h.context.onRemoteSettings(settingsSnapshot({ ...local, categories: ["Casa"] }, 1), metadata), /quota/);
+    assert.equal(JSON.stringify(h.meta()), before); assert.equal(JSON.stringify(h.context.estado), stateBefore);
+    const read = h.context.idbServico.lerFila.bind(h.context.idbServico);
+    h.context.idbServico.lerFila = async uid => { const queue = await read(uid); h.context.syncUser = { uid: "bob" }; h.context.syncRemoteSettings = { revision: "bob" }; return queue; };
+    h.context.isCurrentSyncSession = (_session, uid) => h.context.syncUser?.uid === uid;
+    await h.context.onRemoteSettings(settingsSnapshot(local, 2), metadata);
+    assert.equal(h.context.syncRemoteSettings.revision, "bob");
+});
+
+test("settings: first link uses functional equivalence and a legitimate conflict blocks automatic settings publication", async () => {
+    for (const genuine of [false, true]) {
+        const h = settingsHarness(); initializedFlow(h);
+        h.context.writeSyncMeta("alice", { ...h.meta(), initialized: false });
+        h.context.storage.lerJsonResultado = () => ({ estado: "ausente" });
+        let prompts = 0, writes = 0; h.context.confirm = () => { prompts++; return true; };
+        const local = h.context.financialSettings();
+        h.context.firebaseClient.getSettings = async () => settingsSnapshot({ ...local, categories: genuine ? ["Casa"] : [...local.categories].reverse() }, 1);
+        h.context.firebaseClient.saveSettings = async () => { writes++; return { acknowledged: true, revision: "saved" }; };
+        await h.context.onFirebaseUser({ uid: "alice" });
+        assert.equal(prompts, genuine ? 2 : 1); assert.equal(writes, 0);
+        assert.equal(h.meta().conflicts.length, genuine ? 1 : 0);
+        assert.ok(h.context.estado.categorias.includes("Moto")); assert.ok(h.context.estado.categorias.includes("Serasa"));
+    }
+});
+
+test("settings: reconnect distinguishes convergence from genuine divergence against a saved baseline", async () => {
+    for (const genuine of [false, true]) {
+        const h = settingsHarness(); initializedFlow(h); const local = h.context.financialSettings();
+        h.context.writeSyncMeta("alice", { ...h.meta(), settingsBaseline: { ...local, theme: "escuro" } });
+        h.context.firebaseClient.getSettings = async () => settingsSnapshot({ ...local, categories: genuine ? ["Casa"] : [...local.categories].reverse() }, 1);
+        await h.context.onFirebaseUser({ uid: "alice" });
+        assert.equal(h.meta().conflicts.length, genuine ? 1 : 0);
+    }
+});
+
+test("settings: backup review reuses an existing pair and leaves all eight original entries intact", async () => {
+    const h = settingsHarness(), local = h.context.financialSettings(), conflicts = eightSettingsConflicts(local);
+    h.context.writeSyncMeta("alice", { ...h.meta(), conflicts, restoredPending: true });
+    h.context.syncRemoteSettings = settingsSnapshot({ ...local, categories: ["Casa"] }, 20);
+    h.context.confirm = () => true;
+    h.context.syncUi.restore = { addEventListener: (_event, callback) => { h.restore = callback; } };
+    h.context.onFirebaseUser = async () => {};
+    vm.runInContext(source.slice(source.indexOf('syncUi.restore.addEventListener('), source.indexOf('syncUi.enabled.addEventListener(')), h.context);
+    await h.restore();
+    assert.equal(JSON.stringify(h.meta().conflicts), JSON.stringify(conflicts));
+    assert.equal(h.meta().restoredPending, false);
+    assert.ok(h.context.estado.categorias.includes("Moto")); assert.ok(h.context.estado.categorias.includes("Serasa"));
+});
+
 test("ausência local não vira exclusão; exclusão explícita produz tombstone", { timeout: 5000 }, async () => {
     const unknown = harness([entry()], financialState());
     await unknown.context.publishFirebaseState(unknown.context.estado);
@@ -427,7 +623,8 @@ test('review includes duplicate observations of the same operation, not unrelate
 
 test('concurrent confirmations merge monotonically and a new operation prevents confirmation',async()=>{
     const h=harness();
-    const c=vm.createContext({idbServico:h.context.idbServico,structuredClone,Symbol});
+    const c=vm.createContext({idbServico:h.context.idbServico,structuredClone,Symbol,
+        syncSessions:h.context.syncSessions,isCurrentSyncSession:h.context.isCurrentSyncSession,updateSettingsConflictActive:h.context.updateSettingsConflictActive});
     vm.runInContext(source.slice(source.indexOf('const syncMetaKey ='),source.indexOf('function setSyncStatus(')),c);
     const read=()=>vm.runInContext('readSyncMeta("alice")',c);
     const write=async value=>{c.proposal=value;return vm.runInContext('writeSyncMeta("alice",proposal)',c);};

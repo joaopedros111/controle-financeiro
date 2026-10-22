@@ -75,8 +75,13 @@ export function criarFirebaseSync(config) {
             if (serverOnly && !snapshotConfirmed(legacy.metadata)) throw new Error("As configurações ainda não foram confirmadas pelo servidor.");
             return legacy.exists() ? legacy.data() : null;
         },
-        async saveSettings(uid, settings, baseRevision = null) {
+        async saveSettings(uid, settings, baseRevision = null, canWrite = () => true) {
             if (auth.currentUser?.uid !== uid) throw new Error("Conta não corresponde ao usuário autenticado.");
+            const ensureSettingsWrite = () => {
+                ensureUser(uid);
+                if (!canWrite()) throw Object.assign(new Error("Envio de configurações obsoleto ou persistência bloqueada."), { code: "sync/settings-stale" });
+            };
+            ensureSettingsWrite();
             const categories = settings?.categories, defaults = settings?.budgets?.padrao;
             if (!Array.isArray(categories) || categories.length > 1000 || categories.some((name) => typeof name !== "string" || !name.trim() || name.length > 40 || !unicodeWellFormed(name))
                 || new Set(categories).size !== categories.length || !defaults || typeof defaults !== "object" || Array.isArray(defaults)
@@ -92,13 +97,13 @@ export function criarFirebaseSync(config) {
                 }
             };
             await writeInChunks(categories, async (name) => {
-                ensureUser(uid);
+                ensureSettingsWrite();
                 const reference = doc(categoriesRef, settingsDocId("c", name));
                 const value = Object.hasOwn(defaults, name) ? { name, budget: defaults[name] } : { name };
                 return runTransaction(db, async (tx) => {
-                ensureUser(uid);
+                ensureSettingsWrite();
                 const existing = await tx.get(reference);
-                ensureUser(uid);
+                ensureSettingsWrite();
                 if (existing.exists()) {
                     const remote = existing.data();
                     if (remote.name !== value.name || Object.hasOwn(remote, "budget") !== Object.hasOwn(value, "budget")
@@ -110,9 +115,9 @@ export function criarFirebaseSync(config) {
             });
             const target = settingsV2Ref(db, uid), legacyTarget = doc(db, "users", uid, "settings", "finance");
             return runTransaction(db, async (tx) => {
-                ensureUser(uid);
+                ensureSettingsWrite();
                 const [current, legacy] = await Promise.all([tx.get(target), tx.get(legacyTarget)]);
-                ensureUser(uid);
+                ensureSettingsWrite();
                 const active = current.exists() ? current.data() : legacy.exists() ? legacy.data() : null;
                 if (active?.revision === revision) return { acknowledged: true, duplicate: true, revision };
                 if ((active?.revision || null) !== baseRevision) return { conflict: true, remote: current.exists() ? await readSettingsGeneration(db, uid, active, { serverOnly: true }) : active };

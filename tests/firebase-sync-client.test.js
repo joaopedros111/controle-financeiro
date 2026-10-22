@@ -112,6 +112,30 @@ test("falha parcial de geração não publica manifesto; repetição retoma sem 
     assert.ok(h.data.size > before); // orphan generation retained; no automatic cleanup
 });
 
+test("settings SDK rechecks a cancelled write after category reads before writing any document", async () => {
+    const h = harness(); let valid = true;
+    const transaction = h.context.runTransaction;
+    h.context.runTransaction = (db, callback) => transaction(db, tx => callback({ ...tx,
+        get: async key => { const result = await tx.get(key); valid = false; return result; } }));
+    await assert.rejects(h.client.saveSettings("alice", { categories: ["Moto"], theme: "claro", budgets: { padrao: {}, meses: {} } }, null, () => valid),
+        error => error.code === 'sync/settings-stale');
+    assert.equal(h.data.size, 0);
+});
+
+test("settings SDK cancels at the manifest boundary and retains completed generation data for an idempotent retry", async () => {
+    const h = harness(); let valid = true;
+    const transaction = h.context.runTransaction;
+    h.context.runTransaction = (db, callback) => transaction(db, tx => callback({ ...tx,
+        get: async key => { const result = await tx.get(key); if (key === 'users/alice/settingsV2/finance') valid = false; return result; } }));
+    const settings = { categories: ["Moto", "Serasa"], theme: "claro", budgets: { padrao: {}, meses: {} } };
+    await assert.rejects(h.client.saveSettings("alice", settings, null, () => valid), error => error.code === 'sync/settings-stale');
+    assert.equal(h.data.has('users/alice/settingsV2/finance'), false); assert.equal(h.data.size, 2);
+    const generation = structuredClone([...h.data]); h.context.runTransaction = transaction;
+    const ack = await h.client.saveSettings("alice", settings, null, () => true);
+    assert.equal(ack.acknowledged, true);
+    for (const [key, value] of generation) assert.deepEqual(h.data.get(key), value);
+});
+
 test("cliente de produção executa transações e configurações nas regras do Emulator", {
     skip: !process.env.FIRESTORE_EMULATOR_HOST && "Requires Firestore Emulator"
 }, async () => {

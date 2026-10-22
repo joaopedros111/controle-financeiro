@@ -1,0 +1,92 @@
+diff --git a/app.js b/app.js
+index 91b8efe..b5b4aca 100644
+--- a/app.js
++++ b/app.js
+@@ -3840,6 +3840,14 @@ function googleAuthMessage(error) {
+ }
+ let firebaseInitPromise = null, firebaseReady = false, googleLoginPending = false;
+ let googleAuthUser = null, googleAuthRevision = 0;
++let firebaseAuthStop = null, firebaseAuthGeneration = 0;
++function stopFirebaseAuthObserver() {
++    const stop = firebaseAuthStop;
++    firebaseAuthStop = null;
++    firebaseAuthGeneration += 1;
++    firebaseReady = false;
++    stop?.();
++}
+ function updateGoogleLoginButton() {
+     syncUi.login.disabled = !!(firebaseInitPromise || googleLoginPending || googleAuthUser || syncUser);
+ }
+@@ -3859,11 +3867,27 @@ function loadFirebaseSync() {
+             const sdk = await import(new URL(`./firebase-sync.bundle.js?_release=${encodeURIComponent(VERSAO_BUNDLE || "local")}`, import.meta.url));
+             firebaseClient = sdk.criarFirebaseSync(firebaseConfig);
+             const user = await firebaseClient.ready();
+-            setGoogleAuthUser(user);
++            stopFirebaseAuthObserver();
++            const generation = firebaseAuthGeneration;
++            let observing = false, received = false, observedUser;
++            const deliver = user => {
++                if (generation !== firebaseAuthGeneration) return;
++                Promise.resolve(onFirebaseUser(user)).catch(error => {
++                    if (generation === firebaseAuthGeneration) setSyncStatus(googleAuthMessage(error), true);
++                });
++            };
++            firebaseAuthStop = firebaseClient.onUser(user => {
++                if (generation !== firebaseAuthGeneration) return;
++                if (!observing) { received = true; observedUser = user; return; }
++                deliver(user);
++            });
++            // Publish ready()'s provisional user only after observer registration succeeds.
++            observing = true;
+             firebaseReady = true;
+-            firebaseClient.onUser(onFirebaseUser);
++            if (received) deliver(observedUser);
++            else setGoogleAuthUser(user);
+         } catch (error) {
+-            firebaseReady = false;
++            stopFirebaseAuthObserver();
+             firebaseClient = null;
+             console.warn("Falha de autenticacao.", error?.code || "unknown");
+             setSyncStatus(googleAuthMessage(error), true);
+diff --git a/tests/auth-button.test.js b/tests/auth-button.test.js
+index a6c10d8..1bd1cb6 100644
+--- a/tests/auth-button.test.js
++++ b/tests/auth-button.test.js
+@@ -66,3 +66,37 @@ test('late popup success cannot restore a session superseded by logout',async()=
+     assert.equal(h.c.syncUi.login.disabled,false);assert.equal(h.c.syncUser,null);
+ });
+ 
++test('observer registration failure does not publish a provisional user or block retry',async()=>{
++    const h=harness();let ghost;
++    h.client.onUser=fn=>{ghost=fn;fn({uid:'provisional'});throw {code:'auth/network-request-failed'};};
++    h.ready.resolve({uid:'provisional'});await h.c.loadFirebaseSync();
++    assert.equal(h.c.syncUi.login.disabled,false);assert.equal(h.c.syncUser,null);
++    ghost({uid:'stale'});assert.equal(h.c.syncUser,null);
++    h.client.ready=async()=>null;h.client.onUser=()=>()=>{};
++    h.c.startGoogleLogin();await tick();assert.equal(h.imports(),2);assert.equal(h.logins(),0);
++    h.c.startGoogleLogin();assert.equal(h.logins(),1);h.popup.resolve({});await tick();
++});
++test('observer is cancelled exactly once on restart and queued old callbacks are ignored',async()=>{
++    const h=harness();let oldCallback,newCallback,stopped=0;
++    h.client.onUser=fn=>{oldCallback=fn;return ()=>{stopped++;};};
++    h.ready.resolve(null);await h.c.loadFirebaseSync();
++    h.c.stopFirebaseAuthObserver();assert.equal(stopped,1);
++    h.client.onUser=fn=>{newCallback=fn;return ()=>{stopped++;};};
++    await h.c.loadFirebaseSync();assert.equal(stopped,1);
++    oldCallback({uid:'old'});assert.equal(h.c.syncUser,null);
++    newCallback({uid:'current'});assert.equal(h.c.syncUser.uid,'current');
++    h.c.stopFirebaseAuthObserver();h.c.stopFirebaseAuthObserver();assert.equal(stopped,2);
++});
++test('logout cannot start a second popup until the first finally has completed',async()=>{
++    const h=harness(),newer=deferred();h.ready.resolve(null);await h.c.loadFirebaseSync();
++    h.c.startGoogleLogin();h.emit(null);h.c.startGoogleLogin();assert.equal(h.logins(),1);
++    h.popup.resolve({});await tick();let newerCalls=0;
++    h.client.login=()=>{newerCalls++;return newer.promise;};h.c.startGoogleLogin();h.c.startGoogleLogin();
++    assert.equal(newerCalls,1);assert.equal(h.c.syncUi.login.disabled,true);
++    await tick();assert.equal(h.c.syncUi.login.disabled,true);
++    newer.reject({code:'auth/popup-closed-by-user'});await tick();assert.equal(h.c.syncUi.login.disabled,false);
++});
++test('a synchronous observer event takes precedence over ready() session data',async()=>{
++    const h=harness();h.ready.resolve({uid:'old'});h.client.onUser=fn=>{fn(null);return ()=>{};};
++    await h.c.loadFirebaseSync();assert.equal(h.c.syncUser,null);assert.equal(h.c.syncUi.login.disabled,false);
++});

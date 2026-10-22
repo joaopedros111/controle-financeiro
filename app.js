@@ -6,7 +6,7 @@ import { apresentarValorFinanceiro, calcularEspacamentosDensidade, normalizarPre
 import { criarConfirmacaoAtualizacao, criarVerificadorAutomatico, instalarAtualizacao, lerVersaoControlador, lerVersaoInstalada, lerVersaoPublicada, validarVersaoAplicacao, verificarComConfirmacao } from "./update-manager.js";
 import { aplicarIdioma, formatarMoeda as formatarMoedaLocalizada, LOCALES, textoTraduzido } from "./localization.js";
 import { firebaseConfig, firebaseConfigurado } from "./firebase-config.js";
-import { chaveLocalConta, registrosFinanceiros, combinarRegistros, migrationBackup, operationId, jsonCanonico, recordsEquivalent, coalesceOutbox, flushSyncQueue, createSyncSessionGuard, validateRemoteSettings, mergeRemoteSettings, validRemoteTombstone, reconcileRemoteConflicts, validateRemoteConflicts, snapshotConfirmed, recordEntityKey, inspectRemoteKeys, validConflictRecord, readSyncMetadata, blockedConflictKeys, validSyncIdentity, financialStatesEquivalent } from "./sync-core.js";
+import { chaveLocalConta, registrosFinanceiros, combinarRegistros, migrationBackup, operationId, jsonCanonico, recordsEquivalent, coalesceOutbox, flushSyncQueue, createSyncSessionGuard, validateRemoteSettings, mergeRemoteSettings, validRemoteTombstone, reconcileRemoteConflicts, validateRemoteConflicts, snapshotConfirmed, recordEntityKey, inspectRemoteKeys, validConflictRecord, readSyncMetadata, blockedConflictKeys, validSyncIdentity, financialStatesEquivalent, functionalSettings, settingsEquivalent } from "./sync-core.js";
 
 
 
@@ -601,6 +601,9 @@ let idbBanco = null;
 let idbBloqueado = false;
 let idbBase = null;
 let idbPendente = Promise.resolve();
+// The local-only application has no Firebase session. When synchronization is
+// available its closure also guards same-UID session changes during persistence.
+let capturarSessaoPersistencia = () => () => true;
 
 
 
@@ -691,16 +694,19 @@ async function persistirEstadoFinanceiro(key, next, localEdit = false, restored 
     if (!idbServico || idbBloqueado || key !== chaveEstadoAtual) return false;
     const uid = key === CHAVE_ESTADO ? (IDB_HOMOLOGACAO ? "local" : "@local") : key.split(":").at(-1);
     const base = structuredClone(idbBase);
+    const sessionCurrent = capturarSessaoPersistencia();
+    const canPersist = () => sessionCurrent() && key === chaveEstadoAtual && !idbBloqueado;
     try {
         await idbPendente;
+        if (!canPersist()) return false;
         const result = await idbServico.aplicarEdicao(uid, base, next, localEdit ? (changes, queue) => changes.map(value => {
             const entityKey = recordEntityKey(value), baseRevision = queue.remoteRevisions?.[entityKey] || null;
             return { id: operationId(entityKey, baseRevision, value), entityKey, baseRevision, value };
-        }) : () => [], queue => { if (restored && key !== CHAVE_ESTADO) queue.restoredPending = true; });
-        if (key !== chaveEstadoAtual) return false;
+        }) : () => [], queue => { if (restored && key !== CHAVE_ESTADO) queue.restoredPending = true; }, canPersist);
+        if (!canPersist()) return false;
         idbBase = structuredClone(result.estado.dados);
         return true;
-    } catch { idbBloqueado = true; return false; }
+    } catch (error) { if (sessionCurrent() && key === chaveEstadoAtual && error?.code !== 'persistence/cancelled') idbBloqueado = true; return false; }
 }
 function avisarArmazenamentoTemporario() {
     if (avisoArmazenamentoTemporarioExibido) return;
@@ -3754,13 +3760,23 @@ if (Object.values(syncUi).every(Boolean)) {
 let firebaseClient = null, syncUser = null, syncStopListener = null, syncSettingsStop = null, syncConflictsStop = null, syncRemoteRecords = [], syncRemoteSettings = null, syncRemoteRecordsLoaded = false, settingsConflictActive = false, applyingRemoteSync = false;
 const syncSessions = createSyncSessionGuard();
 const isCurrentSyncSession = (session, uid) => syncSessions.isCurrent(session) && (syncUser?.uid || null) === (uid || null);
+capturarSessaoPersistencia = () => {
+    const session = syncSessions.current(), uid = syncUser?.uid || null;
+    return () => isCurrentSyncSession(session, uid);
+};
 const syncMetaKey = (uid) => `controleFinanceiro:sync:${uid}`;
 const META_BASE = Symbol("metadata-base");
-const readSyncMeta = async (uid) => { const value = await idbServico.lerFila(uid); return { ...value, [META_BASE]: structuredClone(value) }; };
+const META_SESSION = Symbol("metadata-session");
+const readSyncMeta = async (uid) => { const session = syncSessions.current(); const value = await idbServico.lerFila(uid); return { ...value, [META_BASE]: structuredClone(value), [META_SESSION]: { session, uid } }; };
 const writeSyncMeta = async (uid, meta) => {
+    const owner = meta[META_SESSION];
+    const session = owner?.session;
+    const valid = () => owner?.uid === uid && isCurrentSyncSession(session, uid);
+    if (!valid()) throw Object.assign(new Error("Metadata session invalidated"), { code: "persistence/cancelled" });
     const base = meta[META_BASE];
     if (!base) throw new Error("Metadados sem base transacional");
-    return idbServico.alterarFila(uid, current => {
+    const saved = await idbServico.alterarFila(uid, current => {
+        if (!valid()) throw Object.assign(new Error("Metadata session invalidated"), { code: "persistence/cancelled" });
         for (const key of Object.keys(meta)) {
             if (JSON.stringify(base[key]) === JSON.stringify(meta[key])) continue;
             if (key === "lastConfirmed") {
@@ -3782,7 +3798,12 @@ const writeSyncMeta = async (uid, meta) => {
             }
         }
         return current;
+    }).catch(error => {
+        if (valid() && error?.code !== 'persistence/cancelled') idbBloqueado = true;
+        throw error;
     });
+    updateSettingsConflictActive(uid, saved, session);
+    return saved;
 };
 function setSyncStatus(message, error = false) {
     const idioma = ui.idiomaInterface?.value || "pt-BR";
@@ -3805,6 +3826,27 @@ function resetFinancialInteractions() {
 async function setFinancialStateKey(key, next) { const persisted = await persistirEstadoFinanceiro(key, normalizarEstado(next), false); if (persisted) { chaveEstadoAtual = key; estado = normalizarEstado(idbBase); renderTudo(false); } return persisted; }
 function syncEntityKey(entry) { return recordEntityKey(entry); }
 function financialSettings(source = estado) { return { version: source.versao || 3, categories: [...(source.categorias || [])].sort(), theme: source.tema || "claro", budgets: source.orcamentos || { padrao: {}, meses: {} } }; }
+function updateSettingsConflictActive(uid, meta, session = syncSessions.current()) {
+    if (isCurrentSyncSession(session, uid)) settingsConflictActive = (meta.conflicts || []).some(item => item.kind === "settings");
+}
+async function registerSettingsConflict(uid, local, remote, source, session = syncSessions.current()) {
+    let meta;
+    try { meta = await idbServico.registrarConflitoSettings(uid, { kind: "settings", local, remote, ...(source ? { source } : {}) }, () => isCurrentSyncSession(session, uid) && !idbBloqueado); }
+    catch (error) { if (isCurrentSyncSession(session, uid) && error?.code !== 'persistence/cancelled') idbBloqueado = true; throw error; }
+    updateSettingsConflictActive(uid, meta, session);
+    return meta;
+}
+async function rememberSettingsBaseline(uid, settings, session) {
+    const baseline = functionalSettings(settings);
+    let meta;
+    try { meta = await idbServico.alterarFila(uid, queue => {
+            if (!isCurrentSyncSession(session, uid) || idbBloqueado) throw Object.assign(new Error('Sessão de persistência invalidada'), { code: 'persistence/cancelled' });
+            if (!queue.conflicts.some(item => item.kind === "settings")) queue.settingsBaseline = baseline;
+            return queue;
+        });
+    } catch (error) { if (isCurrentSyncSession(session, uid) && error?.code !== 'persistence/cancelled') idbBloqueado = true; throw error; }
+    updateSettingsConflictActive(uid, meta, session);
+}
 function validarRegistrosRemotos(records) {
     if (!Array.isArray(records) || inspectRemoteKeys(records).duplicates.length) return null;
     const meses = {}, validos = [];
@@ -3955,6 +3997,8 @@ async function onFirebaseUser(user) {
     if (!isCurrentSyncSession(session, uid)) return;
     idbBloqueado = false; estado = normalizarEstado(initialized.estado.dados); idbBase = structuredClone(estadoParaSalvar()); renderTudo(false);
     const meta = (await readSyncMeta(user.uid)); syncUi.enabled.checked = meta.enabled !== false;
+    if (!isCurrentSyncSession(session, uid)) return;
+    updateSettingsConflictActive(uid, meta, session);
     syncUi.restore.hidden = !meta.restoredPending;
     if (false) { setSyncStatus("Não foi possível persistir os dados locais desta conta. A sincronização foi pausada.", true); return; }
     else if (recuperacaoFinanceira.protegido) { setSyncStatus("Migração suspensa: recupere os dados locais protegidos antes de continuar.", true); return; }
@@ -3973,8 +4017,8 @@ async function onFirebaseUser(user) {
         }
         const remoteSettings = await firebaseClient.getSettings(user.uid, { serverOnly: true });
         if (!isCurrentSyncSession(session, uid)) return;
-        syncRemoteSettings = remoteSettings;
         if (!validarConfiguracoesRemotas(remoteSettings)) throw new Error("As configurações financeiras remotas são inválidas; nenhuma combinação foi aplicada.");
+        syncRemoteSettings = remoteSettings;
         const remoteConflicts = await firebaseClient.listConflicts(user.uid, { serverOnly: true });
         if (!isCurrentSyncSession(session, uid)) return;
         if (!validateRemoteConflicts(remoteConflicts)) throw new Error("Há conflitos remotos inválidos; os conflitos locais foram preservados.");
@@ -3982,8 +4026,9 @@ async function onFirebaseUser(user) {
         currentMeta.conflicts = reconcileRemoteConflicts(currentMeta.conflicts, remoteConflicts);
         const remoteResolved = new Set(remoteConflicts.filter((item) => item?.resolved === true).map((item) => item.operationId));
         currentMeta.conflicts = currentMeta.conflicts.filter((item) => !remoteResolved.has(item.operationId || item.operation?.id));
-        await writeSyncMeta(user.uid, currentMeta);
-        settingsConflictActive = (currentMeta.conflicts || []).some((conflict) => conflict.kind === "settings");
+        const savedMeta = await writeSyncMeta(user.uid, currentMeta);
+        if (!isCurrentSyncSession(session, uid)) return;
+        updateSettingsConflictActive(uid, savedMeta, session);
         if (meta.initialized && !meta.restoredPending) await onRemoteRecords(remote, { fromCache: false, hasPendingWrites: false }, session, true);
         if (!meta.initialized) {
             const anonymous = storage.lerJsonResultado(CHAVE_ESTADO);
@@ -3996,9 +4041,10 @@ async function onFirebaseUser(user) {
             for (const item of merged.records) { months[item.month] ||= { receitas: [], despesas: [] }; months[item.month][item.type].push(item.record); }
             if (!validarBackup({ ...localState, meses: months })) throw new Error("A combinação inicial excede os limites ou contém dados inválidos. As cópias foram preservadas.");
             let next = normalizarEstado({ ...localState, meses: months });
-            if (remoteSettings && jsonCanonico(financialSettings(next)) !== jsonCanonico({ version: remoteSettings.version, categories: remoteSettings.categories, theme: remoteSettings.theme, budgets: remoteSettings.budgets })) {
+            if (remoteSettings && !settingsEquivalent(financialSettings(next), remoteSettings)) {
                 const useLocal = confirm("As categorias, o tema ou os orçamentos diferem. OK mantém os deste dispositivo; Cancelar usa os da nuvem. As duas cópias serão preservadas no registro de conflito.");
-                const conflictMeta = (await readSyncMeta(user.uid)); conflictMeta.conflicts = [...(conflictMeta.conflicts || []), { kind: "settings", local: financialSettings(next), remote: remoteSettings }]; await writeSyncMeta(user.uid, conflictMeta);
+                await registerSettingsConflict(uid, financialSettings(next), remoteSettings, undefined, session);
+                if (!isCurrentSyncSession(session, uid)) return;
                 if (!useLocal) next = normalizarEstado({ ...next, categorias: remoteSettings.categories, tema: remoteSettings.theme, orcamentos: remoteSettings.budgets });
             }
             if (!await setFinancialStateKey(key, next)) throw new Error("Não foi possível salvar a cópia local antes da migração.");
@@ -4011,12 +4057,11 @@ async function onFirebaseUser(user) {
         }
         if (meta.initialized && !settingsConflictActive && remoteSettings && meta.settingsBaseline) {
             const baseline = meta.settingsBaseline, localNow = financialSettings(estado);
-            const localChanged = jsonCanonico(localNow) !== jsonCanonico(baseline);
-            const remoteNow = { version: remoteSettings.version, categories: remoteSettings.categories, theme: remoteSettings.theme, budgets: remoteSettings.budgets };
-            const remoteChanged = jsonCanonico(remoteNow) !== jsonCanonico(baseline);
-            if (localChanged && remoteChanged && jsonCanonico(localNow) !== jsonCanonico(remoteNow)) {
-                settingsConflictActive = true;
-                const current = (await readSyncMeta(user.uid)); current.conflicts = [...(current.conflicts || []), { kind: "settings", local: localNow, remote: remoteSettings }]; await writeSyncMeta(user.uid, current);
+            const localChanged = !settingsEquivalent(localNow, baseline);
+            const remoteChanged = !settingsEquivalent(remoteSettings, baseline);
+            if (localChanged && remoteChanged && !settingsEquivalent(localNow, remoteSettings)) {
+                await registerSettingsConflict(uid, localNow, remoteSettings, undefined, session);
+                if (!isCurrentSyncSession(session, uid)) return;
             } else if (remoteChanged && !localChanged) {
                 estado = normalizarEstado({ ...estado, categorias: remoteSettings.categories, tema: remoteSettings.theme, orcamentos: remoteSettings.budgets });
                 await persistirEstadoFinanceiro(chaveEstadoAtual, estadoParaSalvar()); renderTudo(false);
@@ -4028,7 +4073,11 @@ async function onFirebaseUser(user) {
                 if (isCurrentSyncSession(session, uid)) { console.warn("Falha de sincronizacao.", error?.code || "unknown", error?.message); setSyncStatus("Falha na reconciliação. A fila foi preservada.", true); }
             }); },
             (error) => { if (isCurrentSyncSession(session, uid)) { syncRemoteRecordsLoaded = false; console.warn("Falha de sincronizacao.", error?.code || "unknown", error?.message); setSyncStatus("Erro ao observar alterações remotas.", true); } });
-        if (syncUi.enabled.checked && !(await readSyncMeta(user.uid)).restoredPending) syncSettingsStop = firebaseClient.listenSettings(user.uid, (value, snapshotMetadata) => { if (isCurrentSyncSession(session, uid)) onRemoteSettings(value, snapshotMetadata, session); }, (error) => { if (isCurrentSyncSession(session, uid)) { console.warn("Falha de sincronizacao.", error?.code || "unknown", error?.message); setSyncStatus("Erro ao observar configurações remotas.", true); } });
+        if (syncUi.enabled.checked && !(await readSyncMeta(user.uid)).restoredPending) syncSettingsStop = firebaseClient.listenSettings(user.uid, (value, snapshotMetadata) => {
+            if (isCurrentSyncSession(session, uid)) void onRemoteSettings(value, snapshotMetadata, session).catch(error => {
+                if (isCurrentSyncSession(session, uid)) { console.warn("Falha de sincronizacao.", error?.code || "unknown", error?.message); setSyncStatus("Não foi possível preservar as configurações remotas. Tente novamente.", true); }
+            });
+        }, (error) => { if (isCurrentSyncSession(session, uid)) { console.warn("Falha de sincronizacao.", error?.code || "unknown", error?.message); setSyncStatus("Erro ao observar configurações remotas.", true); } });
         if (syncUi.enabled.checked && !(await readSyncMeta(user.uid)).restoredPending) syncConflictsStop = firebaseClient.listenConflicts(user.uid, (items, metadata) => { if (isCurrentSyncSession(session, uid)) onRemoteConflicts(items, session, metadata); }, (error) => { if (isCurrentSyncSession(session, uid)) { console.warn("Falha de sincronizacao.", error?.code || "unknown", error?.message); setSyncStatus("Erro ao recuperar conflitos remotos.", true); } });
         const current = (await readSyncMeta(user.uid)); syncUi.last.textContent = current.lastConfirmed ? formatLastSync(current.lastConfirmed) : "Ainda não há sincronização confirmada.";
         if (!navigator.onLine) setSyncStatus("Offline — as alterações serão enviadas quando houver conexão.");
@@ -4037,6 +4086,22 @@ async function onFirebaseUser(user) {
     } catch (error) { if (!isCurrentSyncSession(session, uid)) return; console.warn("Falha de sincronizacao.", error?.code || "unknown", error?.message); setSyncStatus("Falha ao carregar a conta. Os dados locais foram mantidos.", true); }
 }
 let syncPublishChain = Promise.resolve();
+let syncSettingsChain = { session: null, pending: Promise.resolve(), version: 0, count: 0, retry: false };
+function settingsCoordination(session) {
+    if (syncSettingsChain.session !== session) syncSettingsChain = { session, pending: Promise.resolve(), version: 0, count: 0, retry: false };
+    return syncSettingsChain;
+}
+function scheduleSettingsRetry(coordination, session, uid) {
+    if (!coordination.retry || coordination.count || coordination.scheduled || coordination !== syncSettingsChain
+        || !isCurrentSyncSession(session, uid) || idbBloqueado) return;
+    coordination.scheduled = true; coordination.retry = false;
+    // Enqueue only after staging has finished. No publisher awaits this retry,
+    // and no network read holds the snapshot chain or an IndexedDB transaction.
+    void Promise.resolve().then(() => {
+        coordination.scheduled = false;
+        if (coordination === syncSettingsChain && isCurrentSyncSession(session, uid) && !idbBloqueado) return publishFirebaseState(estado);
+    }).catch(() => { if (isCurrentSyncSession(session, uid)) setSyncStatus("Falha no envio. Os dados locais foram preservados.", true); });
+}
 async function publishFirebaseState(financialState, remote = syncRemoteRecords, skipSettings = false, reviewedConflict = null, deletions = []) {
     const session = syncSessions.current(), uid = syncUser?.uid;
     financialState = structuredClone(financialState);
@@ -4056,8 +4121,10 @@ async function publishFirebaseState(financialState, remote = syncRemoteRecords, 
     try { return await pending; } catch (error) { if (isCurrentSyncSession(session, uid)) throw error; }
 }
 async function stageFirebaseState(uid, financialState, remote, reviewedConflict = null, deletions = []) {
-    const key = chaveEstadoAtual, base = structuredClone(idbBase);
-    const result = await idbServico.prepararPublicacao(uid, base, financialState, remote, reviewedConflict, deletions);
+    const key = chaveEstadoAtual, base = structuredClone(idbBase), session = syncSessions.current();
+    const canStage = () => isCurrentSyncSession(session, uid) && key === chaveEstadoAtual && !idbBloqueado
+        && financialStatesEquivalent(financialState, estadoParaSalvar());
+    const result = await idbServico.prepararPublicacao(uid, base, financialState, remote, reviewedConflict, deletions, canStage);
     if (key === chaveEstadoAtual && syncUser?.uid === uid && financialStatesEquivalent(estado, financialState)) {
         idbBase = structuredClone(result.estado.dados);
         estado = normalizarEstado(result.estado.dados);
@@ -4067,6 +4134,20 @@ async function stageFirebaseState(uid, financialState, remote, reviewedConflict 
 async function publishFirebaseStateNow(financialState, remote = syncRemoteRecords, skipSettings = false, reviewedConflict = null) {
     if (!syncUser || !syncUi.enabled.checked) return;
     const uid = syncUser.uid, session = syncSessions.current();
+    const key = chaveEstadoAtual, coordination = settingsCoordination(session), version = coordination.version;
+    const expectedSettings = structuredClone(reviewedConflict?.kind === "settings" ? reviewedConflict.remote : syncRemoteSettings);
+    const persistence = idbPendente;
+    const current = () => isCurrentSyncSession(session, uid) && key === chaveEstadoAtual;
+    const canPublish = () => current() && !idbBloqueado && syncUi.enabled.checked && persistence === idbPendente
+        && coordination === syncSettingsChain && coordination.version === version && !coordination.count
+        && financialStatesEquivalent(financialState, estadoParaSalvar());
+    const defer = () => {
+        if (!current()) return;
+        coordination.retry = coordination.version !== version || !!coordination.count;
+        setSyncStatus(idbBloqueado ? "A persistência falhou. A sincronização foi pausada; os dados locais foram preservados." : "Aguardando envio.", idbBloqueado);
+        scheduleSettingsRetry(coordination, session, uid);
+    };
+    if (!canPublish()) { defer(); return; }
     if ((await readSyncMeta(uid)).restoredPending) { setSyncStatus("Backup restaurado: confirme a combinação com a nuvem antes do envio."); return; }
     if (!navigator.onLine) { setSyncStatus("Offline — alterações pendentes."); return; }
     let unappliedRemote = false;
@@ -4084,50 +4165,122 @@ async function publishFirebaseStateNow(financialState, remote = syncRemoteRecord
     if (!isCurrentSyncSession(session, uid)) return;
     const latestSettings = await firebaseClient.getSettings(uid, { serverOnly: true });
     if (!isCurrentSyncSession(session, uid)) return;
-    const formerSettings = syncRemoteSettings;
-    syncRemoteSettings = latestSettings;
-    if (!validarConfiguracoesRemotas(syncRemoteSettings)) throw new Error("Configurações remotas inválidas; a confirmação foi suspensa.");
-    const settings = financialSettings(financialState), remoteValue = syncRemoteSettings && { version: syncRemoteSettings.version, categories: syncRemoteSettings.categories, theme: syncRemoteSettings.theme, budgets: syncRemoteSettings.budgets };
+    if (!canPublish()) { defer(); return; }
+    if (!validarConfiguracoesRemotas(latestSettings)) throw new Error("Configurações remotas inválidas; a confirmação foi suspensa.");
+    const settings = financialSettings(financialState);
+    const settingsMeta = await readSyncMeta(uid);
+    if (!isCurrentSyncSession(session, uid)) return;
+    updateSettingsConflictActive(uid, settingsMeta, session);
+    const durable = await idbBanco.ler(`estado:${uid}`);
+    if (!canPublish()) { defer(); return; }
+    if (!durable || !financialStatesEquivalent(durable.dados, financialState)) { setSyncStatus("Aguardando envio."); return; }
     let settingsConflict = false;
-    if (!skipSettings && (!settingsConflictActive || reviewedConflict?.kind === "settings") && jsonCanonico(settings) !== jsonCanonico(remoteValue)) {
-        const expectedSettings = reviewedConflict?.kind === "settings" ? reviewedConflict.remote : formerSettings;
-        const savedSettings = await firebaseClient.saveSettings(uid, settings, expectedSettings?.revision || null);
+    if (!skipSettings && (!settingsConflictActive || reviewedConflict?.kind === "settings") && !settingsEquivalent(settings, latestSettings)) {
+        const canWriteSettings = () => canPublish() && (!settingsConflictActive || reviewedConflict?.kind === "settings");
+        // No await between the final guard and SDK invocation. The SDK repeats
+        // this guard after its own asynchronous reads and transaction retries.
+        if (!canWriteSettings()) { defer(); return; }
+        let savedSettings;
+        try { savedSettings = await idbServico.coordenarSettings(uid, async () => {
+            if (!canWriteSettings()) throw Object.assign(new Error('Stale settings'), {code:'sync/settings-stale'});
+            const persisted = await readSyncMeta(uid);
+            if (!canWriteSettings()) throw Object.assign(new Error('Stale settings'), {code:'sync/settings-stale'});
+            updateSettingsConflictActive(uid, persisted, session);
+            const remaining = (persisted.conflicts || []).filter(item => item.kind === 'settings' &&
+                !(reviewedConflict?.kind === 'settings' && JSON.stringify(item) === JSON.stringify(reviewedConflict)));
+            if (remaining.length || !canWriteSettings()) throw Object.assign(new Error('Pending settings conflicts'), {code:'sync/settings-stale'});
+            const durableNow = await idbBanco.ler('estado:' + uid);
+            if (!canWriteSettings() || !durableNow || !financialStatesEquivalent(durableNow.dados, financialState))
+                throw Object.assign(new Error('Stale durable settings'), {code:'sync/settings-stale'});
+            return firebaseClient.saveSettings(uid, settings, expectedSettings?.revision || null, canWriteSettings);
+        }, true); }
+        catch (error) { if (error?.code === 'sync/settings-stale') { defer(); return; } throw error; }
         if (!isCurrentSyncSession(session, uid)) return;
-        if (savedSettings.conflict) { const current = (await readSyncMeta(uid)); current.conflicts = [...(current.conflicts || []), { kind: "settings", local: settings, remote: savedSettings.remote }]; await writeSyncMeta(uid, current); settingsConflict = true; }
-        else { syncRemoteSettings = { ...settings, revision: savedSettings.revision }; const current = (await readSyncMeta(uid)); current.settingsBaseline = settings; await writeSyncMeta(uid, current); }
+        if (!canPublish()) { defer(); return; }
+        if (savedSettings.conflict) {
+            if (!validarConfiguracoesRemotas(savedSettings.remote)) throw new Error("Configurações remotas inválidas após rejeição de revisão.");
+            if (!settingsEquivalent(settings, savedSettings.remote)) {
+                await registerSettingsConflict(uid, settings, savedSettings.remote, undefined, session);
+                if (!isCurrentSyncSession(session, uid)) return;
+                syncRemoteSettings = savedSettings.remote;
+                settingsConflict = true;
+            } else {
+                // The server already has the requested result. Keep its revision;
+                // do not retry a remote write or resolve any existing conflict.
+                syncRemoteSettings = savedSettings.remote;
+                await rememberSettingsBaseline(uid, savedSettings.remote, session);
+            }
+        }
+        else { syncRemoteSettings = { ...settings, revision: savedSettings.revision }; await rememberSettingsBaseline(uid, settings, session); }
+    } else if (settingsEquivalent(settings, latestSettings)) {
+        syncRemoteSettings = latestSettings;
     }
     if (!isCurrentSyncSession(session, uid)) return;
     const finalMeta = (await readSyncMeta(uid));
+    if (!isCurrentSyncSession(session, uid)) return;
+    updateSettingsConflictActive(uid, finalMeta, session);
     if (settingsConflict) setSyncStatus("Conflito de configurações preservado para revisão.", true);
     else if (finalMeta.outbox?.length) setSyncStatus("Aguardando envio.");
     else if (finalMeta.conflicts?.length) setSyncStatus(`Há ${finalMeta.conflicts.length} conflito(s) para revisar.`);
-    else if (skipSettings || settingsConflictActive || unappliedRemote || !financialStatesEquivalent(financialState, estado)) setSyncStatus("Aguardando envio.");
+    else if (!canPublish() || skipSettings || settingsConflictActive || unappliedRemote
+        || !settingsEquivalent(settings, syncRemoteSettings)) { defer(); }
     else {
-        finalMeta.lastConfirmed = new Date().toISOString(); finalMeta.migrationPending = false;
-        const confirmed = await writeSyncMeta(uid, finalMeta);
-        if (confirmed.outbox.length || confirmed.conflicts.length) { setSyncStatus("Aguardando envio."); return; }
-        syncUi.last.textContent = formatLastSync(confirmed.lastConfirmed);
+        let confirmation;
+        try { confirmation = await idbServico.confirmarSincronizacao(uid, financialState, new Date().toISOString(),
+            () => canPublish() && settingsEquivalent(settings, syncRemoteSettings)); }
+        catch (error) { if (current()) idbBloqueado = true; throw error; }
+        if (!current()) return;
+        updateSettingsConflictActive(uid, confirmation.fila, session);
+        if (!confirmation.confirmed || !canPublish()) { defer(); return; }
+        syncUi.last.textContent = formatLastSync(confirmation.fila.lastConfirmed);
         setSyncStatus("Sincronizado");
     }
+    return { settingsConfirmed: !skipSettings && canPublish() && settingsEquivalent(settings, syncRemoteSettings) };
 }
-async function onRemoteSettings(remote, snapshotMetadata) {
+function onRemoteSettings(remote, snapshotMetadata, session = syncSessions.current()) {
+    if (!isCurrentSyncSession(session, syncUser?.uid)) return Promise.resolve();
+    // Preserve callback order across asynchronous storage, without making a new
+    // account wait for a snapshot still running in the previous session.
+    if (!remote || !snapshotConfirmed(snapshotMetadata)) return Promise.resolve();
+    const coordination = settingsCoordination(session), uid = syncUser?.uid;
+    coordination.version += 1; coordination.count += 1;
+    const pending = coordination.pending.catch(() => {}).then(() => applyRemoteSettings(remote, snapshotMetadata, session)).finally(() => {
+        coordination.count -= 1;
+        scheduleSettingsRetry(coordination, session, uid);
+    });
+    coordination.pending = pending;
+    return pending;
+}
+async function applyRemoteSettings(remote, snapshotMetadata, session) {
     const capturedUid = syncUser?.uid, capturedKey = chaveEstadoAtual;
-    if (!remote || !syncUser || !syncUi.enabled.checked || !snapshotConfirmed(snapshotMetadata)) return;
-    const mergedSettings = mergeRemoteSettings(estado, remote);
-    if (!mergedSettings.valid) { setSyncStatus("As configurações remotas são inválidas. A cópia local foi preservada; corrija os dados na nuvem e tente novamente.", true); return; }
-    const incoming = { version: remote.version, categories: remote.categories, theme: remote.theme, budgets: remote.budgets };
-    if (settingsConflictActive || (syncRemoteSettings && syncRemoteSettings.revision !== remote.revision && jsonCanonico(financialSettings(estado)) !== jsonCanonico({ version: syncRemoteSettings.version, categories: syncRemoteSettings.categories, theme: syncRemoteSettings.theme, budgets: syncRemoteSettings.budgets }) && jsonCanonico(incoming) !== jsonCanonico({ version: syncRemoteSettings.version, categories: syncRemoteSettings.categories, theme: syncRemoteSettings.theme, budgets: syncRemoteSettings.budgets }))) {
-        const meta = (await readSyncMeta(capturedUid)); meta.conflicts = [...(meta.conflicts || []), { kind: "settings", local: financialSettings(estado), remote }]; await writeSyncMeta(capturedUid, meta); setSyncStatus("Configurações alteradas em outro dispositivo; as duas versões foram preservadas.", true); return;
+    const currentSession = () => isCurrentSyncSession(session, capturedUid) && chaveEstadoAtual === capturedKey;
+    if (!remote || !syncUser || !currentSession() || !syncUi.enabled.checked || !snapshotConfirmed(snapshotMetadata)) return;
+    if (!validarConfiguracoesRemotas(remote)) { setSyncStatus("As configurações remotas são inválidas. A cópia local foi preservada; corrija os dados na nuvem e tente novamente.", true); return; }
+    const meta = await readSyncMeta(capturedUid);
+    if (!currentSession()) return;
+    updateSettingsConflictActive(capturedUid, meta, session);
+    const incoming = functionalSettings(remote), local = financialSettings(estado), previous = syncRemoteSettings;
+    const equivalent = settingsEquivalent(local, remote);
+    const localChanged = previous && !settingsEquivalent(local, previous);
+    const remoteChanged = previous && !settingsEquivalent(remote, previous);
+    if (!equivalent && (settingsConflictActive || (localChanged && remoteChanged))) {
+        await registerSettingsConflict(capturedUid, local, remote, undefined, session);
+        if (!currentSession()) return;
+        syncRemoteSettings = remote;
+        setSyncStatus("Configurações alteradas em outro dispositivo; as duas versões foram preservadas.", true); return;
     }
-    syncRemoteSettings = remote;
-    if (jsonCanonico(financialSettings(estado)) !== jsonCanonico(incoming)) {
+    // Pending conflicts are never resolved implicitly, even after convergence.
+    if (settingsConflictActive || (!equivalent && localChanged)) { syncRemoteSettings = remote; return; }
+    if (!equivalent) {
+        const mergedSettings = mergeRemoteSettings(estado, remote);
         if (!validarBackup(mergedSettings.state)) { setSyncStatus("As configurações remotas são inválidas. A cópia local foi preservada.", true); return; }
         const normalized = normalizarEstado(mergedSettings.state);
-        if (!await persistirEstadoFinanceiro(capturedKey, normalized)) { setSyncStatus("Não foi possível salvar as configurações remotas. A cópia local foi preservada.", true); return; }
-        if (syncUser?.uid !== capturedUid || chaveEstadoAtual !== capturedKey) return;
+        if (!await persistirEstadoFinanceiro(capturedKey, normalized)) { if (currentSession()) setSyncStatus("Não foi possível salvar as configurações remotas. A cópia local foi preservada.", true); return; }
+        if (!currentSession()) return;
         applyingRemoteSync = true; estado = normalizarEstado(idbBase); renderTudo(false); applyingRemoteSync = false;
     }
-    const current = (await readSyncMeta(capturedUid)); current.settingsBaseline = incoming; await writeSyncMeta(capturedUid, current);
+    await rememberSettingsBaseline(capturedUid, incoming, session);
+    if (currentSession() && !idbBloqueado) syncRemoteSettings = remote;
 }
 async function onRemoteRecords(records, snapshotMetadata, session = null, preserveDivergent = false) {
     const capturedUid = syncUser?.uid, capturedKey = chaveEstadoAtual;
@@ -4143,7 +4296,7 @@ async function onRemoteRecords(records, snapshotMetadata, session = null, preser
     syncRemoteRecords = validRecords; syncRemoteRecordsLoaded = true; records = validRecords;
     const next = structuredClone(estado); let changed = false;
     const metadata = (await readSyncMeta(capturedUid)), pendingKeys = new Set((metadata.outbox || []).map((entry) => entry.entityKey));
-    if (syncUser?.uid !== capturedUid || chaveEstadoAtual !== capturedKey) return;
+    if (syncUser?.uid !== capturedUid || chaveEstadoAtual !== capturedKey || (session !== null && !isCurrentSyncSession(session, capturedUid))) return;
     const blocked = blockedConflictKeys(metadata.conflicts);
     for (const item of records) {
         const entityKey = syncEntityKey(item);
@@ -4176,12 +4329,12 @@ async function onRemoteRecords(records, snapshotMetadata, session = null, preser
     }
     metadata.remoteRevisions = Object.fromEntries(records.map(item => [recordEntityKey(item), item.revision]));
     await writeSyncMeta(capturedUid, metadata);
-    if (syncUser?.uid !== capturedUid || chaveEstadoAtual !== capturedKey) return;
+    if (syncUser?.uid !== capturedUid || chaveEstadoAtual !== capturedKey || (session !== null && !isCurrentSyncSession(session, capturedUid))) return;
     if (changed) {
         if (!validarBackup(next)) { syncRemoteRecordsLoaded = false; setSyncStatus("A combinação remota excede os limites ou contém dados inválidos. A cópia local foi preservada.", true); return; }
         const normalized = normalizarEstado(next);
         if (!await persistirEstadoFinanceiro(capturedKey, normalized)) { syncRemoteRecordsLoaded = false; setSyncStatus("Não foi possível salvar os dados remotos localmente. A cópia anterior foi preservada.", true); return; }
-        if (syncUser?.uid !== capturedUid || chaveEstadoAtual !== capturedKey) return;
+        if (syncUser?.uid !== capturedUid || chaveEstadoAtual !== capturedKey || (session !== null && !isCurrentSyncSession(session, capturedUid))) return;
         applyingRemoteSync = true; estado = normalizarEstado(idbBase); renderTudo(false); applyingRemoteSync = false;
     }
     if (inspectRemoteKeys(records).mismatches.length) setSyncStatus("Há documentos remotos com chaves legadas. A leitura foi preservada; o envio exige revisão.", true);
@@ -4192,24 +4345,26 @@ async function onRemoteConflicts(remoteConflicts, session, snapshotMetadata) {
     if (!snapshotConfirmed(snapshotMetadata)) return;
     if (!validateRemoteConflicts(remoteConflicts)) { setSyncStatus("Há conflitos remotos inválidos. A lista local foi preservada; corrija os dados na nuvem e tente novamente.", true); return; }
     const meta = (await readSyncMeta(capturedUid)), before = meta.conflicts || [];
+    if (!isCurrentSyncSession(session, capturedUid)) return;
     const after = reconcileRemoteConflicts(before, remoteConflicts);
     const resolved = new Set(remoteConflicts.filter((item) => item?.resolved === true).map((item) => item.operationId));
     meta.conflicts = after.filter((item) => !resolved.has(item.operationId || item.operation?.id));
-    await writeSyncMeta(capturedUid, meta); if (syncUser?.uid !== capturedUid) return; settingsConflictActive = meta.conflicts.some((item) => item.kind === "settings");
+    const saved = await writeSyncMeta(capturedUid, meta); if (syncUser?.uid !== capturedUid || !isCurrentSyncSession(session, capturedUid)) return; updateSettingsConflictActive(capturedUid, saved, session);
     renderSyncConflicts();
     if (meta.conflicts.length) setSyncStatus(`Há ${meta.conflicts.length} conflito(s) para revisar.`);
 }
 async function onRecordsSnapshot(records, metadata, session, uid) {
     if (!isCurrentSyncSession(session, uid)) return;
     await onRemoteRecords(records, metadata, session);
+    if (!isCurrentSyncSession(session, uid)) return;
     if (snapshotConfirmed(metadata) && syncRemoteRecordsLoaded && !inspectRemoteKeys(records).mismatches.length) {
         await publishFirebaseState(estado);
     }
 }
 window.addEventListener("finance-backup-restored", () => {
     if (!syncUser) return;
-    const uid = syncUser.uid;
-    void idbServico.alterarFila(uid, meta => { meta.restoredPending = true; return meta; }).then(() => { if (syncUser?.uid === uid) syncUi.restore.hidden = false; }).catch(() => { idbBloqueado = true; });
+    const uid = syncUser.uid, session = syncSessions.current();
+    void idbServico.alterarFila(uid, meta => { if (!isCurrentSyncSession(session, uid)) throw Object.assign(new Error("Session invalidated"), {code:"persistence/cancelled"}); meta.restoredPending = true; return meta; }).then(() => { if (isCurrentSyncSession(session, uid)) syncUi.restore.hidden = false; }).catch(() => { if (isCurrentSyncSession(session, uid)) idbBloqueado = true; });
 });
 window.addEventListener("finance-local-change", (event) => { if (!applyingRemoteSync && syncUser && event.detail.uid === syncUser.uid) { setSyncStatus(navigator.onLine ? "Aguardando envio." : "Offline — alterações pendentes."); if (syncUi.enabled.checked) void publishFirebaseState(event.detail.state, undefined, false, null, event.detail.deletedRecords || []).catch((error) => { console.warn("Falha de sincronizacao.", error?.code || "unknown", error?.message); setSyncStatus("Falha no envio. As alterações continuam salvas localmente.", true); }); } });
 window.addEventListener("online", () => { if (syncUser) void publishFirebaseState(estado).catch(() => setSyncStatus("Falha no envio. Tente novamente.", true)); });
@@ -4224,22 +4379,39 @@ syncUi.restore.addEventListener("click", async () => {
         if (!isCurrentSyncSession(session, uid)) return;
         if (!remote || inspectRemoteKeys(remote).mismatches.length) throw new Error("Registros remotos inválidos, duplicados ou com chaves legadas. A restauração foi preservada.");
         const merged = combinarRegistros(registrosFinanceiros(estado), remote.filter((item) => !item.deleted && item.record));
-        const localSettings = financialSettings(estado), remoteSettings = syncRemoteSettings && { version: syncRemoteSettings.version, categories: syncRemoteSettings.categories, theme: syncRemoteSettings.theme, budgets: syncRemoteSettings.budgets };
-        if (remoteSettings && jsonCanonico(localSettings) !== jsonCanonico(remoteSettings)) {
-            const current = (await readSyncMeta(syncUser.uid)); current.conflicts = [...(current.conflicts || []), { kind: "settings", local: localSettings, remote: syncRemoteSettings, source: "restored-backup" }]; await writeSyncMeta(syncUser.uid, current); settingsConflictActive = true;
+        const localSettings = financialSettings(estado);
+        if (syncRemoteSettings && !settingsEquivalent(localSettings, syncRemoteSettings)) {
+            await registerSettingsConflict(uid, localSettings, syncRemoteSettings, "restored-backup", session);
+            if (!isCurrentSyncSession(session, uid)) return;
         }
         const months = {};
         for (const item of merged.records) { months[item.month] ||= { receitas: [], despesas: [] }; months[item.month][item.type].push(item.record); }
         if (!validarBackup({ ...estado, meses: months })) throw new Error("A combinação do backup excede os limites ou contém dados inválidos.");
         const restored = normalizarEstado({ ...estado, meses: months });
         if (!await persistirEstadoFinanceiro(chaveEstadoAtual, restored)) throw new Error("Não foi possível persistir a combinação do backup.");
+        if (!isCurrentSyncSession(session, uid)) return;
         estado = restored; renderTudo(false);
         const meta = (await readSyncMeta(uid)); meta.restoredPending = false; meta.conflicts = [...(meta.conflicts || []), ...merged.conflitos]; await writeSyncMeta(uid, meta);
         await stageFirebaseState(uid, estado, remote);
         syncUi.restore.hidden = true; await publishFirebaseState(estado, remote, true); if (!isCurrentSyncSession(session, uid)) return; await onFirebaseUser(syncUser);
     } catch (error) { if (!isCurrentSyncSession(session, uid)) return; console.warn("Falha de sincronizacao.", error?.code || "unknown", error?.message); setSyncStatus("Não foi possível sincronizar o backup; a cópia local continua preservada.", true); }
 });
-syncUi.enabled.addEventListener("change", async () => { if (!syncUser) return; const meta = (await readSyncMeta(syncUser.uid)); meta.enabled = syncUi.enabled.checked; await writeSyncMeta(syncUser.uid, meta); if (!meta.enabled) { syncStopListener?.(); syncSettingsStop?.(); syncConflictsStop?.(); syncStopListener = null; syncSettingsStop = null; syncConflictsStop = null; setSyncStatus("Sincronização desativada. Os dados permanecem locais."); } else void onFirebaseUser(syncUser); });
+syncUi.enabled.addEventListener("change", async () => {
+    if (!syncUser) return;
+    const session = syncSessions.current(), uid = syncUser.uid, enabled = syncUi.enabled.checked;
+    try {
+        const meta = await readSyncMeta(uid);
+        if (!isCurrentSyncSession(session, uid)) return;
+        meta.enabled = enabled;
+        await writeSyncMeta(uid, meta);
+        if (!isCurrentSyncSession(session, uid)) return;
+        if (!enabled) {
+            syncStopListener?.(); syncSettingsStop?.(); syncConflictsStop?.();
+            syncStopListener = null; syncSettingsStop = null; syncConflictsStop = null;
+            setSyncStatus("Sincroniza??o desativada. Os dados permanecem locais.");
+        } else void onFirebaseUser(syncUser);
+    } catch (error) { if (isCurrentSyncSession(session, uid)) setSyncStatus("N?o foi poss?vel salvar a prefer?ncia de sincroniza??o.", true); }
+});
 async function renderSyncConflicts() {
     const capturedUid = syncUser?.uid;
     syncUi.conflictList.replaceChildren();
@@ -4259,8 +4431,11 @@ async function renderSyncConflicts() {
 }
 async function resolveSyncConflict(index, choice) {
     if (!syncUser) return;
-    const session = syncSessions.current(), conflictUserUid = syncUser.uid;
-    const meta = (await readSyncMeta(syncUser.uid)), conflict = meta.conflicts?.[index]; if (!conflict) return;
+    const session = syncSessions.current(), conflictUserUid = syncUser.uid, conflictKey = chaveEstadoAtual;
+    const current = () => isCurrentSyncSession(session, conflictUserUid) && chaveEstadoAtual === conflictKey;
+    const meta = await readSyncMeta(conflictUserUid);
+    if (!current()) return;
+    const conflict = meta.conflicts?.[index]; if (!conflict) return;
     if (!["local", "remote", "both"].includes(choice)) return;
     let nextState = structuredClone(estado);
     let resolutionRemote = syncRemoteRecords, deletions = [];
@@ -4309,10 +4484,14 @@ async function resolveSyncConflict(index, choice) {
     }
     if (!validarBackup(nextState)) { setSyncStatus("A resolução contém dados inválidos ou excede o limite mensal. Os dados locais foram preservados.", true); return; }
     const normalized = normalizarEstado(nextState);
-    if (!await persistirEstadoFinanceiro(chaveEstadoAtual, normalized, choice !== "remote")) { setSyncStatus("Não foi possível salvar a resolução. A cópia local e o conflito foram preservados.", true); return; }
+    const persisted = await persistirEstadoFinanceiro(conflictKey, normalized, choice !== "remote");
+    if (!current()) return;
+    if (!persisted) { setSyncStatus("Não foi possível salvar a resolução. A cópia local e o conflito foram preservados.", true); return; }
+    if (!current()) return;
     estado = normalized; renderTudo(false);
     if (conflict.kind === "settings" && choice === "remote") { syncRemoteSettings = conflict.remote; meta.settingsBaseline = financialSettings(estado); }
     await writeSyncMeta(conflictUserUid, meta);
+    if (!current()) return;
     if (conflict.source === "firestore" && conflict.operationId) {
         try {
             if (choice !== "remote") await publishFirebaseState(estado, resolutionRemote, false, conflict, deletions);
@@ -4321,16 +4500,26 @@ async function resolveSyncConflict(index, choice) {
             if (!isCurrentSyncSession(session, conflictUserUid)) return;
         } catch (error) { if (!isCurrentSyncSession(session, conflictUserUid)) return; console.warn("Falha de sincronizacao.", error?.code || "unknown", error?.message); setSyncStatus("A escolha foi salva localmente, mas não foi possível confirmar a resolução na nuvem. Tente novamente.", true); return; }
     } else if (choice !== "remote") {
-        try { await publishFirebaseState(estado, resolutionRemote, false, conflict, deletions); }
+        try {
+            const result = await publishFirebaseState(estado, resolutionRemote, false, conflict, deletions);
+            if (!isCurrentSyncSession(session, conflictUserUid)) return;
+            if (conflict.kind === "settings" && result?.settingsConfirmed !== true) {
+                setSyncStatus("A escolha continua pendente; o conflito foi preservado até a confirmação das configurações.", true); return;
+            }
+        }
         catch (error) { if (!isCurrentSyncSession(session, conflictUserUid)) return; console.warn("Falha de sincronizacao.", error?.code || "unknown", error?.message); setSyncStatus("A escolha foi salva localmente e aguarda envio.", true); return; }
     }
-    const latestMeta = (await readSyncMeta(conflictUserUid)), targetOperationId = conflict.operationId || conflict.operation?.id;
+    if (!current()) return;
+    const latestMeta = await readSyncMeta(conflictUserUid);
+    if (!current()) return;
+    const targetOperationId = conflict.operationId || conflict.operation?.id;
     if (targetOperationId) latestMeta.conflicts = (latestMeta.conflicts || []).filter((entry) => (entry.operationId || entry.operation?.id) !== targetOperationId);
     else {
         const target = JSON.stringify(conflict), at = (latestMeta.conflicts || []).findIndex((entry) => JSON.stringify(entry) === target);
         if (at >= 0) latestMeta.conflicts.splice(at, 1);
     }
-    settingsConflictActive = (latestMeta.conflicts || []).some((entry) => entry.kind === "settings"); await writeSyncMeta(conflictUserUid, latestMeta); renderSyncConflicts();
+    await writeSyncMeta(conflictUserUid, latestMeta);
+    if (current()) renderSyncConflicts();
 }
 syncUi.conflicts.addEventListener("click", () => { renderSyncConflicts(); abrirDialogoModal(syncUi.conflictDialog); });
 syncUi.closeConflicts.addEventListener("click", () => syncUi.conflictDialog.close());

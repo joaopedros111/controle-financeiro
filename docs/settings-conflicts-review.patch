@@ -1,0 +1,662 @@
+diff --git a/app.js b/app.js
+index b5b4aca..2dc3753 100644
+--- a/app.js
++++ b/app.js
+@@ -6,7 +6,7 @@ import { apresentarValorFinanceiro, calcularEspacamentosDensidade, normalizarPre
+ import { criarConfirmacaoAtualizacao, criarVerificadorAutomatico, instalarAtualizacao, lerVersaoControlador, lerVersaoInstalada, lerVersaoPublicada, validarVersaoAplicacao, verificarComConfirmacao } from "./update-manager.js";
+ import { aplicarIdioma, formatarMoeda as formatarMoedaLocalizada, LOCALES, textoTraduzido } from "./localization.js";
+ import { firebaseConfig, firebaseConfigurado } from "./firebase-config.js";
+-import { chaveLocalConta, registrosFinanceiros, combinarRegistros, migrationBackup, operationId, jsonCanonico, recordsEquivalent, coalesceOutbox, flushSyncQueue, createSyncSessionGuard, validateRemoteSettings, mergeRemoteSettings, validRemoteTombstone, reconcileRemoteConflicts, validateRemoteConflicts, snapshotConfirmed, recordEntityKey, inspectRemoteKeys, validConflictRecord, readSyncMetadata, blockedConflictKeys, validSyncIdentity, financialStatesEquivalent } from "./sync-core.js";
++import { chaveLocalConta, registrosFinanceiros, combinarRegistros, migrationBackup, operationId, jsonCanonico, recordsEquivalent, coalesceOutbox, flushSyncQueue, createSyncSessionGuard, validateRemoteSettings, mergeRemoteSettings, validRemoteTombstone, reconcileRemoteConflicts, validateRemoteConflicts, snapshotConfirmed, recordEntityKey, inspectRemoteKeys, validConflictRecord, readSyncMetadata, blockedConflictKeys, validSyncIdentity, financialStatesEquivalent, functionalSettings, settingsEquivalent } from "./sync-core.js";
+ 
+ 
+ 
+@@ -3758,9 +3758,10 @@ const syncMetaKey = (uid) => `controleFinanceiro:sync:${uid}`;
+ const META_BASE = Symbol("metadata-base");
+ const readSyncMeta = async (uid) => { const value = await idbServico.lerFila(uid); return { ...value, [META_BASE]: structuredClone(value) }; };
+ const writeSyncMeta = async (uid, meta) => {
++    const session = syncSessions.current();
+     const base = meta[META_BASE];
+     if (!base) throw new Error("Metadados sem base transacional");
+-    return idbServico.alterarFila(uid, current => {
++    const saved = await idbServico.alterarFila(uid, current => {
+         for (const key of Object.keys(meta)) {
+             if (JSON.stringify(base[key]) === JSON.stringify(meta[key])) continue;
+             if (key === "lastConfirmed") {
+@@ -3783,6 +3784,8 @@ const writeSyncMeta = async (uid, meta) => {
+         }
+         return current;
+     });
++    updateSettingsConflictActive(uid, saved, session);
++    return saved;
+ };
+ function setSyncStatus(message, error = false) {
+     const idioma = ui.idiomaInterface?.value || "pt-BR";
+@@ -3805,6 +3808,22 @@ function resetFinancialInteractions() {
+ async function setFinancialStateKey(key, next) { const persisted = await persistirEstadoFinanceiro(key, normalizarEstado(next), false); if (persisted) { chaveEstadoAtual = key; estado = normalizarEstado(idbBase); renderTudo(false); } return persisted; }
+ function syncEntityKey(entry) { return recordEntityKey(entry); }
+ function financialSettings(source = estado) { return { version: source.versao || 3, categories: [...(source.categorias || [])].sort(), theme: source.tema || "claro", budgets: source.orcamentos || { padrao: {}, meses: {} } }; }
++function updateSettingsConflictActive(uid, meta, session = syncSessions.current()) {
++    if (isCurrentSyncSession(session, uid)) settingsConflictActive = (meta.conflicts || []).some(item => item.kind === "settings");
++}
++async function registerSettingsConflict(uid, local, remote, source, session = syncSessions.current()) {
++    const meta = await idbServico.registrarConflitoSettings(uid, { kind: "settings", local, remote, ...(source ? { source } : {}) });
++    updateSettingsConflictActive(uid, meta, session);
++    return meta;
++}
++async function rememberSettingsBaseline(uid, settings, session) {
++    const baseline = functionalSettings(settings);
++    const meta = await idbServico.alterarFila(uid, queue => {
++        if (!queue.conflicts.some(item => item.kind === "settings")) queue.settingsBaseline = baseline;
++        return queue;
++    });
++    updateSettingsConflictActive(uid, meta, session);
++}
+ function validarRegistrosRemotos(records) {
+     if (!Array.isArray(records) || inspectRemoteKeys(records).duplicates.length) return null;
+     const meses = {}, validos = [];
+@@ -3982,8 +4001,9 @@ async function onFirebaseUser(user) {
+         currentMeta.conflicts = reconcileRemoteConflicts(currentMeta.conflicts, remoteConflicts);
+         const remoteResolved = new Set(remoteConflicts.filter((item) => item?.resolved === true).map((item) => item.operationId));
+         currentMeta.conflicts = currentMeta.conflicts.filter((item) => !remoteResolved.has(item.operationId || item.operation?.id));
+-        await writeSyncMeta(user.uid, currentMeta);
+-        settingsConflictActive = (currentMeta.conflicts || []).some((conflict) => conflict.kind === "settings");
++        const savedMeta = await writeSyncMeta(user.uid, currentMeta);
++        if (!isCurrentSyncSession(session, uid)) return;
++        updateSettingsConflictActive(uid, savedMeta, session);
+         if (meta.initialized && !meta.restoredPending) await onRemoteRecords(remote, { fromCache: false, hasPendingWrites: false }, session, true);
+         if (!meta.initialized) {
+             const anonymous = storage.lerJsonResultado(CHAVE_ESTADO);
+@@ -3996,9 +4016,10 @@ async function onFirebaseUser(user) {
+             for (const item of merged.records) { months[item.month] ||= { receitas: [], despesas: [] }; months[item.month][item.type].push(item.record); }
+             if (!validarBackup({ ...localState, meses: months })) throw new Error("A combinação inicial excede os limites ou contém dados inválidos. As cópias foram preservadas.");
+             let next = normalizarEstado({ ...localState, meses: months });
+-            if (remoteSettings && jsonCanonico(financialSettings(next)) !== jsonCanonico({ version: remoteSettings.version, categories: remoteSettings.categories, theme: remoteSettings.theme, budgets: remoteSettings.budgets })) {
++            if (remoteSettings && !settingsEquivalent(financialSettings(next), remoteSettings)) {
+                 const useLocal = confirm("As categorias, o tema ou os orçamentos diferem. OK mantém os deste dispositivo; Cancelar usa os da nuvem. As duas cópias serão preservadas no registro de conflito.");
+-                const conflictMeta = (await readSyncMeta(user.uid)); conflictMeta.conflicts = [...(conflictMeta.conflicts || []), { kind: "settings", local: financialSettings(next), remote: remoteSettings }]; await writeSyncMeta(user.uid, conflictMeta);
++                await registerSettingsConflict(uid, financialSettings(next), remoteSettings, undefined, session);
++                if (!isCurrentSyncSession(session, uid)) return;
+                 if (!useLocal) next = normalizarEstado({ ...next, categorias: remoteSettings.categories, tema: remoteSettings.theme, orcamentos: remoteSettings.budgets });
+             }
+             if (!await setFinancialStateKey(key, next)) throw new Error("Não foi possível salvar a cópia local antes da migração.");
+@@ -4011,12 +4032,11 @@ async function onFirebaseUser(user) {
+         }
+         if (meta.initialized && !settingsConflictActive && remoteSettings && meta.settingsBaseline) {
+             const baseline = meta.settingsBaseline, localNow = financialSettings(estado);
+-            const localChanged = jsonCanonico(localNow) !== jsonCanonico(baseline);
+-            const remoteNow = { version: remoteSettings.version, categories: remoteSettings.categories, theme: remoteSettings.theme, budgets: remoteSettings.budgets };
+-            const remoteChanged = jsonCanonico(remoteNow) !== jsonCanonico(baseline);
+-            if (localChanged && remoteChanged && jsonCanonico(localNow) !== jsonCanonico(remoteNow)) {
+-                settingsConflictActive = true;
+-                const current = (await readSyncMeta(user.uid)); current.conflicts = [...(current.conflicts || []), { kind: "settings", local: localNow, remote: remoteSettings }]; await writeSyncMeta(user.uid, current);
++            const localChanged = !settingsEquivalent(localNow, baseline);
++            const remoteChanged = !settingsEquivalent(remoteSettings, baseline);
++            if (localChanged && remoteChanged && !settingsEquivalent(localNow, remoteSettings)) {
++                await registerSettingsConflict(uid, localNow, remoteSettings, undefined, session);
++                if (!isCurrentSyncSession(session, uid)) return;
+             } else if (remoteChanged && !localChanged) {
+                 estado = normalizarEstado({ ...estado, categorias: remoteSettings.categories, tema: remoteSettings.theme, orcamentos: remoteSettings.budgets });
+                 await persistirEstadoFinanceiro(chaveEstadoAtual, estadoParaSalvar()); renderTudo(false);
+@@ -4028,7 +4048,11 @@ async function onFirebaseUser(user) {
+                 if (isCurrentSyncSession(session, uid)) { console.warn("Falha de sincronizacao.", error?.code || "unknown", error?.message); setSyncStatus("Falha na reconciliação. A fila foi preservada.", true); }
+             }); },
+             (error) => { if (isCurrentSyncSession(session, uid)) { syncRemoteRecordsLoaded = false; console.warn("Falha de sincronizacao.", error?.code || "unknown", error?.message); setSyncStatus("Erro ao observar alterações remotas.", true); } });
+-        if (syncUi.enabled.checked && !(await readSyncMeta(user.uid)).restoredPending) syncSettingsStop = firebaseClient.listenSettings(user.uid, (value, snapshotMetadata) => { if (isCurrentSyncSession(session, uid)) onRemoteSettings(value, snapshotMetadata, session); }, (error) => { if (isCurrentSyncSession(session, uid)) { console.warn("Falha de sincronizacao.", error?.code || "unknown", error?.message); setSyncStatus("Erro ao observar configurações remotas.", true); } });
++        if (syncUi.enabled.checked && !(await readSyncMeta(user.uid)).restoredPending) syncSettingsStop = firebaseClient.listenSettings(user.uid, (value, snapshotMetadata) => {
++            if (isCurrentSyncSession(session, uid)) void onRemoteSettings(value, snapshotMetadata, session).catch(error => {
++                if (isCurrentSyncSession(session, uid)) { console.warn("Falha de sincronizacao.", error?.code || "unknown", error?.message); setSyncStatus("Não foi possível preservar as configurações remotas. Tente novamente.", true); }
++            });
++        }, (error) => { if (isCurrentSyncSession(session, uid)) { console.warn("Falha de sincronizacao.", error?.code || "unknown", error?.message); setSyncStatus("Erro ao observar configurações remotas.", true); } });
+         if (syncUi.enabled.checked && !(await readSyncMeta(user.uid)).restoredPending) syncConflictsStop = firebaseClient.listenConflicts(user.uid, (items, metadata) => { if (isCurrentSyncSession(session, uid)) onRemoteConflicts(items, session, metadata); }, (error) => { if (isCurrentSyncSession(session, uid)) { console.warn("Falha de sincronizacao.", error?.code || "unknown", error?.message); setSyncStatus("Erro ao recuperar conflitos remotos.", true); } });
+         const current = (await readSyncMeta(user.uid)); syncUi.last.textContent = current.lastConfirmed ? formatLastSync(current.lastConfirmed) : "Ainda não há sincronização confirmada.";
+         if (!navigator.onLine) setSyncStatus("Offline — as alterações serão enviadas quando houver conexão.");
+@@ -4037,6 +4061,7 @@ async function onFirebaseUser(user) {
+     } catch (error) { if (!isCurrentSyncSession(session, uid)) return; console.warn("Falha de sincronizacao.", error?.code || "unknown", error?.message); setSyncStatus("Falha ao carregar a conta. Os dados locais foram mantidos.", true); }
+ }
+ let syncPublishChain = Promise.resolve();
++let syncSettingsChain = { session: null, pending: Promise.resolve() };
+ async function publishFirebaseState(financialState, remote = syncRemoteRecords, skipSettings = false, reviewedConflict = null, deletions = []) {
+     const session = syncSessions.current(), uid = syncUser?.uid;
+     financialState = structuredClone(financialState);
+@@ -4085,19 +4110,37 @@ async function publishFirebaseStateNow(financialState, remote = syncRemoteRecord
+     const latestSettings = await firebaseClient.getSettings(uid, { serverOnly: true });
+     if (!isCurrentSyncSession(session, uid)) return;
+     const formerSettings = syncRemoteSettings;
++    if (!validarConfiguracoesRemotas(latestSettings)) throw new Error("Configurações remotas inválidas; a confirmação foi suspensa.");
+     syncRemoteSettings = latestSettings;
+-    if (!validarConfiguracoesRemotas(syncRemoteSettings)) throw new Error("Configurações remotas inválidas; a confirmação foi suspensa.");
+-    const settings = financialSettings(financialState), remoteValue = syncRemoteSettings && { version: syncRemoteSettings.version, categories: syncRemoteSettings.categories, theme: syncRemoteSettings.theme, budgets: syncRemoteSettings.budgets };
++    const settings = financialSettings(financialState);
++    const settingsMeta = await readSyncMeta(uid);
++    if (!isCurrentSyncSession(session, uid)) return;
++    updateSettingsConflictActive(uid, settingsMeta, session);
+     let settingsConflict = false;
+-    if (!skipSettings && (!settingsConflictActive || reviewedConflict?.kind === "settings") && jsonCanonico(settings) !== jsonCanonico(remoteValue)) {
++    if (!skipSettings && (!settingsConflictActive || reviewedConflict?.kind === "settings") && !settingsEquivalent(settings, latestSettings)) {
+         const expectedSettings = reviewedConflict?.kind === "settings" ? reviewedConflict.remote : formerSettings;
+         const savedSettings = await firebaseClient.saveSettings(uid, settings, expectedSettings?.revision || null);
+         if (!isCurrentSyncSession(session, uid)) return;
+-        if (savedSettings.conflict) { const current = (await readSyncMeta(uid)); current.conflicts = [...(current.conflicts || []), { kind: "settings", local: settings, remote: savedSettings.remote }]; await writeSyncMeta(uid, current); settingsConflict = true; }
+-        else { syncRemoteSettings = { ...settings, revision: savedSettings.revision }; const current = (await readSyncMeta(uid)); current.settingsBaseline = settings; await writeSyncMeta(uid, current); }
++        if (savedSettings.conflict) {
++            if (!validarConfiguracoesRemotas(savedSettings.remote)) throw new Error("Configurações remotas inválidas após rejeição de revisão.");
++            if (!settingsEquivalent(settings, savedSettings.remote)) {
++                await registerSettingsConflict(uid, settings, savedSettings.remote, undefined, session);
++                if (!isCurrentSyncSession(session, uid)) return;
++                syncRemoteSettings = savedSettings.remote;
++                settingsConflict = true;
++            } else {
++                // The server already has the requested result. Keep its revision;
++                // do not retry a remote write or resolve any existing conflict.
++                syncRemoteSettings = savedSettings.remote;
++                await rememberSettingsBaseline(uid, savedSettings.remote, session);
++            }
++        }
++        else { syncRemoteSettings = { ...settings, revision: savedSettings.revision }; await rememberSettingsBaseline(uid, settings, session); }
+     }
+     if (!isCurrentSyncSession(session, uid)) return;
+     const finalMeta = (await readSyncMeta(uid));
++    if (!isCurrentSyncSession(session, uid)) return;
++    updateSettingsConflictActive(uid, finalMeta, session);
+     if (settingsConflict) setSyncStatus("Conflito de configurações preservado para revisão.", true);
+     else if (finalMeta.outbox?.length) setSyncStatus("Aguardando envio.");
+     else if (finalMeta.conflicts?.length) setSyncStatus(`Há ${finalMeta.conflicts.length} conflito(s) para revisar.`);
+@@ -4110,24 +4153,45 @@ async function publishFirebaseStateNow(financialState, remote = syncRemoteRecord
+         setSyncStatus("Sincronizado");
+     }
+ }
+-async function onRemoteSettings(remote, snapshotMetadata) {
++function onRemoteSettings(remote, snapshotMetadata, session = syncSessions.current()) {
++    if (!isCurrentSyncSession(session, syncUser?.uid)) return Promise.resolve();
++    // Preserve callback order across asynchronous storage, without making a new
++    // account wait for a snapshot still running in the previous session.
++    if (syncSettingsChain.session !== session) syncSettingsChain = { session, pending: Promise.resolve() };
++    const pending = syncSettingsChain.pending.catch(() => {}).then(() => applyRemoteSettings(remote, snapshotMetadata, session));
++    syncSettingsChain.pending = pending;
++    return pending;
++}
++async function applyRemoteSettings(remote, snapshotMetadata, session) {
+     const capturedUid = syncUser?.uid, capturedKey = chaveEstadoAtual;
+-    if (!remote || !syncUser || !syncUi.enabled.checked || !snapshotConfirmed(snapshotMetadata)) return;
+-    const mergedSettings = mergeRemoteSettings(estado, remote);
+-    if (!mergedSettings.valid) { setSyncStatus("As configurações remotas são inválidas. A cópia local foi preservada; corrija os dados na nuvem e tente novamente.", true); return; }
+-    const incoming = { version: remote.version, categories: remote.categories, theme: remote.theme, budgets: remote.budgets };
+-    if (settingsConflictActive || (syncRemoteSettings && syncRemoteSettings.revision !== remote.revision && jsonCanonico(financialSettings(estado)) !== jsonCanonico({ version: syncRemoteSettings.version, categories: syncRemoteSettings.categories, theme: syncRemoteSettings.theme, budgets: syncRemoteSettings.budgets }) && jsonCanonico(incoming) !== jsonCanonico({ version: syncRemoteSettings.version, categories: syncRemoteSettings.categories, theme: syncRemoteSettings.theme, budgets: syncRemoteSettings.budgets }))) {
+-        const meta = (await readSyncMeta(capturedUid)); meta.conflicts = [...(meta.conflicts || []), { kind: "settings", local: financialSettings(estado), remote }]; await writeSyncMeta(capturedUid, meta); setSyncStatus("Configurações alteradas em outro dispositivo; as duas versões foram preservadas.", true); return;
++    const currentSession = () => isCurrentSyncSession(session, capturedUid) && chaveEstadoAtual === capturedKey;
++    if (!remote || !syncUser || !currentSession() || !syncUi.enabled.checked || !snapshotConfirmed(snapshotMetadata)) return;
++    if (!validarConfiguracoesRemotas(remote)) { setSyncStatus("As configurações remotas são inválidas. A cópia local foi preservada; corrija os dados na nuvem e tente novamente.", true); return; }
++    const meta = await readSyncMeta(capturedUid);
++    if (!currentSession()) return;
++    updateSettingsConflictActive(capturedUid, meta, session);
++    const incoming = functionalSettings(remote), local = financialSettings(estado), previous = syncRemoteSettings;
++    const equivalent = settingsEquivalent(local, remote);
++    const localChanged = previous && !settingsEquivalent(local, previous);
++    const remoteChanged = previous && !settingsEquivalent(remote, previous);
++    if (!equivalent && (settingsConflictActive || (localChanged && remoteChanged))) {
++        await registerSettingsConflict(capturedUid, local, remote, undefined, session);
++        if (!currentSession()) return;
++        syncRemoteSettings = remote;
++        setSyncStatus("Configurações alteradas em outro dispositivo; as duas versões foram preservadas.", true); return;
+     }
+     syncRemoteSettings = remote;
+-    if (jsonCanonico(financialSettings(estado)) !== jsonCanonico(incoming)) {
++    // Pending conflicts are never resolved implicitly, even after convergence.
++    if (settingsConflictActive || (!equivalent && localChanged)) return;
++    if (!equivalent) {
++        const mergedSettings = mergeRemoteSettings(estado, remote);
+         if (!validarBackup(mergedSettings.state)) { setSyncStatus("As configurações remotas são inválidas. A cópia local foi preservada.", true); return; }
+         const normalized = normalizarEstado(mergedSettings.state);
+         if (!await persistirEstadoFinanceiro(capturedKey, normalized)) { setSyncStatus("Não foi possível salvar as configurações remotas. A cópia local foi preservada.", true); return; }
+-        if (syncUser?.uid !== capturedUid || chaveEstadoAtual !== capturedKey) return;
++        if (!currentSession()) return;
+         applyingRemoteSync = true; estado = normalizarEstado(idbBase); renderTudo(false); applyingRemoteSync = false;
+     }
+-    const current = (await readSyncMeta(capturedUid)); current.settingsBaseline = incoming; await writeSyncMeta(capturedUid, current);
++    await rememberSettingsBaseline(capturedUid, incoming, session);
+ }
+ async function onRemoteRecords(records, snapshotMetadata, session = null, preserveDivergent = false) {
+     const capturedUid = syncUser?.uid, capturedKey = chaveEstadoAtual;
+@@ -4195,7 +4259,7 @@ async function onRemoteConflicts(remoteConflicts, session, snapshotMetadata) {
+     const after = reconcileRemoteConflicts(before, remoteConflicts);
+     const resolved = new Set(remoteConflicts.filter((item) => item?.resolved === true).map((item) => item.operationId));
+     meta.conflicts = after.filter((item) => !resolved.has(item.operationId || item.operation?.id));
+-    await writeSyncMeta(capturedUid, meta); if (syncUser?.uid !== capturedUid) return; settingsConflictActive = meta.conflicts.some((item) => item.kind === "settings");
++    const saved = await writeSyncMeta(capturedUid, meta); if (syncUser?.uid !== capturedUid || !isCurrentSyncSession(session, capturedUid)) return; updateSettingsConflictActive(capturedUid, saved, session);
+     renderSyncConflicts();
+     if (meta.conflicts.length) setSyncStatus(`Há ${meta.conflicts.length} conflito(s) para revisar.`);
+ }
+@@ -4224,9 +4288,10 @@ syncUi.restore.addEventListener("click", async () => {
+         if (!isCurrentSyncSession(session, uid)) return;
+         if (!remote || inspectRemoteKeys(remote).mismatches.length) throw new Error("Registros remotos inválidos, duplicados ou com chaves legadas. A restauração foi preservada.");
+         const merged = combinarRegistros(registrosFinanceiros(estado), remote.filter((item) => !item.deleted && item.record));
+-        const localSettings = financialSettings(estado), remoteSettings = syncRemoteSettings && { version: syncRemoteSettings.version, categories: syncRemoteSettings.categories, theme: syncRemoteSettings.theme, budgets: syncRemoteSettings.budgets };
+-        if (remoteSettings && jsonCanonico(localSettings) !== jsonCanonico(remoteSettings)) {
+-            const current = (await readSyncMeta(syncUser.uid)); current.conflicts = [...(current.conflicts || []), { kind: "settings", local: localSettings, remote: syncRemoteSettings, source: "restored-backup" }]; await writeSyncMeta(syncUser.uid, current); settingsConflictActive = true;
++        const localSettings = financialSettings(estado);
++        if (syncRemoteSettings && !settingsEquivalent(localSettings, syncRemoteSettings)) {
++            await registerSettingsConflict(uid, localSettings, syncRemoteSettings, "restored-backup", session);
++            if (!isCurrentSyncSession(session, uid)) return;
+         }
+         const months = {};
+         for (const item of merged.records) { months[item.month] ||= { receitas: [], despesas: [] }; months[item.month][item.type].push(item.record); }
+diff --git a/e2e/idb-transactions.spec.mjs b/e2e/idb-transactions.spec.mjs
+index a92ec75..5c12310 100644
+--- a/e2e/idb-transactions.spec.mjs
++++ b/e2e/idb-transactions.spec.mjs
+@@ -56,3 +56,34 @@ test('IDB real: account switch during ACK stops sending and isolates queues',asy
+     expect(await other.evaluate(async()=>(await qaService.lerFila('qa-alice')).outbox.map(op=>op.id))).toEqual(['b']);
+     expect(await other.evaluate(async()=>(await qaService.lerFila('qa-bob')).outbox.map(op=>op.id))).toEqual(['bob']);
+ });
++
++test('IDB real: settings deduplication in two tabs preserves eight existing conflicts, pending operations and restart recovery',async({context,page})=>{
++    await setup(page);const other=await context.newPage();await setup(other);
++    const fixture=await page.evaluate(async()=>{
++        const local={version:3,categories:['Casa','Moto','Serasa'],theme:'claro',budgets:{padrao:{},meses:{}}};
++        const remote=(revision)=>({...local,revision,updatedAt:{seconds:10,nanoseconds:0}});
++        const conflicts=Array.from({length:8},(_,i)=>({kind:'settings',local,
++            remote:{...remote(String(i)),categories:i<2?['Casa']:local.categories}}));
++        await qaService.alterarFila('qa-alice',queue=>({...queue,conflicts,outbox:[{id:'pending',entityKey:'pending'}]}));
++        return {local,conflicts,beforeState:JSON.stringify(await qaDb.ler('estado:qa-alice')),
++            novel:{kind:'settings',local,remote:{...remote('new'),theme:'escuro'}}};
++    });
++    await Promise.all([
++        page.evaluate(async({novel})=>qaService.registrarConflitoSettings('qa-alice',novel),fixture),
++        other.evaluate(async({novel})=>qaService.registrarConflitoSettings('qa-alice',{
++            ...novel,source:'restored-backup',remote:{...novel.remote,revision:'other-tab',updatedAt:{seconds:20,nanoseconds:0}}}),fixture),
++        other.evaluate(()=>qaService.enfileirar('qa-alice',{id:'new-operation',entityKey:'new-operation'}))
++    ]);
++    await page.evaluate(async({local})=>{
++        await qaService.registrarConflitoSettings('qa-alice',{kind:'settings',local,
++            remote:{...local,categories:[...local.categories].reverse(),revision:'equivalent',updatedAt:{seconds:30,nanoseconds:0}}});
++    },fixture);
++    let queue=await page.evaluate(()=>qaService.lerFila('qa-alice'));
++    expect(queue.conflicts).toHaveLength(9);
++    expect(queue.conflicts.slice(0,8)).toEqual(fixture.conflicts);
++    expect(queue.outbox.map(op=>op.id).sort()).toEqual(['new-operation','pending']);
++    expect(await page.evaluate(async()=>JSON.stringify(await qaDb.ler('estado:qa-alice')))).toBe(fixture.beforeState);
++    await page.reload();await setup(page);
++    const recovered=await page.evaluate(()=>qaService.lerFila('qa-alice'));
++    expect(recovered).toEqual(queue);
++});
+diff --git a/financial-atomic-service.js b/financial-atomic-service.js
+index ff95983..546fa70 100644
+--- a/financial-atomic-service.js
++++ b/financial-atomic-service.js
+@@ -2,7 +2,7 @@
+ // Não altera o armazenamento legado e não realiza operações de rede.
+ import { ConflitoPersistencia } from './transactional-state.js';
+ import { combinarEdicaoFinanceira } from './financial-intents.js';
+-import { registrosFinanceiros, recordEntityKey, operationId, coalesceOutbox, recordsEquivalent, blockedConflictKeys, validSyncIdentity } from './sync-core.js';
++import { registrosFinanceiros, recordEntityKey, operationId, coalesceOutbox, recordsEquivalent, blockedConflictKeys, validSyncIdentity, functionalSettings, settingsEquivalent, validateRemoteSettings } from './sync-core.js';
+ 
+ const copy = (value) => structuredClone(value);
+ const validRevision = (value) => Number.isSafeInteger(value) && value >= 0;
+@@ -193,6 +193,19 @@ export class ServicoFinanceiroAtomico {
+             return fila;
+         });
+     }
++    async registrarConflitoSettings(uid, conflito) {
++        const candidate = copy(conflito);
++        if (candidate?.kind !== 'settings' || !functionalSettings(candidate.local)
++            || !validateRemoteSettings(candidate.remote)) throw new Error('Conflito de configurações inválido');
++        return this.alterarFila(uid, fila => {
++            // Inspect the current queue inside the transaction, including entries
++            // added by another tab. Existing entries remain byte-for-byte intact.
++            if (!settingsEquivalent(candidate.local, candidate.remote) && !fila.conflicts.some(item =>
++                item?.kind === 'settings' && settingsEquivalent(item.local, candidate.local)
++                && settingsEquivalent(item.remote, candidate.remote))) fila.conflicts.push(candidate);
++            return fila;
++        });
++    }
+     async registrarConflito(uid, conflito) {
+         const id = conflito?.operation?.id || conflito?.operationId;
+         if (typeof id !== 'string' || !id) throw new Error('Conflito inválido');
+diff --git a/sync-core.js b/sync-core.js
+index 54a5d22..8feb455 100644
+--- a/sync-core.js
++++ b/sync-core.js
+@@ -44,6 +44,21 @@ const json = (value) => JSON.stringify(canonical(value));
+ export const jsonCanonico = json;
+ export const recordsEquivalent = (a, b) => json(a) === json(b);
+ 
++// Compare functional data only. Keep revisions/timestamps on the original objects
++// for optimistic concurrency; never normalize or rewrite persisted conflicts.
++export function functionalSettings(settings) {
++    if (!settings || typeof settings !== "object" || !Array.isArray(settings.categories)) return null;
++    const value = { version: settings.version, categories: [...settings.categories].sort(),
++        theme: settings.theme, budgets: settings.budgets };
++    if (!validateRemoteSettings({ ...value, revision: "functional", updatedAt: { seconds: 0, nanoseconds: 0 } })) return null;
++    return canonical(value);
++}
++export function settingsEquivalent(a, b) {
++    if (a === null && b === null) return true;
++    const left = functionalSettings(a), right = functionalSettings(b);
++    return left !== null && right !== null && json(left) === json(right);
++}
++
+ export function readSyncMetadata(storage, uid) {
+     chaveLocalConta(uid);
+     let value;
+diff --git a/tests/app-sync.test.js b/tests/app-sync.test.js
+index e0fd16d..b81a25a 100644
+--- a/tests/app-sync.test.js
++++ b/tests/app-sync.test.js
+@@ -347,6 +347,201 @@ test("nova revisão de configurações equivalentes não cria conflito artificia
+     assert.equal(h.meta().conflicts.length, 0);
+ });
+ 
++// Use the production metadata merge as well as the production application
++// handlers. The adapter is in-memory; no user storage or Firebase is accessed.
++function settingsHarness() {
++    const initial = financialState(entry()); initial.categorias = ["Casa", "Moto", "Serasa"];
++    const h = harness([entry()], initial);
++    vm.runInContext(source.slice(source.indexOf("const syncMetaKey ="), source.indexOf("function setSyncStatus(")), h.context);
++    return h;
++}
++const settingsSnapshot = (value, revision) => ({ ...value, revision: String(revision),
++    updatedAt: { seconds: 100, nanoseconds: Number(revision) || 0 } });
++function eightSettingsConflicts(local) {
++    return Array.from({ length: 8 }, (_, i) => ({ kind: "settings", local: structuredClone(local),
++        remote: settingsSnapshot(i < 2 ? { ...local, categories: ["Casa"] } : local, i) }));
++}
++
++test("settings: eight preexisting conflicts, categories and pending operations survive equivalent and repeated snapshots", async () => {
++    const h = settingsHarness(); h.pending();
++    const local = h.context.financialSettings(), conflicts = eightSettingsConflicts(local);
++    h.context.writeSyncMeta("alice", { ...h.meta(), conflicts });
++    const before = JSON.stringify(h.meta()), stateBefore = JSON.stringify(h.context.estado);
++    for (let i = 10; i < 18; i++) await h.context.onRemoteSettings(settingsSnapshot({ ...local, categories: [...local.categories].reverse() }, i), metadata);
++    // A real but already recorded pair is also reused, without replacing metadata.
++    await h.context.onRemoteSettings(settingsSnapshot({ ...local, categories: ["Casa"] }, 18), metadata);
++    assert.equal(JSON.stringify(h.meta()), before);
++    assert.equal(JSON.stringify(h.context.estado), stateBefore);
++    assert.equal(h.context.settingsConflictActive, true);
++    assert.equal(h.context.syncRemoteSettings.revision, "18");
++    assert.ok(h.context.estado.categorias.includes("Moto")); assert.ok(h.context.estado.categorias.includes("Serasa"));
++});
++
++test("settings: two genuine observations and six converged snapshots create only one conflict", async () => {
++    const h = settingsHarness(), local = h.context.financialSettings();
++    h.context.syncRemoteSettings = settingsSnapshot({ ...local, theme: "escuro" }, 0);
++    for (let i = 1; i <= 2; i++) await h.context.onRemoteSettings(settingsSnapshot({ ...local, categories: ["Casa"] }, i), metadata);
++    const original = JSON.stringify(h.meta().conflicts);
++    for (let i = 3; i <= 8; i++) await h.context.onRemoteSettings(settingsSnapshot(local, i), metadata);
++    assert.equal(h.meta().conflicts.length, 1);
++    assert.equal(JSON.stringify(h.meta().conflicts), original);
++    assert.equal(h.context.syncRemoteSettings.revision, "8");
++    assert.equal(h.context.settingsConflictActive, true);
++});
++
++test("settings: concurrent callbacks deduplicate and preserve a concurrent financial inclusion", async () => {
++    const h = settingsHarness(), local = h.context.financialSettings();
++    h.context.syncRemoteSettings = settingsSnapshot({ ...local, theme: "escuro" }, 0);
++    const op = sync.makeOperation(sync.recordEntityKey(entry("new")), { month: "2026-10", type: "receitas", id: "new", record: entry("new").record, deleted: false }, null);
++    await Promise.all([h.context.onRemoteSettings(settingsSnapshot({ ...local, categories: ["Casa"] }, 1), metadata),
++        h.context.onRemoteSettings(settingsSnapshot({ ...local, categories: ["Casa"] }, 2), metadata),
++        h.context.idbServico.enfileirar("alice", op)]);
++    assert.equal(h.meta().conflicts.length, 1);
++    assert.equal(h.meta().outbox[0].id, op.id);
++});
++
++test("settings: asynchronous snapshots retain callback order and do not advance a baseline over a concurrent conflict", async () => {
++    const h = settingsHarness(), local = h.context.financialSettings();
++    h.context.syncRemoteSettings = settingsSnapshot(local, 0);
++    const read = h.context.idbServico.lerFila.bind(h.context.idbServico);
++    let release, entered, reads = 0;
++    const waiting = new Promise(resolve => { entered = resolve; });
++    h.context.idbServico.lerFila = async uid => {
++        const meta = await read(uid);
++        if (++reads === 1) { entered(); await new Promise(resolve => { release = resolve; }); }
++        return meta;
++    };
++    const first = h.context.onRemoteSettings(settingsSnapshot(local, 1), metadata);
++    await waiting;
++    const second = h.context.onRemoteSettings(settingsSnapshot(local, 2), metadata);
++    const conflict = { kind: "settings", local, remote: settingsSnapshot({ ...local, categories: ["Casa"] }, 9) };
++    await h.context.idbServico.registrarConflitoSettings("alice", conflict);
++    release(); await Promise.all([first, second]);
++    assert.equal(h.context.syncRemoteSettings.revision, "2");
++    assert.equal(h.context.settingsConflictActive, true);
++    assert.equal(h.meta().settingsBaseline, undefined);
++    assert.equal(JSON.stringify(h.meta().conflicts), JSON.stringify([conflict]));
++});
++
++test("settings: convergence against an old baseline creates no conflict and keeps the confirmed revision", async () => {
++    const h = settingsHarness(), local = h.context.financialSettings();
++    h.context.syncRemoteSettings = settingsSnapshot({ ...local, theme: "escuro" }, 0);
++    await h.context.onRemoteSettings(settingsSnapshot(local, 1), metadata);
++    assert.equal(h.meta().conflicts.length, 0);
++    assert.equal(h.context.syncRemoteSettings.revision, "1");
++    assert.equal(sync.settingsEquivalent(h.meta().settingsBaseline, local), true);
++});
++
++test("settings: persisted conflicts block automatic publication even if the in-memory flag is false", async () => {
++    const h = settingsHarness(), local = h.context.financialSettings(), conflicts = eightSettingsConflicts(local);
++    h.context.writeSyncMeta("alice", { ...h.meta(), conflicts });
++    h.context.firebaseClient.getSettings = async () => settingsSnapshot({ ...local, categories: ["Casa"] }, 10);
++    let writes = 0; h.context.firebaseClient.saveSettings = async () => { writes++; throw new Error("must not send"); };
++    await h.context.publishFirebaseState(h.context.estado);
++    assert.equal(writes, 0);
++    assert.equal(JSON.stringify(h.meta().conflicts), JSON.stringify(conflicts));
++    assert.equal(h.context.settingsConflictActive, true);
++});
++
++test("settings: a conflict from another tab during a remote read blocks settings publication", async () => {
++    const h = settingsHarness(), local = h.context.financialSettings();
++    h.context.firebaseClient.getSettings = async () => {
++        await h.context.idbServico.registrarConflitoSettings("alice", { kind: "settings", local, remote: settingsSnapshot({ ...local, theme: "escuro" }, 1) });
++        return settingsSnapshot({ ...local, theme: "escuro" }, 2);
++    };
++    let writes = 0; h.context.firebaseClient.saveSettings = async () => { writes++; };
++    await h.context.publishFirebaseState(h.context.estado);
++    assert.equal(writes, 0); assert.equal(h.meta().conflicts.length, 1);
++    assert.equal(h.context.settingsConflictActive, true);
++});
++
++test("settings: revision rejection with the desired server result causes no conflict or retry", async () => {
++    const h = settingsHarness(), local = h.context.financialSettings();
++    h.context.syncRemoteSettings = settingsSnapshot({ ...local, theme: "escuro" }, 0);
++    h.context.firebaseClient.getSettings = async () => settingsSnapshot({ ...local, theme: "escuro" }, 1);
++    let writes = 0;
++    h.context.firebaseClient.saveSettings = async () => { writes++; return { conflict: true, remote: settingsSnapshot(local, 2) }; };
++    await h.context.publishFirebaseState(h.context.estado);
++    assert.equal(writes, 1); assert.equal(h.meta().conflicts.length, 0);
++    assert.equal(h.context.syncRemoteSettings.revision, "2");
++    await h.context.onRemoteSettings(settingsSnapshot(local, 3), metadata);
++    assert.equal(h.meta().conflicts.length, 0);
++});
++
++test("settings: a genuine CAS difference persists a conflict and blocks subsequent automatic settings writes", async () => {
++    const h = settingsHarness(), local = h.context.financialSettings();
++    h.context.firebaseClient.getSettings = async () => settingsSnapshot({ ...local, theme: "escuro" }, 1);
++    let writes = 0; h.context.firebaseClient.saveSettings = async () => { writes++; return { conflict: true, remote: settingsSnapshot({ ...local, theme: "rosa" }, 2) }; };
++    await h.context.publishFirebaseState(h.context.estado); await h.context.publishFirebaseState(h.context.estado);
++    assert.equal(writes, 1); assert.equal(h.meta().conflicts.length, 1);
++    assert.equal(h.context.settingsConflictActive, true);
++});
++
++test("settings: confirmed observations do not overwrite a local change or accept cache/pending snapshots", async () => {
++    const h = settingsHarness(), local = h.context.financialSettings();
++    const remote = settingsSnapshot({ ...local, theme: "escuro" }, 0);
++    h.context.syncRemoteSettings = remote;
++    await h.context.onRemoteSettings({ ...remote, revision: "1" }, metadata);
++    assert.equal(h.context.estado.tema, "claro"); assert.equal(h.meta().conflicts.length, 0);
++    for (const flags of [{ fromCache: true, hasPendingWrites: false }, { fromCache: false, hasPendingWrites: true }])
++        await h.context.onRemoteSettings(settingsSnapshot({ ...local, theme: "rosa" }, 2), flags);
++    assert.equal(h.context.syncRemoteSettings.revision, "1");
++});
++
++test("settings: storage failure preserves conflicts and queue; an obsolete session cannot replace another account's reference", async () => {
++    const h = settingsHarness(); h.pending(); const local = h.context.financialSettings();
++    h.context.syncRemoteSettings = settingsSnapshot({ ...local, theme: "escuro" }, 0);
++    const before = JSON.stringify(h.meta()), stateBefore = JSON.stringify(h.context.estado);
++    h.context.idbServico.registrarConflitoSettings = async () => { throw new Error("quota"); };
++    await assert.rejects(h.context.onRemoteSettings(settingsSnapshot({ ...local, categories: ["Casa"] }, 1), metadata), /quota/);
++    assert.equal(JSON.stringify(h.meta()), before); assert.equal(JSON.stringify(h.context.estado), stateBefore);
++    const read = h.context.idbServico.lerFila.bind(h.context.idbServico);
++    h.context.idbServico.lerFila = async uid => { const queue = await read(uid); h.context.syncUser = { uid: "bob" }; h.context.syncRemoteSettings = { revision: "bob" }; return queue; };
++    h.context.isCurrentSyncSession = (_session, uid) => h.context.syncUser?.uid === uid;
++    await h.context.onRemoteSettings(settingsSnapshot(local, 2), metadata);
++    assert.equal(h.context.syncRemoteSettings.revision, "bob");
++});
++
++test("settings: first link uses functional equivalence and a legitimate conflict blocks automatic settings publication", async () => {
++    for (const genuine of [false, true]) {
++        const h = settingsHarness(); initializedFlow(h);
++        h.context.writeSyncMeta("alice", { ...h.meta(), initialized: false });
++        h.context.storage.lerJsonResultado = () => ({ estado: "ausente" });
++        let prompts = 0, writes = 0; h.context.confirm = () => { prompts++; return true; };
++        const local = h.context.financialSettings();
++        h.context.firebaseClient.getSettings = async () => settingsSnapshot({ ...local, categories: genuine ? ["Casa"] : [...local.categories].reverse() }, 1);
++        h.context.firebaseClient.saveSettings = async () => { writes++; return { acknowledged: true, revision: "saved" }; };
++        await h.context.onFirebaseUser({ uid: "alice" });
++        assert.equal(prompts, genuine ? 2 : 1); assert.equal(writes, 0);
++        assert.equal(h.meta().conflicts.length, genuine ? 1 : 0);
++        assert.ok(h.context.estado.categorias.includes("Moto")); assert.ok(h.context.estado.categorias.includes("Serasa"));
++    }
++});
++
++test("settings: reconnect distinguishes convergence from genuine divergence against a saved baseline", async () => {
++    for (const genuine of [false, true]) {
++        const h = settingsHarness(); initializedFlow(h); const local = h.context.financialSettings();
++        h.context.writeSyncMeta("alice", { ...h.meta(), settingsBaseline: { ...local, theme: "escuro" } });
++        h.context.firebaseClient.getSettings = async () => settingsSnapshot({ ...local, categories: genuine ? ["Casa"] : [...local.categories].reverse() }, 1);
++        await h.context.onFirebaseUser({ uid: "alice" });
++        assert.equal(h.meta().conflicts.length, genuine ? 1 : 0);
++    }
++});
++
++test("settings: backup review reuses an existing pair and leaves all eight original entries intact", async () => {
++    const h = settingsHarness(), local = h.context.financialSettings(), conflicts = eightSettingsConflicts(local);
++    h.context.writeSyncMeta("alice", { ...h.meta(), conflicts, restoredPending: true });
++    h.context.syncRemoteSettings = settingsSnapshot({ ...local, categories: ["Casa"] }, 20);
++    h.context.confirm = () => true;
++    h.context.syncUi.restore = { addEventListener: (_event, callback) => { h.restore = callback; } };
++    h.context.onFirebaseUser = async () => {};
++    vm.runInContext(source.slice(source.indexOf('syncUi.restore.addEventListener('), source.indexOf('syncUi.enabled.addEventListener(')), h.context);
++    await h.restore();
++    assert.equal(JSON.stringify(h.meta().conflicts), JSON.stringify(conflicts));
++    assert.equal(h.meta().restoredPending, false);
++    assert.ok(h.context.estado.categorias.includes("Moto")); assert.ok(h.context.estado.categorias.includes("Serasa"));
++});
++
+ test("ausência local não vira exclusão; exclusão explícita produz tombstone", { timeout: 5000 }, async () => {
+     const unknown = harness([entry()], financialState());
+     await unknown.context.publishFirebaseState(unknown.context.estado);
+@@ -427,7 +622,8 @@ test('review includes duplicate observations of the same operation, not unrelate
+ 
+ test('concurrent confirmations merge monotonically and a new operation prevents confirmation',async()=>{
+     const h=harness();
+-    const c=vm.createContext({idbServico:h.context.idbServico,structuredClone,Symbol});
++    const c=vm.createContext({idbServico:h.context.idbServico,structuredClone,Symbol,
++        syncSessions:h.context.syncSessions,updateSettingsConflictActive:h.context.updateSettingsConflictActive});
+     vm.runInContext(source.slice(source.indexOf('const syncMetaKey ='),source.indexOf('function setSyncStatus(')),c);
+     const read=()=>vm.runInContext('readSyncMeta("alice")',c);
+     const write=async value=>{c.proposal=value;return vm.runInContext('writeSyncMeta("alice",proposal)',c);};
+diff --git a/tests/financial-atomic-service.test.js b/tests/financial-atomic-service.test.js
+index 6e9f3cd..eceb1c1 100644
+--- a/tests/financial-atomic-service.test.js
++++ b/tests/financial-atomic-service.test.js
+@@ -30,6 +30,61 @@ const filaValida = (fila) => Array.isArray(fila.outbox) && Array.isArray(fila.co
+ const init = (db) => db.data.set('estado:u1', { revisao: 0, dados: { registros: [] } });
+ const op = (id) => ({ id, month: '2026-10' });
+ 
++const settings = (revision = 'a', categories = ['Moto', 'Serasa']) => ({ version: 3, categories,
++    theme: 'claro', budgets: { padrao: {}, meses: {} }, revision, updatedAt: { seconds: 10, nanoseconds: 0 } });
++const settingsConflict = (revision = 'a') => ({ kind: 'settings', local: settings('local'), remote: settings(revision, ['Moto']) });
++
++test('settings: two tabs deduplicate inside the transaction while preserving financial operations and UID isolation', async () => {
++    const db = banco(), a = new ServicoFinanceiroAtomico(db, valid, filaValida), b = new ServicoFinanceiroAtomico(db, valid, filaValida);
++    await a.inicializar('u1', { registros: ['untouched'] }, { outbox: [op('pending')], conflicts: [], lastConfirmed: null });
++    await a.inicializar('u2', { registros: [] }, { outbox: [], conflicts: [], lastConfirmed: null });
++    await Promise.all([a.registrarConflitoSettings('u1', settingsConflict('a')),
++        b.registrarConflitoSettings('u1', { ...settingsConflict('b'), source: 'restored-backup' }),
++        b.enfileirar('u1', op('new')), a.registrarConflitoSettings('u2', settingsConflict('a'))]);
++    const queue = await a.lerFila('u1');
++    assert.equal(queue.conflicts.length, 1);
++    assert.equal(queue.conflicts[0].remote.revision, 'a');
++    assert.deepEqual(queue.outbox, [op('pending'), op('new')]);
++    assert.deepEqual(db.data.get('estado:u1').dados, { registros: ['untouched'] });
++    assert.equal((await a.lerFila('u2')).conflicts.length, 1);
++});
++
++test('settings: eight existing entries remain unchanged, equivalent pairs are reused and genuine new pairs append', async () => {
++    const db = banco(), s = new ServicoFinanceiroAtomico(db, valid, filaValida);
++    const conflicts = Array.from({ length: 8 }, (_, i) => i < 2 ? settingsConflict(String(i)) :
++        { kind: 'settings', local: settings('local'), remote: settings(String(i)) });
++    await s.inicializar('u1', { registros: ['untouched'] }, { outbox: [op('pending')], conflicts, lastConfirmed: 'old' });
++    const before = JSON.stringify(await s.lerFila('u1'));
++    await s.registrarConflitoSettings('u1', settingsConflict('new-observation'));
++    await s.registrarConflitoSettings('u1', { kind: 'settings', local: settings(), remote: settings('equivalent', ['Serasa', 'Moto']) });
++    assert.equal(JSON.stringify(await s.lerFila('u1')), before);
++    await s.registrarConflitoSettings('u1', { ...settingsConflict(), remote: { ...settings('different'), theme: 'escuro' } });
++    const after = await s.lerFila('u1');
++    assert.equal(after.conflicts.length, 9);
++    assert.deepEqual(after.conflicts.slice(0, 8), conflicts);
++    assert.deepEqual(after.outbox, [op('pending')]);
++});
++
++test('settings: invalid payload or storage failure cannot change queue or financial state', async () => {
++    const db = banco(), s = new ServicoFinanceiroAtomico(db, valid, filaValida);
++    await s.inicializar('u1', { registros: ['untouched'] }, { outbox: [op('pending')], conflicts: [settingsConflict()], lastConfirmed: null });
++    const before = JSON.stringify([...db.data]);
++    await assert.rejects(s.registrarConflitoSettings('u1', { ...settingsConflict(), remote: {} }));
++    db.alterar = async () => { throw new Error('quota'); };
++    await assert.rejects(s.registrarConflitoSettings('u1', settingsConflict()), /quota/);
++    assert.equal(JSON.stringify([...db.data]), before);
++});
++
++test('settings: registration captures the observed pair before asynchronous persistence', async () => {
++    const db = banco(), s = new ServicoFinanceiroAtomico(db, valid, filaValida);
++    await s.inicializar('u1', { registros: [] }, { outbox: [], conflicts: [], lastConfirmed: null });
++    const candidate = settingsConflict(), original = structuredClone(candidate);
++    const pending = s.registrarConflitoSettings('u1', candidate);
++    candidate.remote.categories.push('Serasa'); candidate.local.theme = 'rosa';
++    await pending;
++    assert.deepEqual((await s.lerFila('u1')).conflicts, [original]);
++});
++
+ test('duas abas concorrentes: uma revisão é rejeitada, dados e fila permanecem coerentes', async () => {
+     const db = banco(); init(db); const a = new ServicoFinanceiroAtomico(db, valid, filaValida);
+     const b = new ServicoFinanceiroAtomico(db, valid, filaValida);
+diff --git a/tests/sync-core.test.js b/tests/sync-core.test.js
+index 4f915b8..987a413 100644
+--- a/tests/sync-core.test.js
++++ b/tests/sync-core.test.js
+@@ -1,10 +1,34 @@
+ import test from "node:test";
+ import assert from "node:assert/strict";
++import { functionalSettings, settingsEquivalent } from "../sync-core.js";
+ import { chaveLocalConta, caminhoConta, registrosFinanceiros, combinarRegistros, operationId, makeOperation, applyRemoteRecord, createSyncQueue, migrationBackup, revisionMatches, recordsEquivalent, coalesceOutbox, flushSyncQueue, createSyncSessionGuard, validateRemoteSettings, mergeRemoteSettings, validRemoteTombstone, reconcileRemoteConflicts, validateRemoteConflicts } from "../sync-core.js";
+ 
+ const income = (id, extra = {}) => ({ month: "2026-10", type: "receitas", id, record: { id, nome: "Salário", valor: 1000, ...extra } });
+ const state = (records = []) => ({ versao: 3, tema: "claro", categorias: [], orcamentos: { padrao: {}, meses: {} }, meses: { "2026-10": { receitas: records, despesas: [] } } });
+ 
++test("settings equivalence ignores transport metadata and category/key order without mutating inputs", () => {
++    const a = { version: 3, categories: ["Serasa", "Moto"], theme: "claro", budgets: { padrao: { Serasa: 200, Moto: 100 }, meses: {} }, revision: "a", updatedAt: { seconds: 1, nanoseconds: 0 } };
++    const b = { version: 3, categories: ["Moto", "Serasa"], theme: "claro", budgets: { meses: {}, padrao: { Moto: 100, Serasa: 200 } }, revision: "b", updatedAt: { seconds: 9, nanoseconds: 0 } };
++    const before = JSON.stringify([a, b]);
++    assert.equal(settingsEquivalent(a, b), true);
++    assert.deepEqual(functionalSettings(a).categories, ["Moto", "Serasa"]);
++    assert.equal(JSON.stringify([a, b]), before);
++    assert.equal(Object.hasOwn(functionalSettings(a), "revision"), false);
++});
++
++test("settings equivalence preserves real differences, version, exact names and missing versus zero budgets", () => {
++    const a = { version: 3, categories: ["Moto", "Serasa"], theme: "claro", budgets: { padrao: {}, meses: {} } };
++    for (const changed of [{ ...a, version: 2 }, { ...a, categories: ["Moto"] },
++        { ...a, categories: ["moto", "Serasa"] }, { ...a, categories: ["Moto ", "Serasa"] },
++        { ...a, theme: "escuro" }, { ...a, budgets: { padrao: { Moto: 0 }, meses: {} } }]) {
++        assert.equal(settingsEquivalent(a, changed), false);
++    }
++    for (const invalid of [{ ...a, categories: ["Moto", "Moto"] }, { ...a, theme: "invalid" },
++        { ...a, budgets: { padrao: { Moto: -1 }, meses: {} } }, {}, undefined]) {
++        assert.equal(settingsEquivalent(invalid, invalid), false);
++    }
++});
++
+ test("contas têm chaves e caminhos estritamente isolados por UID", () => {
+     assert.notEqual(chaveLocalConta("user-a"), chaveLocalConta("user-b"));
+     assert.equal(caminhoConta("user-a", "records", "abc"), "users/user-a/records/abc");

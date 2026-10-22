@@ -44,6 +44,21 @@ const json = (value) => JSON.stringify(canonical(value));
 export const jsonCanonico = json;
 export const recordsEquivalent = (a, b) => json(a) === json(b);
 
+// Compare functional data only. Keep revisions/timestamps on the original objects
+// for optimistic concurrency; never normalize or rewrite persisted conflicts.
+export function functionalSettings(settings) {
+    if (!settings || typeof settings !== "object" || !Array.isArray(settings.categories)) return null;
+    const value = { version: settings.version, categories: [...settings.categories].sort(),
+        theme: settings.theme, budgets: settings.budgets };
+    if (!validateRemoteSettings({ ...value, revision: "functional", updatedAt: { seconds: 0, nanoseconds: 0 } })) return null;
+    return canonical(value);
+}
+export function settingsEquivalent(a, b) {
+    if (a === null && b === null) return true;
+    const left = functionalSettings(a), right = functionalSettings(b);
+    return left !== null && right !== null && json(left) === json(right);
+}
+
 export function readSyncMetadata(storage, uid) {
     chaveLocalConta(uid);
     let value;

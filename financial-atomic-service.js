@@ -2,18 +2,27 @@
 // Não altera o armazenamento legado e não realiza operações de rede.
 import { ConflitoPersistencia } from './transactional-state.js';
 import { combinarEdicaoFinanceira } from './financial-intents.js';
-import { registrosFinanceiros, recordEntityKey, operationId, coalesceOutbox, recordsEquivalent, blockedConflictKeys, validSyncIdentity } from './sync-core.js';
+import { registrosFinanceiros, recordEntityKey, operationId, coalesceOutbox, recordsEquivalent, blockedConflictKeys, validSyncIdentity, functionalSettings, settingsEquivalent, validateRemoteSettings, financialStatesEquivalent } from './sync-core.js';
 
 const copy = (value) => structuredClone(value);
 const validRevision = (value) => Number.isSafeInteger(value) && value >= 0;
 export class ServicoFinanceiroAtomico {
-    constructor(db, validarEstado, validarFila = () => true) {
+    constructor(db, validarEstado, validarFila = () => true, locks = globalThis.navigator?.locks) {
         this.db = db;
+        this.settingsLocks = locks;
         this.validarEstado = validarEstado;
         this.validarFila = validarFila;
     }
     // Importação conservadora: ambos os documentos são criados juntos.
     // Estado IndexedDB já existente jamais é substituído pela origem local.
+    // Shared across cooperating tabs; no IndexedDB transaction stays open during network I/O.
+    // Local edits remain available without Web Locks, but publication fails closed.
+    coordenarSettings(uid, executar, publicacao = false) {
+        if (!(uid === '@local' || /^[A-Za-z0-9_-]{1,128}$/.test(uid || ''))) return Promise.reject(new Error('UID invalido'));
+        if (this.settingsLocks) return this.settingsLocks.request('controleFinanceiro:settings:' + uid, executar);
+        if (publicacao) return Promise.reject(Object.assign(new Error('Publicacao de configuracoes requer Web Locks para coordenar abas.'), {code:'sync/coordination-unavailable'}));
+        return Promise.resolve().then(executar);
+    }
     async inicializar(uid, estadoLegado, filaLegada) {
         if (typeof uid !== 'string' || !uid.trim() || uid.includes(':') ||
             !this.validarEstado(estadoLegado) || !this.validarFila(filaLegada)) {
@@ -34,13 +43,14 @@ export class ServicoFinanceiroAtomico {
         return { estado: docs.get(stateKey), fila: docs.get(queueKey) };
     }
     // Merge transacional de intenções, sem exclusões decorrentes de snapshots velhos.
-    async aplicarEdicao(uid, estadoBase, estadoEditado, criarOperacoes = () => [], editarFila = () => {}) {
+    async aplicarEdicao(uid, estadoBase, estadoEditado, criarOperacoes = () => [], editarFila = () => {}, isCurrent = () => true) {
         if (typeof uid !== 'string' || !uid.trim() || uid.includes(':') ||
             !this.validarEstado(estadoBase) || !this.validarEstado(estadoEditado)) {
             throw new Error('Edição financeira inválida');
         }
         const stateKey = `estado:${uid}`, queueKey = `fila:${uid}`;
         const docs = await this.db.alterarDocumentos([stateKey, queueKey], (records) => {
+            if (!isCurrent()) throw Object.assign(new Error('Sessão de persistência invalidada'), { code: 'persistence/cancelled' });
             const previous = records.get(stateKey), queue = records.get(queueKey);
             if (!previous || !validRevision(previous.revisao) || !this.validarEstado(previous.dados) ||
                 !queue || !this.validarFila(queue) || !Array.isArray(queue.outbox)) {
@@ -67,6 +77,7 @@ export class ServicoFinanceiroAtomico {
             }
             editarFila(newQueue, copy(merged.estado));
             if (!this.validarFila(newQueue)) throw new Error('Fila resultante inválida');
+            if (!isCurrent()) throw Object.assign(new Error('Sessão de persistência invalidada'), { code: 'persistence/cancelled' });
             const alterado = JSON.stringify(previous.dados) !== JSON.stringify(merged.estado);
             records.set(stateKey, alterado ? { ...previous, revisao: previous.revisao + 1, dados: merged.estado } : previous);
             records.set(queueKey, newQueue);
@@ -74,7 +85,7 @@ export class ServicoFinanceiroAtomico {
         });
         return { estado: docs.get(stateKey), fila: docs.get(queueKey) };
     }
-    async prepararPublicacao(uid, base, desired, remote, reviewed = null, deletions = []) {
+    async prepararPublicacao(uid, base, desired, remote, reviewed = null, deletions = [], isCurrent = () => true) {
         return this.aplicarEdicao(uid, base, desired, () => [], (queue, state) => {
             const blocked = blockedConflictKeys(queue.conflicts, reviewed);
             const former = new Map(remote.map(item => [recordEntityKey(item), item]));
@@ -93,7 +104,7 @@ export class ServicoFinanceiroAtomico {
             }
             const attempted = queue.outbox.filter(op => queue.attempted?.[op.id]);
             queue.outbox = [...attempted, ...coalesceOutbox(queue.outbox.filter(op => !queue.attempted?.[op.id]), candidates)];
-        });
+        }, isCurrent);
     }
     async concluirOperacao(uid, operation, result) {
         if (result?.acknowledged !== true) throw new Error('ACK ausente');
@@ -169,10 +180,28 @@ export class ServicoFinanceiroAtomico {
             throw new Error('Fila não inicializada ou inválida');
         return copy(fila);
     }
+    async confirmarSincronizacao(uid, estadoEsperado, quando, isCurrent) {
+        if (!/^[A-Za-z0-9_-]{1,128}$/.test(uid || '') || !this.validarEstado(estadoEsperado)
+            || typeof quando !== 'string' || typeof isCurrent !== 'function') throw new Error('Confirmação inválida');
+        let confirmed = false;
+        const stateKey = `estado:${uid}`, queueKey = `fila:${uid}`;
+        const result = await this.db.alterarDocumentos([stateKey, queueKey], docs => {
+            const state = docs.get(stateKey), queue = docs.get(queueKey);
+            if (!state || !this.validarEstado(state.dados) || !queue || !this.validarFila(queue)) throw new Error('Persistência inválida');
+            if (isCurrent() && financialStatesEquivalent(state.dados, estadoEsperado)
+                && !queue.outbox.length && !queue.conflicts.length && !queue.restoredPending) {
+                queue.lastConfirmed = !Number.isFinite(Date.parse(queue.lastConfirmed)) || quando > queue.lastConfirmed ? quando : queue.lastConfirmed;
+                queue.migrationPending = false;
+                confirmed = true;
+            }
+            return docs;
+        });
+        return { confirmed, fila: result.get(queueKey) };
+    }
     async alterarFila(uid, transformar) {
         if (!(uid === '@local' || /^[A-Za-z0-9_-]{1,128}$/.test(uid || '')) || typeof transformar !== 'function')
             throw new Error('UID ou transformação inválida');
-        return this.db.alterar(`fila:${uid}`, (original) => {
+        return this.coordenarSettings(uid, () => this.db.alterar(`fila:${uid}`, (original) => {
             if (!original || !this.validarFila(original) || !Array.isArray(original.outbox))
                 throw new Error('Fila não inicializada ou inválida');
             const atual = copy(original);
@@ -180,7 +209,7 @@ export class ServicoFinanceiroAtomico {
             if (!proxima || typeof proxima.then === 'function' || !this.validarFila(proxima)
                 || !Array.isArray(proxima.outbox)) throw new Error('Fila resultante inválida');
             return copy(proxima);
-        });
+        }));
     }
     async enfileirar(uid, operation) {
         if (!operation || typeof operation.id !== 'string' || !operation.id)
@@ -190,6 +219,20 @@ export class ServicoFinanceiroAtomico {
             if (atual && JSON.stringify(atual) !== JSON.stringify(operation))
                 throw new Error('ID de operação duplicado com payload divergente');
             if (!atual) fila.outbox.push(copy(operation));
+            return fila;
+        });
+    }
+    async registrarConflitoSettings(uid, conflito, isCurrent = () => true) {
+        const candidate = copy(conflito);
+        if (candidate?.kind !== 'settings' || !functionalSettings(candidate.local)
+            || !validateRemoteSettings(candidate.remote)) throw new Error('Conflito de configurações inválido');
+        return this.alterarFila(uid, fila => {
+            if (!isCurrent()) throw Object.assign(new Error('Sessão de persistência invalidada'), { code: 'persistence/cancelled' });
+            // Inspect the current queue inside the transaction, including entries
+            // added by another tab. Existing entries remain byte-for-byte intact.
+            if (!settingsEquivalent(candidate.local, candidate.remote) && !fila.conflicts.some(item =>
+                item?.kind === 'settings' && settingsEquivalent(item.local, candidate.local)
+                && settingsEquivalent(item.remote, candidate.remote))) fila.conflicts.push(candidate);
             return fila;
         });
     }
