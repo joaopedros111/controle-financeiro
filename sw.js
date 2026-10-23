@@ -1,5 +1,5 @@
 const PREFIXO_CACHE = "controle-financeiro-pwa-cache-";
-const CACHE = PREFIXO_CACHE + "v18";
+const CACHE = PREFIXO_CACHE + "v19";
 const VERSAO_SERVICE_WORKER = "1.1.9";
 const CACHE_ANTIGO = "controle-financeiro-v5";
 const ARQUIVOS = [
