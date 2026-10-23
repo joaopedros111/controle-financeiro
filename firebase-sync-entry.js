@@ -1,6 +1,6 @@
 import { initializeApp } from "firebase/app";
 import { snapshotConfirmed, validConflictRecord, recordEntityKey, validSyncIdentity, unicodeWellFormed } from "./sync-core.js";
-import { getAuth, GoogleAuthProvider, setPersistence, browserLocalPersistence, signInWithPopup, signInWithRedirect, getRedirectResult, onAuthStateChanged, signOut } from "firebase/auth";
+import { initializeAuth, browserPopupRedirectResolver, GoogleAuthProvider, browserLocalPersistence, indexedDBLocalPersistence, browserSessionPersistence, signInWithPopup, signInWithRedirect, getRedirectResult, onAuthStateChanged, signOut } from "firebase/auth";
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, memoryLocalCache, getFirestore, collection, doc, getDocs, getDocsFromServer, getDoc, getDocFromServer, onSnapshot, runTransaction, serverTimestamp, query, orderBy, setDoc, Timestamp } from "firebase/firestore";
 
 const settingsV2Ref = (db, uid) => doc(db, "users", uid, "settingsV2", "finance");
@@ -36,9 +36,31 @@ function makeSettingsRevision(baseRevision, settings) {
     return `settings-${[first, second, third, fourth].map((hash) => (hash >>> 0).toString(16).padStart(8, "0")).join("")}`;
 }
 
+// Check only a unique probe owned by this call; never remove an Auth or financial key.
+function verificarPersistenciaAuth() {
+    const key = '__controle_financeiro_auth_probe__' + Date.now() + '-' + Math.random();
+    let persistenceStorage;
+    try {
+        persistenceStorage = localStorage;
+        persistenceStorage.setItem(key, key);
+        if (persistenceStorage.getItem(key) !== key) throw new Error('Storage unavailable');
+    } catch {
+        throw Object.assign(new Error('O navegador bloqueou a persistencia da sessao. Permita o armazenamento e tente novamente.'), { code: 'auth/web-storage-unsupported' });
+    } finally {
+        try { persistenceStorage?.removeItem(key); } catch { /* Probe cleanup only. */ }
+    }
+}
+
 export function criarFirebaseSync(config) {
     const app = initializeApp(config);
-    const auth = getAuth(app);
+    verificarPersistenciaAuth();
+    // Local storage is the definitive first choice. Legacy backends remain in
+    // the SDK hierarchy for session recovery, without switching persistence in ready().
+    // initializeAuth reuses identical options and rejects incompatible prior initialization.
+    const auth = initializeAuth(app, {
+        persistence: [browserLocalPersistence, indexedDBLocalPersistence, browserSessionPersistence],
+        popupRedirectResolver: browserPopupRedirectResolver
+    });
     const ensureUser = (uid) => { if (auth.currentUser?.uid !== uid) throw new Error("Conta não corresponde ao usuário autenticado."); };
     const provider = new GoogleAuthProvider();
     let db;
@@ -46,7 +68,8 @@ export function criarFirebaseSync(config) {
     catch { try { db = initializeFirestore(app, { localCache: memoryLocalCache() }); } catch { db = getFirestore(app); } }
     return {
         async ready() {
-            await setPersistence(auth, browserLocalPersistence);
+            await auth.authStateReady();
+            verificarPersistenciaAuth();
             try { await getRedirectResult(auth); }
             catch (error) {
                 if (globalThis.navigator?.onLine !== false || error?.code !== "auth/network-request-failed") throw error;

@@ -318,3 +318,48 @@ test('an old record snapshot cannot start publication in a replacement session',
  c.syncSessions.begin();c.syncUser={uid:'bob'};release.resolve();await receiving;
  assert.equal(publishes,0);
 });
+
+for (const replacement of ['bob',null,'alice']) test('reconnection paused in remote records cannot act after session replacement: '+replacement,async()=>{
+ const h=await setup(),c=h.context;h.installUserHandler();
+ const local=c.financialSettings();
+ h.docs.get('estado:bob').dados.tema='claro';h.docs.get('fila:bob').settingsBaseline=local;
+ h.server.set('bob',snapshot(local,'bob-s0'));h.server.set('alice',snapshot({...local,theme:'escuro'},'alice-new'));
+ const entered=deferred(),release=deferred(),original=c.onRemoteRecords;let first=true;
+ c.onRemoteRecords=async(...args)=>{if(first&&c.syncUser?.uid==='alice'){first=false;entered.resolve();await release.promise;}return original(...args);};
+ const writes=[];c.firebaseClient.saveSettings=async(uid,value,_base,canWrite)=>{writes.push({uid,value:structuredClone(value),allowed:canWrite()});return {acknowledged:true,revision:'saved'};};
+ const old=c.onFirebaseUser({uid:'alice'});await entered.promise;
+ await c.onFirebaseUser(replacement?{uid:replacement}:null);
+ const before=JSON.stringify([...h.docs]),state=JSON.stringify(c.estado),writeCount=writes.length;
+ release.resolve();await old;
+ assert.equal(JSON.stringify([...h.docs]),before);assert.equal(JSON.stringify(c.estado),state);assert.equal(writes.length,writeCount);
+ assert.equal(c.syncUser?.uid||null,replacement);
+});
+test('late account metadata cannot replace the next session checkbox or controls',async()=>{
+ const h=await setup(),c=h.context;h.installUserHandler();h.docs.get('fila:alice').enabled=false;
+ const entered=deferred(),release=deferred(),read=c.idbServico.lerFila.bind(c.idbServico);let first=true;
+ c.idbServico.lerFila=async uid=>{const result=await read(uid);if(uid==='alice'&&first){first=false;entered.resolve();await release.promise;}return result;};
+ const old=c.onFirebaseUser({uid:'alice'});await entered.promise;await c.onFirebaseUser({uid:'bob'});
+ const before=JSON.stringify(c.syncUi),queue=JSON.stringify(h.queue('bob'));
+ release.resolve();await old;assert.equal(JSON.stringify(c.syncUi),before);assert.equal(JSON.stringify(h.queue('bob')),queue);
+ assert.equal(c.syncUi.enabled.checked,true);
+});
+
+for (const boundary of ['listen','listenSettings','listenConflicts']) test('obsolete initialization cannot install listeners or update controls after '+boundary,async()=>{
+ const h=await setup(),c=h.context;h.installUserHandler();
+ const entered=deferred(),release=deferred(),read=c.idbServico.lerFila.bind(c.idbServico);let ready=false,first=true,registrations=0;
+ for(const method of ['listen','listenSettings','listenConflicts'])c.firebaseClient[method]=uid=>{registrations++;if(uid==='alice'&&method===boundary)ready=true;return ()=>{};};
+ c.idbServico.lerFila=async uid=>{const result=await read(uid);if(uid==='alice'&&ready&&first){first=false;entered.resolve();await release.promise;}return result;};
+ const old=c.onFirebaseUser({uid:'alice'});await entered.promise;await c.onFirebaseUser({uid:'bob'});
+ const before=JSON.stringify(c.syncUi),count=registrations,docs=JSON.stringify([...h.docs]);release.resolve();await old;
+ assert.equal(registrations,count);assert.equal(JSON.stringify(c.syncUi),before);assert.equal(JSON.stringify([...h.docs]),docs);
+});
+
+test('first-link state helper cannot replace the next session key or controls after persistence returns',async()=>{
+ const h=await setup(),c=h.context,entered=deferred(),release=deferred();let active=true;
+ vm.runInContext(source.slice(source.indexOf('async function setFinancialStateKey('),source.indexOf('function syncEntityKey(')),c);
+ c.persistirEstadoFinanceiro=async()=>{entered.resolve();await release.promise;return true;};
+ const pending=c.setFinancialStateKey(c.chaveEstadoAtual,c.estado,()=>active);await entered.promise;
+ active=false;c.chaveEstadoAtual=sync.chaveLocalConta('bob');c.estado=structuredClone(h.docs.get('estado:bob').dados);c.idbBase=structuredClone(c.estado);
+ const before=JSON.stringify(c.estado);release.resolve();assert.equal(await pending,false);
+ assert.equal(c.chaveEstadoAtual,sync.chaveLocalConta('bob'));assert.equal(JSON.stringify(c.estado),before);
+});

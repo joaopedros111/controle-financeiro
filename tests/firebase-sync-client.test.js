@@ -9,7 +9,7 @@ const source = (await readFile(new URL("../firebase-sync-entry.js", import.meta.
 
 // The production factory and transaction callbacks run unchanged; SDK I/O is local.
 function harness() {
-    const data = new Map(), listeners = [], auth = { currentUser: { uid: "alice" } };
+    const data = new Map(), listeners = [], auth = { currentUser: { uid: "alice" }, authStateReady: async()=>{} };
     const stamp = { seconds: 10, nanoseconds: 0 };
     const snapshot = (key) => {
         const present = data.has(key), value = structuredClone(data.get(key));
@@ -17,7 +17,9 @@ function harness() {
     };
     let lock = Promise.resolve(), failWrite = false;
     const context = vm.createContext({ snapshotConfirmed, validConflictRecord, recordEntityKey, validSyncIdentity, unicodeWellFormed, console,
-        initializeApp: () => ({}), getAuth: () => auth, GoogleAuthProvider: class {},
+        initializeApp: () => ({}), initializeAuth: (_app,options) => { context.authOptions=options; return auth; }, GoogleAuthProvider: class {},
+        browserLocalPersistence: {type:'LOCAL'}, indexedDBLocalPersistence: {type:'LOCAL-IDB'}, browserSessionPersistence: {type:'SESSION'}, browserPopupRedirectResolver: {},
+        localStorage: {setItem:(k,v)=>data.set(k,v),getItem:k=>data.get(k)??null,removeItem:k=>data.delete(k)},
         initializeFirestore: () => ({}), persistentLocalCache: () => ({}), persistentMultipleTabManager: () => ({}),
         doc: (...parts) => parts.filter((part) => typeof part === "string").join("/"),
         collection: (...parts) => parts.filter((part) => typeof part === "string").join("/"),
@@ -146,7 +148,9 @@ test("cliente de produção executa transações e configurações nas regras do
     const rules = await readFile(new URL("../firestore.rules", import.meta.url), "utf8");
     const env = await initializeTestEnvironment({ projectId: "demo-sync-client-contract", firestore: { host, port: Number(port), rules } });
     const dependencies = { ...sdk, snapshotConfirmed, validConflictRecord, recordEntityKey, validSyncIdentity, unicodeWellFormed,
-        initializeApp: () => ({}), getAuth: () => ({ currentUser: { uid: "alice" } }), GoogleAuthProvider: class {},
+        initializeApp: () => ({}), initializeAuth: () => ({ currentUser: { uid: "alice" } }), GoogleAuthProvider: class {},
+        browserLocalPersistence: {},indexedDBLocalPersistence:{},browserSessionPersistence:{},browserPopupRedirectResolver:{},
+        localStorage: {setItem(k,v){this[k]=v;},getItem(k){return this[k]??null;},removeItem(k){delete this[k];}},
         initializeFirestore: () => env.authenticatedContext("alice").firestore(),
         persistentLocalCache: () => ({}), persistentMultipleTabManager: () => ({}) };
     // Same realm as the SDK so Firestore sees ordinary objects, with only auth/bootstrap replaced.
@@ -214,3 +218,35 @@ test('ready restores existing session even when no redirect result exists',async
     const h=harness();h.context.setPersistence=async()=>{};h.context.browserLocalPersistence={};h.context.getRedirectResult=async()=>null;
     assert.equal((await h.client.ready()).uid,'alice');
 });
+
+ test('Auth bootstrap declares one consistent hierarchy and preserves browser popup resolver',()=>{
+  const h=harness(),options=h.context.authOptions;
+  assert.equal(options.persistence[0],h.context.browserLocalPersistence);
+  assert.equal(options.persistence[1],h.context.indexedDBLocalPersistence);
+  assert.equal(options.persistence[2],h.context.browserSessionPersistence);
+  assert.equal(options.popupRedirectResolver,h.context.browserPopupRedirectResolver);
+  assert.equal(h.data.size,0,'probe leaves no keys');
+ });
+ test('ready waits for restored Auth without changing its persistence',async()=>{
+  const h=harness();let release,redirectCalls=0;h.auth.authStateReady=()=>new Promise(r=>release=r);
+  h.context.setPersistence=()=>{throw new Error('late persistence switch');};
+  h.context.getRedirectResult=async()=>{redirectCalls++;return null;};
+  const ready=h.client.ready();await Promise.resolve();assert.equal(redirectCalls,0);
+  release();assert.equal((await ready).uid,'alice');assert.equal(redirectCalls,1);
+ });
+ test('incompatible prior Auth initialization fails without replacing or signing out the user',()=>{
+  const h=harness();h.context.initializeAuth=()=>{throw Object.assign(new Error('different options'),{code:'auth/already-initialized'});};
+  assert.throws(()=>h.context.criarFirebaseSync({}),e=>e.code==='auth/already-initialized');assert.equal(h.auth.currentUser.uid,'alice');
+ });
+ test('unavailable local persistence fails closed before Auth bootstrap and can retry without clearing existing keys',()=>{
+  const h=harness();h.data.set('existing-auth-source','preserve');let calls=0;
+  const original=h.context.initializeAuth;h.context.initializeAuth=(...args)=>{calls++;return original(...args);};
+  const set=h.context.localStorage.setItem;h.context.localStorage.setItem=()=>{throw new Error('blocked');};
+  assert.throws(()=>h.context.criarFirebaseSync({}),e=>e.code==='auth/web-storage-unsupported');assert.equal(calls,0);assert.equal(h.data.get('existing-auth-source'),'preserve');
+  h.context.localStorage.setItem=set;assert.ok(h.context.criarFirebaseSync({}));assert.equal(calls,1);
+ });
+ test('persistence revoked before ready prevents redirect and preserves the restored user',async()=>{
+  const h=harness();let redirects=0;h.context.getRedirectResult=async()=>{redirects++;};
+  h.context.localStorage.setItem=()=>{throw new Error('blocked');};
+  await assert.rejects(h.client.ready(),e=>e.code==='auth/web-storage-unsupported');assert.equal(redirects,0);assert.equal(h.auth.currentUser.uid,'alice');
+ });

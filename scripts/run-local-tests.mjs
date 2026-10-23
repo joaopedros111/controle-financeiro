@@ -43,13 +43,54 @@ if (browser) {
     const fixture = path.join(work, "firebase-browser-fixture.mjs");
     await writeFile(fixture, `
         import { criarFirebaseSync as production } from ${JSON.stringify(path.join(root, "firebase-sync-entry.js").replaceAll("\\", "/"))};
-        import {getAuth,connectAuthEmulator,signInWithEmailAndPassword} from "firebase/auth";
+        import {initializeApp} from "firebase/app";
+        import {getAuth,initializeAuth,browserLocalPersistence,indexedDBLocalPersistence,browserSessionPersistence,connectAuthEmulator,signInWithEmailAndPassword} from "firebase/auth";
         import {getFirestore,connectFirestoreEmulator} from "firebase/firestore";
+        const requireDemo=(config)=>{if(config.projectId!=="${project}" || !["127.0.0.1","localhost"].includes(location.hostname))throw new Error('Ambiente local invalido');};
+        export async function seedLegacyAuthForTest(config,kind,email){
+            requireDemo(config);
+            if(!['idb','session'].includes(kind))throw new Error('Invalid test backend');
+            const auth=initializeAuth(initializeApp(config),{persistence:kind==='idb'?indexedDBLocalPersistence:browserSessionPersistence});
+            connectAuthEmulator(auth,"http://127.0.0.1:9099",{disableWarnings:true});
+            await auth.authStateReady();await signInWithEmailAndPassword(auth,email,'synthetic-password-only');
+        }
+        export function productionClientForTest(config){requireDemo(config);return production(config);}
         export function criarFirebaseSync(config) {
             if(config.projectId!=="${project}" || !["127.0.0.1","localhost"].includes(location.hostname)) throw new Error("Ambiente local inválido");
+            // Deterministic regression gate, armed only by the dedicated synthetic test.
+            if(window.__guardAuthSessionRemoval && !window.__authRemovalGuardInstalled){
+                window.__authRemovalGuardInstalled=true;window.__authSessionRemovals=0;
+                const original=browserLocalPersistence.prototype._remove;
+                browserLocalPersistence.prototype._remove=async function(key){
+                    if(key.includes('firebase:authUser:') && localStorage.getItem(key)!==null){
+                        window.__authSessionRemovals++;
+                        await original.call(this,key);
+                        await new Promise(resolve=>window.__releaseAuthRemoval=resolve);
+                        return;
+                    }
+                    return original.call(this,key);
+                };
+            }
             const client=production(config), auth=getAuth();
             connectAuthEmulator(auth,"http://127.0.0.1:9099",{disableWarnings:true});
             connectFirestoreEmulator(getFirestore(),"127.0.0.1",8080);
+            // Synthetic-only diagnostics: never capture credentials, tokens or financial payloads.
+            let authEvent=0;
+            const log=(operation,uid,phase,code)=>{
+                const entries=window.__syncDiagnostics ||= [];
+                entries.push({at:Date.now(),operation,requestedUid:uid||null,authUid:auth.currentUser?.uid||null,authEvent,phase,code:code||null});
+                if(entries.length>200)entries.shift();
+            };
+            const observe=client.onUser.bind(client);
+            client.onUser=(callback)=>observe(user=>{authEvent++;log('auth',user?.uid,'callback');return callback(user);});
+            for(const operation of ['list','getSettings','listConflicts']){
+                const original=client[operation].bind(client);
+                client[operation]=async(uid,...args)=>{log(operation,uid,'start');try{const result=await original(uid,...args);log(operation,uid,'complete');return result;}catch(error){log(operation,uid,'error',error?.code);throw error;}};
+            }
+            for(const operation of ['listen','listenSettings','listenConflicts']){
+                const original=client[operation].bind(client);
+                client[operation]=(uid,callback,failure)=>{log(operation,uid,'start');return original(uid,callback,error=>{log(operation,uid,'error',error?.code);failure?.(error);});};
+            }
             client.login=()=>signInWithEmailAndPassword(auth,window.__testEmail,"synthetic-password-only");
             return client;
         }

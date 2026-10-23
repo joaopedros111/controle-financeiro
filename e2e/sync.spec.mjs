@@ -72,6 +72,7 @@ test.afterEach(async ({ context }, testInfo) => {
     const snapshots = [];
     for (const page of context.pages()) {
         snapshots.push(await page.evaluate(() => ({ status: document.querySelector("#estado-sincronizacao")?.textContent,
+            syncDiagnostics: window.__syncDiagnostics || [],
             data: Object.fromEntries(Object.entries(localStorage).filter(([key]) => key.startsWith("controleFinanceiro:"))) })).catch(() => ({ closed: true })));
     }
     await testInfo.attach("synthetic-state", { body: JSON.stringify(snapshots, null, 2), contentType: "application/json" });
@@ -217,4 +218,64 @@ test("H: exclusão em uma aba e edição antiga na outra preservam conflito", as
     const meta = await stored(other, metaKey(account.localId));
     expect(meta.outbox.some((op) => op.value.deleted) || (meta.conflicts || []).length > 0,
         "A edição antiga não pode apagar a intenção de exclusão já persistida").toBe(true);
+});
+
+// A gate at the exact old migration boundary makes the regression independent of timing.
+test('I: Auth bootstrap keeps the first tab signed in and never removes its shared session',async({context,page,request})=>{
+ const account=await createAccount(request,'auth-bootstrap@local.test');
+ await prepare(context,page,account.email);await login(page,account);
+ const initialEvents=await page.evaluate(()=>window.__syncDiagnostics.length);
+ const other=await context.newPage();other.on('dialog',d=>d.accept());
+ await other.addInitScript(email=>{window.__testEmail=email;window.__guardAuthSessionRemoval=true;},account.email);
+ await other.goto('/');
+ await other.waitForFunction(email=>window.__authSessionRemovals>0||document.querySelector('#conta-sincronizacao')?.textContent.includes(email),account.email);
+ const removals=await other.evaluate(()=>window.__authSessionRemovals);
+ if(removals){
+  await expect.poll(()=>page.evaluate(start=>window.__syncDiagnostics.slice(start).some(e=>e.operation==='auth'&&e.authUid===null),initialEvents)).toBe(true);
+  await other.evaluate(()=>window.__releaseAuthRemoval?.());
+ }
+ expect(removals).toBe(0);
+ await expect(other.locator('#estado-sincronizacao')).toHaveText('Sincronizado');
+ expect(await page.evaluate(start=>window.__syncDiagnostics.slice(start).some(e=>e.operation==='auth'&&e.authUid===null),initialEvents)).toBe(false);
+ expect(await other.evaluate(uid=>window.__syncDiagnostics.some(e=>e.operation==='list'&&e.phase==='complete'&&e.requestedUid===uid&&e.authUid===uid),account.localId)).toBe(true);
+});
+
+for(const backend of ['idb','session'])test('J: restores legacy Auth '+backend+' without losing the account',async({context,page,request})=>{
+ const account=await createAccount(request,'legacy-'+backend+'@local.test');
+ await context.route('**/*',route=>['127.0.0.1','localhost'].includes(new URL(route.request().url()).hostname)?route.continue():route.abort('blockedbyclient'));
+ page.on('dialog',d=>d.accept());await page.goto('/local-only.html');
+ await page.evaluate(async({backend,email})=>{
+  const {firebaseConfig}=await import('/firebase-config.js');const sdk=await import('/firebase-sync.bundle.js');
+  await sdk.seedLegacyAuthForTest(firebaseConfig,backend,email);
+ },{backend,email:account.email});
+ await page.goto('/');await expect(page.locator('#conta-sincronizacao')).toContainText(account.email);
+ await expect(page.locator('#estado-sincronizacao')).toHaveText('Sincronizado');
+ expect(await page.evaluate(uid=>window.__syncDiagnostics.some(e=>e.operation==='list'&&e.phase==='complete'&&e.authUid===uid),account.localId)).toBe(true);
+});
+test('K: a second production factory reuses the configured Auth session',async({context,page,request})=>{
+ const account=await createAccount(request,'reuse-auth@local.test');await prepare(context,page,account.email);await login(page,account);
+ expect(await page.evaluate(async()=>{const {firebaseConfig}=await import('/firebase-config.js');const sdk=await import('/firebase-sync.bundle.js');return (await sdk.productionClientForTest(firebaseConfig).ready()).uid;})).toBe(account.localId);
+ await expect(page.locator('#conta-sincronizacao')).toContainText(account.email);
+});
+
+test('L: blocked expected Auth persistence preserves offline financial data and permits recovery',async({context,page,request})=>{
+ const account=await createAccount(request,'storage-recovery@local.test');
+ await page.addInitScript(()=>{
+  const original=Storage.prototype.setItem;
+  window.__allowAuthStorage=false;
+  Storage.prototype.setItem=function(key,value){if(key.startsWith('__controle_financeiro_auth_probe__')&&!window.__allowAuthStorage)throw new DOMException('test storage blocked','SecurityError');return original.call(this,key,value);};
+ });
+ await prepare(context,page,account.email);
+ await expect(page.locator('#estado-sincronizacao')).toContainText('armazenamento');
+ await addIncome(page,'Preservada durante bloqueio Auth',10);
+ const local=await stored(page,'controleFinanceiro:v3');expect(Object.values(local.meses).flatMap(m=>m.receitas).some(r=>r.nome==='Preservada durante bloqueio Auth')).toBe(true);
+ await page.evaluate(()=>{window.__allowAuthStorage=true;document.querySelector('#tentar-sincronizacao').click();});
+ await expect(page.locator('#estado-sincronizacao')).toHaveText('Somente neste dispositivo.');
+ await login(page,account);
+ // Signing in must preserve the anonymous source; this test must not require
+ // an automatic financial migration between anonymous and account namespaces.
+ expect(await stored(page,'controleFinanceiro:v3')).toEqual(local);
+ await page.locator('#abrir-ajustes').click();await page.locator('#sair-google').click();
+ await expect(page.locator('#conta-sincronizacao')).toBeEmpty();
+ await expect(page.locator('#lista-receitas')).toContainText('Preservada durante bloqueio Auth');
 });

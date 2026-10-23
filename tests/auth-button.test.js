@@ -1,3 +1,4 @@
+import {chaveLocalConta} from '../sync-core.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
@@ -49,7 +50,7 @@ test('synchronous popup failure resets busy state',async()=>{
     h.c.startGoogleLogin();assert.equal(h.c.syncUi.login.disabled,false);assert.match(h.statuses.at(-1),/popups/);
 });
 test('real auth callback disables login before awaiting financial writes',async()=>{
-    const h=harness(),pending=deferred();Object.assign(h.c,{idbPendente:pending.promise,syncSessions:{begin:()=>1},isCurrentSyncSession:()=>false});
+    const h=harness(),pending=deferred();Object.assign(h.c,{chaveLocalConta,idbPendente:pending.promise,syncSessions:{begin:()=>1},isCurrentSyncSession:()=>false});
     vm.runInContext(source.slice(source.indexOf('async function onFirebaseUser('),source.indexOf('let syncPublishChain =')),h.c);
     const result=h.c.onFirebaseUser({uid:'alice'});assert.equal(h.c.syncUi.login.disabled,true);
     pending.resolve();await result;
