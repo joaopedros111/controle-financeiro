@@ -95,3 +95,18 @@ test('month navigation persists its preference without financial writes, notific
  await c.idbPendente;
  assert.equal(preferences,2);assert.equal(financialWrites,0);assert.equal(JSON.stringify([...db.docs]),before);assert.deepEqual(messages,[]);
 });
+
+test('initial rendering after reload is silent and preserves financial state, pending operations and conflicts',async()=>{
+ const db=database(),service=new ServicoFinanceiroAtomico(db,validarBackup,q=>Array.isArray(q?.outbox)&&Array.isArray(q?.conflicts));
+ const baseline=state(item('preserved')),messages=[];
+ await service.inicializar('local',baseline,{outbox:[{id:'pending'}],conflicts:[{kind:'preserved'}],lastConfirmed:'previous'});
+ const before=JSON.stringify([...db.docs]),h=tab(service,baseline,messages),c=h.context;let writes=0,renders=0;
+ const apply=service.aplicarEdicao.bind(service);service.aplicarEdicao=(...args)=>{writes++;return apply(...args);};
+ Object.assign(c,{renderTema(){renders++;},aplicarPrivacidade(){},aplicarPreferenciasVisuais(){},aplicarPreferenciasMenu(){},
+  renderPeriodo(){},renderReceitas(){},renderDespesas(){},atualizarResumo(persistir){if(persistir)c.salvar();}});
+ vm.runInContext(app.slice(app.indexOf('function renderTudo('),app.indexOf('let ultimaRemocao =')),c);
+ const end=app.indexOf('const telaInicialAplicada =');
+ vm.runInContext(app.slice(app.lastIndexOf('renderTudo(',end),end),c);
+ await c.idbPendente;
+ assert.equal(renders,1);assert.equal(writes,0);assert.equal(JSON.stringify([...db.docs]),before);assert.deepEqual(messages,[]);
+});

@@ -3700,7 +3700,7 @@ ui.tema.addEventListener("click", () => {
 
 
 
-renderTudo();
+renderTudo(false);
 aplicarPreferenciasMenu();
 aplicarPrivacidade();
 atualizarDiagnostico();
