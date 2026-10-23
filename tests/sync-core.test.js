@@ -11,6 +11,7 @@ test("settings equivalence ignores transport metadata and category/key order wit
     const b = { version: 3, categories: ["Moto", "Serasa"], theme: "claro", budgets: { meses: {}, padrao: { Moto: 100, Serasa: 200 } }, revision: "b", updatedAt: { seconds: 9, nanoseconds: 0 } };
     const before = JSON.stringify([a, b]);
     assert.equal(settingsEquivalent(a, b), true);
+    assert.equal(settingsEquivalent(a,{...a,theme:"escuro"}),true);
     assert.deepEqual(functionalSettings(a).categories, ["Moto", "Serasa"]);
     assert.equal(JSON.stringify([a, b]), before);
     assert.equal(Object.hasOwn(functionalSettings(a), "revision"), false);
@@ -20,7 +21,7 @@ test("settings equivalence preserves real differences, version, exact names and 
     const a = { version: 3, categories: ["Moto", "Serasa"], theme: "claro", budgets: { padrao: {}, meses: {} } };
     for (const changed of [{ ...a, version: 2 }, { ...a, categories: ["Moto"] },
         { ...a, categories: ["moto", "Serasa"] }, { ...a, categories: ["Moto ", "Serasa"] },
-        { ...a, theme: "escuro" }, { ...a, budgets: { padrao: { Moto: 0 }, meses: {} } }]) {
+        { ...a, budgets: { padrao: { Moto: 0 }, meses: {} } }]) {
         assert.equal(settingsEquivalent(a, changed), false);
     }
     for (const invalid of [{ ...a, categories: ["Moto", "Moto"] }, { ...a, theme: "invalid" },

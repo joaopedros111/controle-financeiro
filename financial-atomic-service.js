@@ -64,6 +64,12 @@ export class ServicoFinanceiroAtomico {
                 throw new Error('Operações de sincronização inválidas');
             const ids = new Map(queue.outbox.map((op) => [op.id, JSON.stringify(op)]));
             const newQueue = copy(queue);
+            const criticalEdit = merged.mudancas.length || !recordsEquivalent(previous.dados.categorias, merged.estado.categorias)
+                || !recordsEquivalent(previous.dados.orcamentos, merged.estado.orcamentos);
+            if (criticalEdit) {
+                if (newQueue.settingsPristine === true) newQueue.settingsPristine = false;
+                if (newQueue.firstLinkSource === 'anonymous') newQueue.firstLinkSource = 'account';
+            }
             for (const op of operations) {
                 const prior = op.entityKey && newQueue.outbox.filter(item => item.entityKey === op.entityKey).at(-1);
                 if (prior && !newQueue.attempted?.[prior.id]) {

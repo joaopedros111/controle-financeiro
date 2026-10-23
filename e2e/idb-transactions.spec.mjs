@@ -66,7 +66,7 @@ test('IDB real: settings deduplication in two tabs preserves eight existing conf
             remote:{...remote(String(i)),categories:i<2?['Casa']:local.categories}}));
         await qaService.alterarFila('qa-alice',queue=>({...queue,conflicts,outbox:[{id:'pending',entityKey:'pending'}]}));
         return {local,conflicts,beforeState:JSON.stringify(await qaDb.ler('estado:qa-alice')),
-            novel:{kind:'settings',local,remote:{...remote('new'),theme:'escuro'}}};
+            novel:{kind:'settings',local,remote:{...remote('new'),budgets:{padrao:{Moto:100},meses:{}}}}};
     });
     await Promise.all([
         page.evaluate(async({novel})=>qaService.registrarConflitoSettings('qa-alice',novel),fixture),
@@ -136,7 +136,7 @@ test('IDB real: cross-tab settings publication and conflict registration have a 
   const local={version:3,categories:['Casa','Moto','Serasa'],theme:'claro',budgets:{padrao:{},meses:{}}};
   window.qaRegistered=false;
   window.qaRegistering=qaService.registrarConflitoSettings('qa-alice',{kind:'settings',local,
-   remote:{...local,theme:'escuro',revision:'other-tab',updatedAt:{seconds:10,nanoseconds:0}}}).then(()=>window.qaRegistered=true);
+   remote:{...local,budgets:{padrao:{Moto:100},meses:{}},revision:'other-tab',updatedAt:{seconds:10,nanoseconds:0}}}).then(()=>window.qaRegistered=true);
  });
  expect(await other.evaluate(()=>window.qaRegistered)).toBe(false);
  expect(await page.evaluate(async()=>(await qaService.lerFila('qa-alice')).conflicts.length)).toBe(0);

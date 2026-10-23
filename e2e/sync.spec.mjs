@@ -279,3 +279,41 @@ test('L: blocked expected Auth persistence preserves offline financial data and 
  await expect(page.locator('#conta-sincronizacao')).toBeEmpty();
  await expect(page.locator('#lista-receitas')).toContainText('Preservada durante bloqueio Auth');
 });
+
+// All accounts and writes below are restricted by the fixture to the demo Emulators.
+test('M: a genuinely fresh second device adopts critical settings without a divergence prompt',async({browser,context,page,request})=>{
+ const account=await createAccount(request,'first-link-critical@local.test');await prepare(context,page,account.email);await login(page,account);
+ await page.evaluate(async uid=>{
+  const {firebaseConfig}=await import('/firebase-config.js'),sdk=await import('/firebase-sync.bundle.js?_release='+encodeURIComponent(document.querySelector('meta[name="app-version"]').content));
+  const client=sdk.productionClientForTest(firebaseConfig);await client.ready();const remote=await client.getSettings(uid);
+  await client.saveSettings(uid,{version:3,categories:[...new Set([...remote.categories,'Moto','Serasa'])],theme:'escuro',budgets:{padrao:{Moto:90,Serasa:40},meses:{}}},remote.revision);
+ },account.localId);
+ const device=await browser.newContext();
+ try {
+  const other=await device.newPage(),dialogs=[];other.on('dialog',dialog=>dialogs.push(dialog.message()));
+  await prepare(device,other,account.email);await login(other,account);
+  const state=await stored(other,stateKey(account.localId)),queue=await stored(other,metaKey(account.localId));
+  expect(state.categorias).toEqual(expect.arrayContaining(['Moto','Serasa']));expect(state.orcamentos.padrao).toEqual({Moto:90,Serasa:40});
+  expect(state.tema||'claro').toBe('claro');expect(queue.conflicts).toHaveLength(0);expect(queue.firstLinkReviewed).toBe(true);
+  expect(dialogs.some(message=>message.includes('As categorias'))).toBe(false);
+ } finally {await device.close();}
+});
+test('N: theme-only observations in two tabs preserve critical settings and do not create conflicts',async({context,page,request})=>{
+ const account=await createAccount(request,'theme-only-tabs@local.test');await prepare(context,page,account.email);await login(page,account);
+ const other=await context.newPage();await prepare(context,other,account.email);
+ await expect(other.locator('#estado-sincronizacao')).toHaveText('Sincronizado');
+ const before=await stored(page,stateKey(account.localId));
+ await page.evaluate(async uid=>{
+  const {firebaseConfig}=await import('/firebase-config.js'),sdk=await import('/firebase-sync.bundle.js?_release='+encodeURIComponent(document.querySelector('meta[name="app-version"]').content));
+  const client=sdk.productionClientForTest(firebaseConfig);await client.ready();const remote=await client.getSettings(uid);
+  await client.saveSettings(uid,{version:remote.version,categories:remote.categories,theme:'escuro',budgets:remote.budgets},remote.revision);
+ },account.localId);
+ // A server read supplies an event boundary; no fixed delay or generic retry of writes.
+ await other.evaluate(async uid=>{const {firebaseConfig}=await import('/firebase-config.js'),sdk=await import('/firebase-sync.bundle.js?_release='+encodeURIComponent(document.querySelector('meta[name="app-version"]').content));const client=sdk.productionClientForTest(firebaseConfig);await client.ready();await client.getSettings(uid);},account.localId);
+ await expect.poll(async()=>(await stored(other,metaKey(account.localId)))?.settingsBaseline?.theme).toBe('escuro');
+ for(const tab of [page,other]){
+  const state=await stored(tab,stateKey(account.localId)),queue=await stored(tab,metaKey(account.localId));
+  expect(state.categorias).toEqual(before.categorias);expect(state.orcamentos).toEqual(before.orcamentos);expect(state.tema).toBe(before.tema);
+  expect(queue.conflicts).toHaveLength(0);expect(queue.outbox).toHaveLength(0);
+ }
+});

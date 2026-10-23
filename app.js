@@ -679,7 +679,7 @@ function salvar() {
         const previous = await idbBanco.ler("estado:local"), previousQueue = await idbBanco.ler("fila:local");
         if (!!previous !== !!previousQueue) throw new Error("Migracao experimental parcial");
         const result = await idbServico.inicializar(deviceUid, previous?.dados || estadoParaSalvar(),
-            previousQueue || { outbox: [], conflicts: [], lastConfirmed: null });
+            previousQueue || { outbox: [], conflicts: [], lastConfirmed: null, settingsPristine: legacy.estado === "ausente" && !previous && !migracaoLegadaPendente && !migracaoEstadoV2Pendente && !dadosStorageAntigoPendentes });
         estado = normalizarEstado(result.estado.dados);
         idbBase = structuredClone(estadoParaSalvar());
         window.addEventListener("pagehide", () => idbBanco?.fechar(), { once: true });
@@ -690,7 +690,7 @@ function salvar() {
     }
 }
 
-async function persistirEstadoFinanceiro(key, next, localEdit = false, restored = false) {
+async function persistirEstadoFinanceiro(key, next, localEdit = false, restored = false, firstLinkReviewed = false) {
     if (!idbServico || idbBloqueado || key !== chaveEstadoAtual) return false;
     const uid = key === CHAVE_ESTADO ? (IDB_HOMOLOGACAO ? "local" : "@local") : key.split(":").at(-1);
     const base = structuredClone(idbBase);
@@ -702,7 +702,14 @@ async function persistirEstadoFinanceiro(key, next, localEdit = false, restored 
         const result = await idbServico.aplicarEdicao(uid, base, next, localEdit ? (changes, queue) => changes.map(value => {
             const entityKey = recordEntityKey(value), baseRevision = queue.remoteRevisions?.[entityKey] || null;
             return { id: operationId(entityKey, baseRevision, value), entityKey, baseRevision, value };
-        }) : () => [], queue => { if (restored && key !== CHAVE_ESTADO) queue.restoredPending = true; }, canPersist);
+        }) : () => [], queue => {
+            if (restored && key !== CHAVE_ESTADO) queue.restoredPending = true;
+            if (firstLinkReviewed) {
+                queue.firstLinkReviewed = true; queue.migrationPending = true;
+                for (const conflict of firstLinkReviewed.conflicts || [])
+                    if (!queue.conflicts.some(item => recordsEquivalent(item, conflict))) queue.conflicts.push(conflict);
+            }
+        }, canPersist);
         if (!canPersist()) return false;
         idbBase = structuredClone(result.estado.dados);
         return true;
@@ -791,7 +798,7 @@ function mudarPeriodo(ano, mes) {
 
 
 
-    renderTudo();
+    renderTudo(false);
 
 }
 
@@ -3823,9 +3830,9 @@ function resetFinancialInteractions() {
     for (const name of ["receitaNome", "receitaValor", "despesaNome", "despesaValor"]) if (ui[name]) ui[name].value = "";
     syncUi.conflictDialog?.close();
 }
-async function setFinancialStateKey(key, next, isCurrent = capturarSessaoPersistencia()) {
+async function setFinancialStateKey(key, next, isCurrent = capturarSessaoPersistencia(), review = true) {
     if (!isCurrent() || chaveEstadoAtual !== key) return false;
-    const persisted = await persistirEstadoFinanceiro(key, normalizarEstado(next), false);
+    const persisted = await persistirEstadoFinanceiro(key, normalizarEstado(next), false, false, review);
     if (!isCurrent() || chaveEstadoAtual !== key) return false;
     if (persisted) { estado = normalizarEstado(idbBase); renderTudo(false); }
     return persisted;
@@ -4001,10 +4008,10 @@ async function onFirebaseUser(user) {
     chaveEstadoAtual = key; estado = normalizarEstado(saved.estado === "valido" ? saved.valor : null); renderTudo(false);
     if (!idbServico) throw new Error("IndexedDB indispon?vel");
     const legacyMeta = readSyncMetadata(localStorage, user.uid);
-    const initialized = await idbServico.inicializar(user.uid, estadoParaSalvar(), { outbox: [], conflicts: [], lastConfirmed: null, ...legacyMeta });
+    const initialized = await idbServico.inicializar(user.uid, estadoParaSalvar(), { outbox: [], conflicts: [], lastConfirmed: null, ...legacyMeta, firstLinkSource: saved.estado === "valido" ? "account" : "anonymous" });
     if (!current()) return;
     idbBloqueado = false; estado = normalizarEstado(initialized.estado.dados); idbBase = structuredClone(estadoParaSalvar()); renderTudo(false);
-    const meta = await readSyncMeta(uid);
+    let meta = await readSyncMeta(uid);
     if (!current()) return;
     syncUi.enabled.checked = meta.enabled !== false;
     updateSettingsConflictActive(uid, meta, session);
@@ -4044,36 +4051,56 @@ async function onFirebaseUser(user) {
             await onRemoteRecords(remote, { fromCache: false, hasPendingWrites: false }, session, true);
             if (!current()) return;
         }
+        meta = await readSyncMeta(uid);
+        if (!current()) return;
         if (!meta.initialized) {
-            const anonymous = storage.lerJsonResultado(CHAVE_ESTADO);
-            const localState = registrosFinanceiros(estado).length || saved.estado === "valido" ? structuredClone(estado) : (anonymous.estado === "valido" ? anonymous.valor : normalizarEstado(null));
-            const local = registrosFinanceiros(localState), validRemote = remote.filter((item) => item.month && item.type && item.id && item.record);
-            const merged = combinarRegistros(local, validRemote);
-            if (!confirm(`Primeiro vínculo com ${user.email || "esta conta"}.\n\nNeste dispositivo: ${local.length} lançamentos.\nNa nuvem: ${validRemote.length}.\nPossíveis duplicidades, que serão mantidas: ${merged.possiveisDuplicatas.length}.\nConflitos de mesmo ID, preservados dos dois lados: ${merged.conflitos.length}.\nConfigurações financeiras na nuvem: ${remoteSettings ? "sim" : "não"}.\n\nSerá guardado um backup local antes da combinação. Continuar?`)) { setSyncStatus("Vínculo aguardando sua confirmação.", true); return; }
-            migrationBackup(localState, { get: (k) => localStorage.getItem(k), set: (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch { return false; } } }, user.uid);
-            const months = {};
-            for (const item of merged.records) { months[item.month] ||= { receitas: [], despesas: [] }; months[item.month][item.type].push(item.record); }
-            if (!validarBackup({ ...localState, meses: months })) throw new Error("A combinação inicial excede os limites ou contém dados inválidos. As cópias foram preservadas.");
-            let next = normalizarEstado({ ...localState, meses: months });
-            if (remoteSettings && !settingsEquivalent(financialSettings(next), remoteSettings)) {
-                const useLocal = confirm("As categorias, o tema ou os orçamentos diferem. OK mantém os deste dispositivo; Cancelar usa os da nuvem. As duas cópias serão preservadas no registro de conflito.");
-                await registerSettingsConflict(uid, financialSettings(next), remoteSettings, undefined, session);
+            let next = structuredClone(estado);
+            if (!meta.firstLinkReviewed) {
+                const anonymous = storage.lerJsonResultado(CHAVE_ESTADO);
+                const anonymousState = await idbBanco.ler("estado:@local");
                 if (!current()) return;
-                if (!useLocal) next = normalizarEstado({ ...next, categorias: remoteSettings.categories, tema: remoteSettings.theme, orcamentos: remoteSettings.budgets });
+                const anonymousQueue = await idbBanco.ler("fila:@local");
+                if (!current()) return;
+                meta = await readSyncMeta(uid);
+                if (!current()) return;
+                if (meta.firstLinkReviewed || meta.initialized) {
+                    setSyncStatus("Vinculo ja revisado em outra aba. Tente novamente para continuar.", true); return;
+                }
+                const localState = meta.firstLinkSource !== "anonymous" || saved.estado === "valido" || registrosFinanceiros(estado).length
+                    || !settingsEquivalent(financialSettings(estado), financialSettings(normalizarEstado(null))) ? structuredClone(estado)
+                    : anonymousState?.dados || (anonymous.estado === "valido" ? anonymous.valor : normalizarEstado(null));
+                const pristine = meta.firstLinkSource === "anonymous" && saved.estado === "ausente" && anonymousQueue?.settingsPristine === true
+                    && !registrosFinanceiros(localState).length && !anonymousQueue.outbox?.length && !anonymousQueue.conflicts?.length
+                    && !meta.outbox?.length && !meta.conflicts?.length
+                    && settingsEquivalent(financialSettings(localState), financialSettings(normalizarEstado(null)));
+                const local = registrosFinanceiros(localState), validRemote = remote.filter((item) => item.month && item.type && item.id && item.record);
+                const merged = combinarRegistros(local, validRemote);
+                if (!confirm(`Primeiro vínculo com ${user.email || "esta conta"}.\n\nNeste dispositivo: ${local.length} lançamentos.\nNa nuvem: ${validRemote.length}.\nPossíveis duplicidades, que serão mantidas: ${merged.possiveisDuplicatas.length}.\nConflitos de mesmo ID, preservados dos dois lados: ${merged.conflitos.length}.\nConfigurações financeiras na nuvem: ${remoteSettings ? "sim" : "não"}.\n\nSerá guardado um backup local antes da combinação. Continuar?`)) { setSyncStatus("Vínculo aguardando sua confirmação.", true); return; }
+                migrationBackup(localState, { get: (k) => localStorage.getItem(k), set: (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch { return false; } } }, user.uid);
+                const months = {};
+                for (const item of merged.records) { months[item.month] ||= { receitas: [], despesas: [] }; months[item.month][item.type].push(item.record); }
+                if (!validarBackup({ ...localState, meses: months })) throw new Error("A combinação inicial excede os limites ou contém dados inválidos. As cópias foram preservadas.");
+                next = normalizarEstado({ ...localState, tema: estado.tema !== initialized.estado.dados.tema ? estado.tema : localState.tema, meses: months });
+                if (pristine && remoteSettings) next = normalizarEstado({ ...next, categorias: remoteSettings.categories, orcamentos: remoteSettings.budgets });
+                if (remoteSettings && !settingsEquivalent(financialSettings(next), remoteSettings)) {
+                    const existingConflict = (meta.conflicts || []).some(item => item.kind === "settings"
+                        && settingsEquivalent(item.local, financialSettings(next)) && settingsEquivalent(item.remote, remoteSettings));
+                    const useLocal = existingConflict || confirm("As categorias ou os orcamentos diferem. OK mantem os deste dispositivo; Cancelar usa os da nuvem. As duas copias serao preservadas no registro de conflito.");
+                    await registerSettingsConflict(uid, financialSettings(next), remoteSettings, undefined, session);
+                    if (!current()) return;
+                    if (!useLocal) next = normalizarEstado({ ...next, categorias: remoteSettings.categories, orcamentos: remoteSettings.budgets });
+                }
+                if (!await setFinancialStateKey(key, next, current, { conflicts: merged.conflitos })) throw new Error("Não foi possível salvar a cópia local antes da migração.");
+                if (!current()) return;
+                next = structuredClone(estado);
             }
-            if (!await setFinancialStateKey(key, next, current)) throw new Error("Não foi possível salvar a cópia local antes da migração.");
-            if (!current()) return;
-            const latestMeta = await readSyncMeta(uid);
-            if (!current()) return;
-            await writeSyncMeta(user.uid, { ...latestMeta, enabled: true, migrationPending: true, conflicts: [...(latestMeta.conflicts || []), ...merged.conflitos] });
-            if (!current()) return;
             await stageFirebaseState(uid, next, remote);
             if (!current()) return;
             await publishFirebaseState(next, remote);
             if (!current()) return;
             const initializedMeta = await readSyncMeta(uid);
             if (!current()) return;
-            await writeSyncMeta(uid, { ...initializedMeta, initialized: true, settingsBaseline: financialSettings(next) });
+            await writeSyncMeta(uid, { ...initializedMeta, initialized: true, ...(!(initializedMeta.conflicts || []).some(item => item.kind === "settings") ? { settingsBaseline: financialSettings(next) } : {}) });
             if (!current()) return;
         }
         if (meta.initialized && !settingsConflictActive && remoteSettings && meta.settingsBaseline) {
@@ -4084,7 +4111,7 @@ async function onFirebaseUser(user) {
                 await registerSettingsConflict(uid, localNow, remoteSettings, undefined, session);
                 if (!current()) return;
             } else if (remoteChanged && !localChanged) {
-                const next = normalizarEstado({ ...estado, categorias: remoteSettings.categories, tema: remoteSettings.theme, orcamentos: remoteSettings.budgets });
+                const next = normalizarEstado({ ...estado, categorias: remoteSettings.categories, orcamentos: remoteSettings.budgets });
                 const persisted = await persistirEstadoFinanceiro(key, next);
                 if (!current()) return;
                 if (!persisted) throw new Error("Falha ao persistir configuracoes da conta.");
@@ -4474,7 +4501,7 @@ async function resolveSyncConflict(index, choice) {
     if (conflict.kind === "settings") {
         const selected = choice === "local" ? conflict.local : conflict.remote;
         if (!selected?.categories || !selected?.budgets) { setSyncStatus("Conflito inválido. Os dados locais foram preservados.", true); return; }
-        nextState = { ...nextState, categorias: selected.categories, tema: selected.theme, orcamentos: selected.budgets };
+        nextState = { ...nextState, categorias: selected.categories, orcamentos: selected.budgets };
         } else {
         const operation = conflict.operation;
         const localItem = operation?.value || conflict.local;

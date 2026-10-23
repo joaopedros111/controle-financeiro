@@ -97,3 +97,10 @@ test('ACK só remove operação específica inserida na mesma transação', asyn
     await service.confirmar('alice', 'a', '2026-10-21');
     assert.deepEqual(db.data.get('fila:alice').outbox.map((op) => op.id), ['b']);
 });
+
+test('concurrent themes do not conflict or replace critical categories, budgets and records',()=>{
+ const base={...estado(record('keep')),tema:'claro',orcamentos:{padrao:{Outros:10},meses:{}}};
+ const fresh={...structuredClone(base),tema:'escuro',categorias:['Outros','Moto','Serasa']};
+ const result=combinarEdicaoFinanceira(base,{...structuredClone(base),tema:'rosa'},fresh);
+ assert.equal(result.estado.tema,'rosa');assert.deepEqual(result.estado.categorias,fresh.categorias);assert.deepEqual(result.estado.orcamentos,base.orcamentos);assert.deepEqual(values(result.estado),values(base));
+});

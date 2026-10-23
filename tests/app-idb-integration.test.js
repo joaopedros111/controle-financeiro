@@ -77,3 +77,21 @@ test('confirmation of asynchronous persistence preserves the undo notification',
     await a.save(state());assert.equal(db.docs.get('estado:local').dados.meses['2026-10'].receitas.length,0);
     assert.equal(messages.some(text=>text.includes('confirmadas no armazenamento')),false);
 });
+
+test('month navigation persists its preference without financial writes, notifications, operations or conflicts',async()=>{
+ const db=database(),service=new ServicoFinanceiroAtomico(db,validarBackup,q=>Array.isArray(q?.outbox)&&Array.isArray(q?.conflicts));
+ const baseline=state(item('preserved')),messages=[];
+ await service.inicializar('local',baseline,{outbox:[{id:'pending'}],conflicts:[{kind:'preserved'}],lastConfirmed:null});
+ const before=JSON.stringify([...db.docs]),h=tab(service,baseline,messages),c=h.context;let preferences=0,financialWrites=0;
+ const apply=service.aplicarEdicao.bind(service);service.aplicarEdicao=(...args)=>{financialWrites++;return apply(...args);};
+ Object.assign(c,{periodo:{ano:2026,mes:10},preferenciasMenu:{referenciaMes:'ultimo'},
+  chaveMes:(ano,mes)=>ano+'-'+String(mes).padStart(2,'0'),salvarPreferenciasMenu:()=>preferences++,
+  renderTema(){},aplicarPrivacidade(){},aplicarPreferenciasVisuais(){},renderPeriodo(){},renderReceitas(){},renderDespesas(){},
+  atualizarResumo(persistir){if(persistir)c.salvar();}});
+ vm.runInContext(app.slice(app.indexOf('function renderTudo('),app.indexOf('let ultimaRemocao =')),c);
+ vm.runInContext(app.slice(app.indexOf('function mudarPeriodo('),app.indexOf('function renderPeriodo(')),c);
+ c.mudarPeriodo(2026,13);assert.equal(c.preferenciasMenu.ultimoPeriodo,'2027-01');
+ c.mudarPeriodo(2026,0);assert.equal(c.preferenciasMenu.ultimoPeriodo,'2025-12');
+ await c.idbPendente;
+ assert.equal(preferences,2);assert.equal(financialWrites,0);assert.equal(JSON.stringify([...db.docs]),before);assert.deepEqual(messages,[]);
+});

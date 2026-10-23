@@ -380,7 +380,7 @@ test("settings: eight preexisting conflicts, categories and pending operations s
 
 test("settings: two genuine observations and six converged snapshots create only one conflict", async () => {
     const h = settingsHarness(), local = h.context.financialSettings();
-    h.context.syncRemoteSettings = settingsSnapshot({ ...local, theme: "escuro" }, 0);
+    h.context.syncRemoteSettings = settingsSnapshot({ ...local, theme: "escuro",budgets:{padrao:{Moto:100},meses:{}} }, 0);
     for (let i = 1; i <= 2; i++) await h.context.onRemoteSettings(settingsSnapshot({ ...local, categories: ["Casa"] }, i), metadata);
     const original = JSON.stringify(h.meta().conflicts);
     for (let i = 3; i <= 8; i++) await h.context.onRemoteSettings(settingsSnapshot(local, i), metadata);
@@ -392,7 +392,7 @@ test("settings: two genuine observations and six converged snapshots create only
 
 test("settings: concurrent callbacks deduplicate and preserve a concurrent financial inclusion", async () => {
     const h = settingsHarness(), local = h.context.financialSettings();
-    h.context.syncRemoteSettings = settingsSnapshot({ ...local, theme: "escuro" }, 0);
+    h.context.syncRemoteSettings = settingsSnapshot({ ...local, theme: "escuro",budgets:{padrao:{Moto:100},meses:{}} }, 0);
     const op = sync.makeOperation(sync.recordEntityKey(entry("new")), { month: "2026-10", type: "receitas", id: "new", record: entry("new").record, deleted: false }, null);
     await Promise.all([h.context.onRemoteSettings(settingsSnapshot({ ...local, categories: ["Casa"] }, 1), metadata),
         h.context.onRemoteSettings(settingsSnapshot({ ...local, categories: ["Casa"] }, 2), metadata),
@@ -426,7 +426,7 @@ test("settings: asynchronous snapshots retain callback order and do not advance 
 
 test("settings: convergence against an old baseline creates no conflict and keeps the confirmed revision", async () => {
     const h = settingsHarness(), local = h.context.financialSettings();
-    h.context.syncRemoteSettings = settingsSnapshot({ ...local, theme: "escuro" }, 0);
+    h.context.syncRemoteSettings = settingsSnapshot({ ...local, theme: "escuro",budgets:{padrao:{Moto:100},meses:{}} }, 0);
     await h.context.onRemoteSettings(settingsSnapshot(local, 1), metadata);
     assert.equal(h.meta().conflicts.length, 0);
     assert.equal(h.context.syncRemoteSettings.revision, "1");
@@ -447,8 +447,8 @@ test("settings: persisted conflicts block automatic publication even if the in-m
 test("settings: a conflict from another tab during a remote read blocks settings publication", async () => {
     const h = settingsHarness(), local = h.context.financialSettings();
     h.context.firebaseClient.getSettings = async () => {
-        await h.context.idbServico.registrarConflitoSettings("alice", { kind: "settings", local, remote: settingsSnapshot({ ...local, theme: "escuro" }, 1) });
-        return settingsSnapshot({ ...local, theme: "escuro" }, 2);
+        await h.context.idbServico.registrarConflitoSettings("alice", { kind: "settings", local, remote: settingsSnapshot({ ...local, theme: "escuro",budgets:{padrao:{Moto:100},meses:{}} }, 1) });
+        return settingsSnapshot({ ...local, theme: "escuro",budgets:{padrao:{Moto:100},meses:{}} }, 2);
     };
     let writes = 0; h.context.firebaseClient.saveSettings = async () => { writes++; };
     await h.context.publishFirebaseState(h.context.estado);
@@ -458,8 +458,8 @@ test("settings: a conflict from another tab during a remote read blocks settings
 
 test("settings: revision rejection with the desired server result causes no conflict or retry", async () => {
     const h = settingsHarness(), local = h.context.financialSettings();
-    h.context.syncRemoteSettings = settingsSnapshot({ ...local, theme: "escuro" }, 0);
-    h.context.firebaseClient.getSettings = async () => settingsSnapshot({ ...local, theme: "escuro" }, 1);
+    h.context.syncRemoteSettings = settingsSnapshot({ ...local, theme: "escuro",budgets:{padrao:{Moto:100},meses:{}} }, 0);
+    h.context.firebaseClient.getSettings = async () => settingsSnapshot({ ...local, theme: "escuro",budgets:{padrao:{Moto:100},meses:{}} }, 1);
     let writes = 0;
     h.context.firebaseClient.saveSettings = async () => { writes++; return { conflict: true, remote: settingsSnapshot(local, 2) }; };
     await h.context.publishFirebaseState(h.context.estado);
@@ -471,8 +471,8 @@ test("settings: revision rejection with the desired server result causes no conf
 
 test("settings: a genuine CAS difference persists a conflict and blocks subsequent automatic settings writes", async () => {
     const h = settingsHarness(), local = h.context.financialSettings();
-    h.context.firebaseClient.getSettings = async () => settingsSnapshot({ ...local, theme: "escuro" }, 1);
-    let writes = 0; h.context.firebaseClient.saveSettings = async () => { writes++; return { conflict: true, remote: settingsSnapshot({ ...local, theme: "rosa" }, 2) }; };
+    h.context.firebaseClient.getSettings = async () => settingsSnapshot({ ...local, theme: "escuro",budgets:{padrao:{Moto:100},meses:{}} }, 1);
+    let writes = 0; h.context.firebaseClient.saveSettings = async () => { writes++; return { conflict: true, remote: settingsSnapshot({ ...local, theme: "rosa",budgets:{padrao:{Moto:200},meses:{}} }, 2) }; };
     await h.context.publishFirebaseState(h.context.estado); await h.context.publishFirebaseState(h.context.estado);
     assert.equal(writes, 1); assert.equal(h.meta().conflicts.length, 1);
     assert.equal(h.context.settingsConflictActive, true);
@@ -480,18 +480,18 @@ test("settings: a genuine CAS difference persists a conflict and blocks subseque
 
 test("settings: confirmed observations do not overwrite a local change or accept cache/pending snapshots", async () => {
     const h = settingsHarness(), local = h.context.financialSettings();
-    const remote = settingsSnapshot({ ...local, theme: "escuro" }, 0);
+    const remote = settingsSnapshot({ ...local, theme: "escuro",budgets:{padrao:{Moto:100},meses:{}} }, 0);
     h.context.syncRemoteSettings = remote;
     await h.context.onRemoteSettings({ ...remote, revision: "1" }, metadata);
     assert.equal(h.context.estado.tema, "claro"); assert.equal(h.meta().conflicts.length, 0);
     for (const flags of [{ fromCache: true, hasPendingWrites: false }, { fromCache: false, hasPendingWrites: true }])
-        await h.context.onRemoteSettings(settingsSnapshot({ ...local, theme: "rosa" }, 2), flags);
+        await h.context.onRemoteSettings(settingsSnapshot({ ...local, theme: "rosa",budgets:{padrao:{Moto:200},meses:{}} }, 2), flags);
     assert.equal(h.context.syncRemoteSettings.revision, "1");
 });
 
 test("settings: storage failure preserves conflicts and queue; an obsolete session cannot replace another account's reference", async () => {
     const h = settingsHarness(); h.pending(); const local = h.context.financialSettings();
-    h.context.syncRemoteSettings = settingsSnapshot({ ...local, theme: "escuro" }, 0);
+    h.context.syncRemoteSettings = settingsSnapshot({ ...local, theme: "escuro",budgets:{padrao:{Moto:100},meses:{}} }, 0);
     const before = JSON.stringify(h.meta()), stateBefore = JSON.stringify(h.context.estado);
     h.context.idbServico.registrarConflitoSettings = async () => { throw new Error("quota"); };
     await assert.rejects(h.context.onRemoteSettings(settingsSnapshot({ ...local, categories: ["Casa"] }, 1), metadata), /quota/);
@@ -522,7 +522,7 @@ test("settings: first link uses functional equivalence and a legitimate conflict
 test("settings: reconnect distinguishes convergence from genuine divergence against a saved baseline", async () => {
     for (const genuine of [false, true]) {
         const h = settingsHarness(); initializedFlow(h); const local = h.context.financialSettings();
-        h.context.writeSyncMeta("alice", { ...h.meta(), settingsBaseline: { ...local, theme: "escuro" } });
+        h.context.writeSyncMeta("alice", { ...h.meta(), settingsBaseline: { ...local, theme: "escuro",budgets:{padrao:{Moto:100},meses:{}} } });
         h.context.firebaseClient.getSettings = async () => settingsSnapshot({ ...local, categories: genuine ? ["Casa"] : [...local.categories].reverse() }, 1);
         await h.context.onFirebaseUser({ uid: "alice" });
         assert.equal(h.meta().conflicts.length, genuine ? 1 : 0);

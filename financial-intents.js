@@ -58,7 +58,7 @@ export function combinarEdicaoFinanceira(base, proposta, atual) {
     const reserved = new Set(['meses']);
     for (const key of new Set([...Object.keys(base), ...Object.keys(proposta)])) {
         if (reserved.has(key) || equal(base[key], proposta[key])) continue;
-        if (!equal(atual[key], base[key]) && !equal(atual[key], proposta[key])) {
+        if (key !== "tema" && !equal(atual[key], base[key]) && !equal(atual[key], proposta[key])) {
             conflicts.push(`configuração:${key}`); continue;
         }
         if (hasOwn(proposta, key)) output[key] = copy(proposta[key]);

@@ -58,7 +58,7 @@ test('settings: eight existing entries remain unchanged, equivalent pairs are re
     await s.registrarConflitoSettings('u1', settingsConflict('new-observation'));
     await s.registrarConflitoSettings('u1', { kind: 'settings', local: settings(), remote: settings('equivalent', ['Serasa', 'Moto']) });
     assert.equal(JSON.stringify(await s.lerFila('u1')), before);
-    await s.registrarConflitoSettings('u1', { ...settingsConflict(), remote: { ...settings('different'), theme: 'escuro' } });
+    await s.registrarConflitoSettings('u1', { ...settingsConflict(), remote: { ...settings('different'), budgets: {padrao:{Moto:100},meses:{}} } });
     const after = await s.lerFila('u1');
     assert.equal(after.conflicts.length, 9);
     assert.deepEqual(after.conflicts.slice(0, 8), conflicts);

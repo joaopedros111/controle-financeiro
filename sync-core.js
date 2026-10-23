@@ -44,7 +44,9 @@ const json = (value) => JSON.stringify(canonical(value));
 export const jsonCanonico = json;
 export const recordsEquivalent = (a, b) => json(a) === json(b);
 
-// Compare functional data only. Keep revisions/timestamps on the original objects
+// Validate the complete transport model. Financial equivalence below excludes the
+// device theme; the original theme and concurrency metadata remain intact.
+// Keep revisions/timestamps on the original objects
 // for optimistic concurrency; never normalize or rewrite persisted conflicts.
 export function functionalSettings(settings) {
     if (!settings || typeof settings !== "object" || !Array.isArray(settings.categories)) return null;
@@ -56,7 +58,7 @@ export function functionalSettings(settings) {
 export function settingsEquivalent(a, b) {
     if (a === null && b === null) return true;
     const left = functionalSettings(a), right = functionalSettings(b);
-    return left !== null && right !== null && json(left) === json(right);
+    return left !== null && right !== null && json({ ...left, theme: null }) === json({ ...right, theme: null });
 }
 
 export function readSyncMetadata(storage, uid) {
@@ -130,7 +132,7 @@ export function validateRemoteSettings(settings) {
 export function mergeRemoteSettings(state, settings) {
     if (!validateRemoteSettings(settings)) return { valid: false, state };
     if (settings === null) return { valid: true, state };
-    return { valid: true, state: { ...state, categorias: settings.categories, tema: settings.theme, orcamentos: settings.budgets } };
+    return { valid: true, state: { ...state, categorias: settings.categories, tema: state.tema, orcamentos: settings.budgets } };
 }
 
 // Active record: {month,type,id,record,deleted:false,revision,updatedAt}.
