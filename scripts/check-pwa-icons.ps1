@@ -2,7 +2,8 @@ $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Drawing
 $root = Split-Path -Parent $PSScriptRoot
 $manifest = Get-Content -LiteralPath (Join-Path $root 'manifest.json') -Raw | ConvertFrom-Json
-foreach ($icon in $manifest.icons) {
+$icons = @($manifest.icons) + @([pscustomobject]@{src='icons/apple-touch-icon.png'; sizes='180x180'; purpose='apple'})
+foreach ($icon in $icons) {
     $bitmap = [System.Drawing.Bitmap]::new((Join-Path $root $icon.src))
     try {
         $size = $bitmap.Width
@@ -12,7 +13,7 @@ foreach ($icon in $manifest.icons) {
             for ($x = 0; $x -lt $size; $x++) {
                 $pixel = $bitmap.GetPixel($x, $y)
                 if ($pixel.A -ne 255) { $nonOpaque++ }
-                if ($icon.purpose -ne 'maskable') { continue }
+                if ($icon.purpose -notin @('maskable', 'apple')) { continue }
                 # The mint/white bars and yellow arrow are brighter than the teal background.
                 if ($pixel.R -gt 130 -and $pixel.G -gt 130) {
                     $foreground++
@@ -25,6 +26,9 @@ foreach ($icon in $manifest.icons) {
         }
         if ($icon.purpose -eq 'maskable' -and ($nonOpaque -ne 0 -or $foreground -eq 0 -or $maxRadius -gt 0.4)) {
             throw "Maskable icon is transparent or exceeds the safe circle: $($icon.src), radius=$maxRadius"
+        }
+        if ($icon.purpose -eq 'apple' -and ($nonOpaque -ne 0 -or $foreground -eq 0 -or $size -ne 180)) {
+            throw "Apple icon must be opaque, 180x180 and contain the financial symbol"
         }
         [pscustomobject]@{ Icon=$icon.src; Size=$size; NonOpaquePixels=$nonOpaque; ForegroundRadius=[Math]::Round($maxRadius, 4) }
     } finally { $bitmap.Dispose() }

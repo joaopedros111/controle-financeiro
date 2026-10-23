@@ -1,5 +1,5 @@
 const PREFIXO_CACHE = "controle-financeiro-pwa-cache-";
-const CACHE = PREFIXO_CACHE + "v19";
+const CACHE = PREFIXO_CACHE + "v20";
 const VERSAO_SERVICE_WORKER = "1.1.9";
 const CACHE_ANTIGO = "controle-financeiro-v5";
 const ARQUIVOS = [
@@ -22,6 +22,7 @@ const ARQUIVOS = [
     "./update-manager.js",
     "./version.json",
     "./manifest.json",
+    "./icons/apple-touch-icon.png",
     "./icons/icon-192.png",
     "./icons/icon-512.png",
     "./icons/icon-maskable-192.png",

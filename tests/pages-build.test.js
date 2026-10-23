@@ -40,6 +40,13 @@ test("Pages build emits synchronized per-run version and cache without changing 
         assert.ok(serviceWorkerGerado.includes(`const CACHE = PREFIXO_CACHE + "${cacheEsperado.slice(cacheBase[1].length)}";`));
         assert.match(htmlGerado, new RegExp(`name="app-version" content="${release.version}"`));
         assert.equal((htmlGerado.match(/name="app-version"/g) || []).length, 1);
+        const appleLinks = htmlGerado.match(/<link\b[^>]*rel="apple-touch-icon"[^>]*>/g) || [];
+        assert.equal(appleLinks.length, 1, "Safari must have a single dedicated icon");
+        assert.ok(appleLinks[0].includes('sizes="180x180"'));
+        assert.ok(appleLinks[0].includes(`href="icons/apple-touch-icon.png?_release=${release.version}"`));
+        assert.deepEqual(await readFile(path.join(saida, "icons/apple-touch-icon.png")),
+            await readFile(new URL("../icons/apple-touch-icon.png", import.meta.url)), "Apple icon must be published unchanged");
+        assert.ok(serviceWorkerGerado.includes('"./icons/apple-touch-icon.png"'), "Apple icon must be precached");
         assert.ok(firebaseBundle.length > 100_000, "Firebase SDK is bundled into the Pages artifact");
         for (const recurso of ["style.css", "controls.css", "app.js", "manifest.json", "icons/icon-192.png"]) {
             assert.ok(htmlGerado.includes(`${recurso}?_release=${release.version}`), `${recurso} sem URL versionada`);
