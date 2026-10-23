@@ -84,6 +84,20 @@ export function conflictEntityKey(conflict) {
     const item = conflict?.operation?.value || (conflict?.local?.month ? conflict.local : conflict);
     return item?.month && item?.type && item?.id ? recordEntityKey(item) : null;
 }
+export function equivalentConflict(a, b) {
+    if (!a || !b) return false;
+    if (a.kind === 'settings' || b.kind === 'settings') return a.kind === b.kind
+        && settingsEquivalent(a.local, b.local) && settingsEquivalent(a.remote, b.remote);
+    const id = a.operationId || a.operation?.id;
+    return recordsEquivalent(a, b) || Boolean(id && id === (b.operationId || b.operation?.id)
+        && recordsEquivalent(a.remote, b.remote));
+}
+export function pendingConflictCount(queue) {
+    const pending = [];
+    for (const item of queue.conflicts || []) if (!queue.conflictDecisions?.some(decision => decision.status !== 'confirmed' && equivalentConflict(decision.conflict, item))
+        && !pending.some(other => equivalentConflict(item, other))) pending.push(item);
+    return pending.length;
+}
 export function blockedConflictKeys(conflicts = [], reviewed = null) {
     const reviewedId = reviewed?.operationId || reviewed?.operation?.id;
     return new Set(conflicts.filter(item => !reviewed || !(recordsEquivalent(item, reviewed)

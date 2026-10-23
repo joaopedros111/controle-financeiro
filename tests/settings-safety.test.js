@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import {readFile} from 'node:fs/promises';
 import * as sync from '../sync-core.js';
+import {textoTraduzido} from '../localization.js';
 import {ServicoFinanceiroAtomico} from '../financial-atomic-service.js';
 import {validarBackup,normalizarEstado,normalizarValorMonetario,mesFinanceiroValido} from '../finance-core.js';
 const source=await readFile(new URL('../app.js',import.meta.url),'utf8');
@@ -14,7 +15,7 @@ function deferred(){let resolve,reject;const promise=new Promise((a,b)=>{resolve
 const snapshot=(value,revision)=>({...value,revision,updatedAt:{seconds:10,nanoseconds:0}});
 async function setup(){
  const initial=financialState(entry());initial.categorias=['Casa','Moto','Serasa'];
- const c=vm.createContext({...sync,structuredClone,TextEncoder,console,validarBackup,normalizarEstado,normalizarValorMonetario,mesFinanceiroValido,
+ const c=vm.createContext({...sync,structuredClone,TextEncoder,console,textoTraduzido,validarBackup,normalizarEstado,normalizarValorMonetario,mesFinanceiroValido,
   CHAVE_ESTADO:'controleFinanceiro:v3',IDB_HOMOLOGACAO:false,idbBase:structuredClone(initial),estado:structuredClone(initial),
   syncUser:{uid:'alice'},syncRemoteRecords:[entry()],syncRemoteRecordsLoaded:true,syncRemoteSettings:null,settingsConflictActive:false,
   idbPendente:Promise.resolve(),idbBloqueado:false,applyingRemoteSync:false,navigator:{onLine:true},window:{addEventListener(){}},
@@ -56,6 +57,16 @@ async function setup(){
  };
  return h;
 }
+
+test('logout clears the prior account localization timestamp without changing financial state or queues',async()=>{
+ const h=await setup(),c=h.context;h.installUserHandler();
+ c.syncUi.last.dataset={i18nDate:'2026-10-23T12:34:56.000Z'};
+ const before=structuredClone([...h.docs]);
+ await c.onFirebaseUser(null);
+ assert.equal(c.syncUi.last.textContent,'');
+ assert.equal(c.syncUi.last.dataset.i18nDate,undefined);
+ assert.deepEqual([...h.docs],before);
+});
 
 test('storage failure stops an in-flight settings publisher and cannot confirm synchronization',async()=>{
  const h=await setup(),c=h.context,readEntered=deferred(),readRelease=deferred();
@@ -529,4 +540,118 @@ test('a stale anonymous source marker cannot discard personalized durable accoun
  h.server.set('alice',snapshot({...c.financialSettings(),categories:['Casa']},'remote'));
  await c.onFirebaseUser({uid:'alice'});
  assert.equal(c.estado.orcamentos.padrao.Moto,888);assert.ok(c.estado.categorias.includes('Serasa'));assert.equal(h.prompts.length,2);assert.equal(h.queue().conflicts.length,1);
+});
+
+
+test('offline cloud decision is durable, groups eight copies, resumes and preserves originals and unrelated operations', async()=>{
+ const h=await setup(),c=h.context;installResolution(c);
+ const local=c.financialSettings(),remote=snapshot({...local,categories:['Casa']},'remote-review');h.server.set('alice',remote);
+ const originals=Array.from({length:8},(_,i)=>({kind:'settings',local,remote:{...remote,revision:'review-'+i}}));
+ await c.idbServico.alterarFila('alice',q=>({...q,conflicts:structuredClone(originals),outbox:[{id:'unrelated',entityKey:'unrelated'}]}));
+ const bob=JSON.stringify(h.docs.get('estado:bob'));c.navigator.onLine=false;
+ await c.resolveSyncConflict(0,'remote');
+ assert.equal(h.queue().conflictDecisions.length,1);assert.equal(h.queue().conflictDecisions[0].status,'pending');
+ assert.equal(JSON.stringify(h.queue().conflicts),JSON.stringify(originals));assert.equal(h.statuses.at(-1),'Aguardando sincroniza\u00e7\u00e3o');
+ assert.deepEqual(c.estado.categorias,['Casa']);assert.equal(h.queue().outbox[0].id,'unrelated');
+ // Simulate restarting application memory: only the durable journal supplies the choice.
+ c.estado=structuredClone(h.docs.get('estado:alice').dados);c.idbBase=structuredClone(c.estado);c.navigator.onLine=true;
+ await c.publishFirebaseState(c.estado);
+ assert.equal(h.queue().conflicts.length,0);assert.equal(h.queue().conflictHistory.length,8);
+ assert.equal(JSON.stringify(h.queue().conflictHistory.map(item=>item.conflict)),JSON.stringify(originals));
+ assert.equal(h.queue().conflictDecisions[0].status,'confirmed');assert.equal(h.queue().outbox[0].id,'unrelated');
+ assert.equal(JSON.stringify(h.docs.get('estado:bob')),bob);assert.notEqual(h.statuses.at(-1),'Sincronizado');
+});
+
+test('local settings decision survives a network failure and retries against its reviewed revision', async()=>{
+ const h=await setup(),c=h.context;installResolution(c);
+ const local=c.financialSettings(),remote=snapshot({...local,categories:['Casa']},'review');h.server.set('alice',remote);
+ const conflict={kind:'settings',local,remote};await c.idbServico.alterarFila('alice',q=>({...q,conflicts:[conflict]}));
+ c.firebaseClient.saveSettings=async()=>{throw Error('synthetic network failure');};
+ await c.resolveSyncConflict(0,'local');
+ assert.equal(h.queue().conflictDecisions[0].status,'failed');assert.equal(JSON.stringify(h.queue().conflicts),JSON.stringify([conflict]));
+ assert.equal(h.queue().conflictHistory,undefined);assert.notEqual(h.statuses.at(-1),'Sincronizado');
+ const writes=[];c.firebaseClient.saveSettings=async(uid,value,revision)=>{writes.push(revision);h.server.set(uid,snapshot(value,'confirmed'));return {acknowledged:true,revision:'confirmed'};};
+ await c.publishFirebaseState(c.estado);
+ assert.deepEqual(writes,['review']);assert.equal(h.queue().conflicts.length,0);assert.equal(h.queue().conflictHistory.length,1);
+ assert.ok(c.estado.categorias.includes('Moto'));assert.ok(c.estado.categorias.includes('Serasa'));
+ await c.onRemoteSettings(h.server.get('alice'),metadata);assert.equal(h.queue().conflicts.length,0);
+});
+
+test('cloud choice remains pending if server changed again, without a false remote confirmation', async()=>{
+ const h=await setup(),c=h.context;installResolution(c);const local=c.financialSettings();
+ const conflict={kind:'settings',local,remote:snapshot({...local,categories:['Casa']},'review')};
+ await c.idbServico.alterarFila('alice',q=>({...q,conflicts:[conflict]}));
+ h.server.set('alice',snapshot({...local,categories:['Moto']},'later'));
+ await c.resolveSyncConflict(0,'remote');assert.equal(h.queue().conflicts.length,1);assert.equal(h.queue().conflictDecisions[0].status,'pending');
+ assert.equal(h.queue().conflictHistory,undefined);assert.notEqual(h.statuses.at(-1),'Sincronizado');
+});
+
+test('a concurrent durable edit prevents archiving a decision whose server read just completed', async()=>{
+ const h=await setup(),c=h.context;installResolution(c);const local=c.financialSettings(),remote=snapshot({...local,categories:['Casa']},'review');
+ await c.idbServico.alterarFila('alice',q=>({...q,conflicts:[{kind:'settings',local,remote}]}));
+ const entered=deferred(),release=deferred();c.firebaseClient.getSettings=async()=>{entered.resolve();await release.promise;return remote;};
+ const resolving=c.resolveSyncConflict(0,'remote');await entered.promise;
+ const base=structuredClone(h.docs.get('estado:alice').dados),next=structuredClone(base);next.categorias.push('Serasa');
+ await c.idbServico.aplicarEdicao('alice',base,next);release.resolve();await resolving;
+ assert.equal(h.queue().conflicts.length,1);assert.equal(h.queue().conflictHistory,undefined);assert.ok(h.docs.get('estado:alice').dados.categorias.includes('Serasa'));
+});
+
+test('conflict UI groups equivalent copies, hides technical JSON by default and separates pending decisions from uploads',async()=>{
+ const h=await setup(),c=h.context;installResolution(c);const local=c.financialSettings(),remote=snapshot({...local,categories:['Casa']},'review');
+ await c.idbServico.alterarFila('alice',q=>({...q,conflicts:[{kind:'settings',local,remote},{kind:'settings',local,remote:{...remote,revision:'duplicate'}}]}));
+ const element=tag=>({tag,children:[],append(...items){this.children.push(...items);},replaceChildren(){this.children=[];},setAttribute(){},addEventListener(){}});
+ c.document={createElement:element};c.syncUi.conflictList=element('list');c.syncUi.conflicts={};c.valoresOcultos=false;
+ vm.runInContext(source.slice(source.indexOf('async function renderSyncConflicts('),source.indexOf('async function resolveSyncConflict(')),c);
+ await c.renderSyncConflicts();let rows=c.syncUi.conflictList.children;assert.equal(rows.length,1);assert.equal(rows[0].children[3].children.length,2);
+ assert.equal(rows[0].children[2].tag,'details');assert.equal(rows[0].children[2].open,undefined);
+ assert.match(rows[0].children[1].children[0].children[1].textContent,/Moto.*Serasa/);
+ c.navigator.onLine=false;await c.resolveSyncConflict(0,'local');await c.renderSyncConflicts();rows=c.syncUi.conflictList.children;
+ assert.match(rows[0].children[0].textContent,/Aguardando/);assert.equal(rows[0].children[3].children.length,1);
+});
+
+
+test('explicit cloud record decision archives superseded unattempted operations but preserves unrelated pending work',async()=>{
+ const h=await setup(),c=h.context;installResolution(c);const local=entry(),remote={...entry(),revision:'new',record:{...entry().record,valor:20}};
+ const operation=sync.makeOperation(sync.recordEntityKey(local),{month:local.month,type:local.type,id:local.id,record:local.record,deleted:false},'record-a');
+ const conflict={kind:'concurrent-change',operation,remote};
+ await c.idbServico.alterarFila('alice',q=>({...q,conflicts:[conflict],outbox:[operation,{id:'unrelated',entityKey:'unrelated'}]}));
+ c.navigator.onLine=false;await c.resolveSyncConflict(0,'remote');
+ assert.equal(h.queue().outbox.length,1);assert.equal(h.queue().outbox[0].id,'unrelated');
+ assert.equal(JSON.stringify(h.queue().conflictDecisions[0].supersededOperations),JSON.stringify([operation]));
+ assert.equal(h.docs.get('estado:alice').dados.meses['2026-10'].receitas[0].valor,20);
+ c.navigator.onLine=true;c.firebaseClient.list=async()=>[remote];await c.publishFirebaseState(c.estado);
+ assert.equal(h.queue().conflicts.length,0);assert.equal(h.queue().conflictHistory.length,1);assert.equal(h.queue().outbox[0].id,'unrelated');
+});
+
+test('a decision cannot cancel an operation already in flight or change an account while awaiting its lock',async()=>{
+ const h=await setup(),c=h.context;installResolution(c);const local=entry(),operation=sync.makeOperation(sync.recordEntityKey(local),{month:local.month,type:local.type,id:local.id,record:local.record,deleted:false},'record-a');
+ const conflict={kind:'concurrent-change',operation,remote:{...local,revision:'remote',record:{...local.record,valor:20}}};
+ await c.idbServico.alterarFila('alice',q=>({...q,conflicts:[conflict],outbox:[operation],attempted:{[operation.id]:true}}));
+ const before=JSON.stringify([...h.docs]);await c.resolveSyncConflict(0,'remote');
+ assert.equal(JSON.stringify([...h.docs]),before);assert.equal(c.idbBloqueado,false);assert.equal(h.queue().conflictDecisions,undefined);
+});
+
+
+test('concurrent opposite decisions serialize, preserve one durable choice and never block storage',async()=>{
+ const h=await setup(),c=h.context;installResolution(c);const local=c.financialSettings(),remote=snapshot({...local,categories:['Casa']},'review');
+ await c.idbServico.alterarFila('alice',q=>({...q,conflicts:[{kind:'settings',local,remote}]}));c.navigator.onLine=false;
+ await Promise.all([c.resolveSyncConflict(0,'local'),c.resolveSyncConflict(0,'remote')]);
+ assert.equal(h.queue().conflictDecisions.length,1);assert.equal(h.queue().conflictDecisions[0].choice,'local');
+ assert.ok(h.docs.get('estado:alice').dados.categorias.includes('Moto'));assert.equal(c.idbBloqueado,false);assert.equal(h.queue().conflicts.length,1);
+});
+
+
+test('a pending settings choice does not discard financial edits made before reconnection',async()=>{
+ const h=await setup(),c=h.context;installResolution(c);const local=c.financialSettings(),remote=snapshot({...local,categories:['Casa']},'review');
+ await c.idbServico.alterarFila('alice',q=>({...q,conflicts:[{kind:'settings',local,remote}]}));c.navigator.onLine=false;
+ await c.resolveSyncConflict(0,'local');
+ const base=structuredClone(c.estado),next=structuredClone(base);next.meses['2026-10'].receitas.push({id:'new-pending',nome:'Preserved',valor:25});
+ const record={month:'2026-10',type:'receitas',id:'new-pending',record:next.meses['2026-10'].receitas[1],deleted:false};
+ const operation=sync.makeOperation(sync.recordEntityKey(record),record,null);
+ await c.idbServico.aplicarEdicao('alice',base,next,()=>[operation]);c.estado=structuredClone(next);c.idbBase=structuredClone(next);
+ c.navigator.onLine=true;c.firebaseClient.list=async()=>[entry(),{...record,revision:'already-remote',updatedAt:{seconds:10,nanoseconds:0},_docId:sync.recordEntityKey(record)}];
+ c.firebaseClient.saveSettings=async(uid,value)=>{h.server.set(uid,snapshot(value,'done'));return {acknowledged:true,revision:'done'};};
+ await c.publishFirebaseState(c.estado);
+ assert.equal(h.docs.get('estado:alice').dados.meses['2026-10'].receitas.find(item=>item.id==='new-pending').valor,25);
+ assert.equal(h.queue().conflictDecisions[0].status,'confirmed');assert.ok(c.estado.categorias.includes('Moto'));assert.ok(c.estado.categorias.includes('Serasa'));
 });

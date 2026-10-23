@@ -6,7 +6,7 @@ import { apresentarValorFinanceiro, calcularEspacamentosDensidade, normalizarPre
 import { criarConfirmacaoAtualizacao, criarVerificadorAutomatico, instalarAtualizacao, lerVersaoControlador, lerVersaoInstalada, lerVersaoPublicada, validarVersaoAplicacao, verificarComConfirmacao } from "./update-manager.js";
 import { aplicarIdioma, formatarMoeda as formatarMoedaLocalizada, LOCALES, textoTraduzido } from "./localization.js";
 import { firebaseConfig, firebaseConfigurado } from "./firebase-config.js";
-import { chaveLocalConta, registrosFinanceiros, combinarRegistros, migrationBackup, operationId, jsonCanonico, recordsEquivalent, coalesceOutbox, flushSyncQueue, createSyncSessionGuard, validateRemoteSettings, mergeRemoteSettings, validRemoteTombstone, reconcileRemoteConflicts, validateRemoteConflicts, snapshotConfirmed, recordEntityKey, inspectRemoteKeys, validConflictRecord, readSyncMetadata, blockedConflictKeys, validSyncIdentity, financialStatesEquivalent, functionalSettings, settingsEquivalent } from "./sync-core.js";
+import { chaveLocalConta, registrosFinanceiros, combinarRegistros, migrationBackup, operationId, jsonCanonico, recordsEquivalent, coalesceOutbox, flushSyncQueue, createSyncSessionGuard, validateRemoteSettings, mergeRemoteSettings, validRemoteTombstone, reconcileRemoteConflicts, validateRemoteConflicts, snapshotConfirmed, recordEntityKey, inspectRemoteKeys, validConflictRecord, readSyncMetadata, blockedConflictKeys, validSyncIdentity, financialStatesEquivalent, functionalSettings, settingsEquivalent, equivalentConflict, pendingConflictCount } from "./sync-core.js";
 
 
 
@@ -638,7 +638,7 @@ function estadoParaSalvar() {
 function salvar() {
     if (recuperacaoFinanceira.protegido || idbBloqueado || !idbServico) return;
     const proposta = structuredClone(estadoParaSalvar()), base = structuredClone(idbBase);
-    if (!validarTotaisMonetarios(proposta)) { avisar("Os totais mensais excedem o limite monet?rio seguro."); return; }
+    if (!validarTotaisMonetarios(proposta)) { avisar("Os totais mensais excedem o limite monetário seguro."); return; }
     const key = chaveEstadoAtual, uid = key === CHAVE_ESTADO ? (IDB_HOMOLOGACAO ? "local" : "@local") : key.split(":").at(-1);
     idbBase = structuredClone(proposta);
     idbPendente = idbPendente.then(async () => {
@@ -655,12 +655,12 @@ function salvar() {
             estado = normalizarEstado(result.estado.dados); idbBase = structuredClone(estadoParaSalvar()); renderTudo(false);
         }
         atualizarDiagnostico();
-        if (typeof document === "undefined" || !document.querySelector?.(".aviso-acao")) avisar("Alteracoes confirmadas no armazenamento local IndexedDB.");
+        if (typeof document === "undefined" || !document.querySelector?.(".aviso-acao")) avisar("Alterações confirmadas no armazenamento local IndexedDB.");
         if (key !== CHAVE_ESTADO) window.dispatchEvent(new CustomEvent("finance-local-change", { detail: { uid, state: result.estado.dados, deletedRecords: [] } }));
     }).catch(error => {
         idbBloqueado = true;
         console.warn("Persistencia transacional interrompida.", error?.name);
-        avisar("Outra aba alterou os mesmos dados ou houve falha na gravacao. Nenhuma sobrescrita foi aplicada. Recarregue para revisar.");
+        avisar("Outra aba alterou os mesmos dados ou houve falha na gravação. Nenhuma sobrescrita foi aplicada. Recarregue para revisar.");
     });
 }
 
@@ -690,7 +690,7 @@ function salvar() {
     }
 }
 
-async function persistirEstadoFinanceiro(key, next, localEdit = false, restored = false, firstLinkReviewed = false) {
+async function persistirEstadoFinanceiro(key, next, localEdit = false, restored = false, firstLinkReviewed = false, editQueue = () => {}) {
     if (!idbServico || idbBloqueado || key !== chaveEstadoAtual) return false;
     const uid = key === CHAVE_ESTADO ? (IDB_HOMOLOGACAO ? "local" : "@local") : key.split(":").at(-1);
     const base = structuredClone(idbBase);
@@ -702,7 +702,8 @@ async function persistirEstadoFinanceiro(key, next, localEdit = false, restored 
         const result = await idbServico.aplicarEdicao(uid, base, next, localEdit ? (changes, queue) => changes.map(value => {
             const entityKey = recordEntityKey(value), baseRevision = queue.remoteRevisions?.[entityKey] || null;
             return { id: operationId(entityKey, baseRevision, value), entityKey, baseRevision, value };
-        }) : () => [], queue => {
+        }) : () => [], (queue, mergedState) => {
+            editQueue(queue, mergedState);
             if (restored && key !== CHAVE_ESTADO) queue.restoredPending = true;
             if (firstLinkReviewed) {
                 queue.firstLinkReviewed = true; queue.migrationPending = true;
@@ -841,7 +842,9 @@ function renderTema() {
         criarEl("span", { text: ({ escuro: "🌙", rosa: "🌸", pangolim: "🐾", floresta: "🌲" })[tema] || "☀️" }),
         criarEl("span", { text: nomesTema[tema] })
     );
-    ui.tema.setAttribute("aria-label", "Tema atual: " + nomesTema[tema] + ". Mudar para " + nomesTema[proximoTema] + ".");
+    ui.tema.setAttribute("data-i18n-preserve-aria", "");
+    ui.tema.setAttribute("aria-label", textoTraduzido("Tema atual:") + " " + textoTraduzido(nomesTema[tema])
+        + ". " + textoTraduzido("Mudar para") + " " + textoTraduzido(nomesTema[proximoTema]) + ".");
 
 }
 
@@ -861,7 +864,7 @@ function criarLinhaReceita(receita) {
 
 
 
-    const nome = receita.nome.trim() || "Sem nome";
+    const nome = receita.nome.trim() || textoTraduzido("Sem nome");
     const identificacao = criarEl("div", { class: "receita-identificacao" }, [
         criarEl("span", { class: "nome-receita", text: nome })
     ]);
@@ -1017,7 +1020,7 @@ function criarLinhaDespesa(despesa) {
 
                 class: "nome-despesa",
 
-                text: despesa.nome.trim() || "Sem nome"
+                text: despesa.nome.trim() || textoTraduzido("Sem nome")
 
             }),
 
@@ -1051,7 +1054,7 @@ function criarLinhaDespesa(despesa) {
 
             title: "Editar despesa",
 
-            "aria-label": "Editar despesa " + (despesa.nome.trim() || "sem nome"),
+            "aria-label": "Editar despesa " + (despesa.nome.trim() || textoTraduzido("Sem nome")),
 
             text: "✎"
 
@@ -1065,7 +1068,7 @@ function criarLinhaDespesa(despesa) {
 
             title: "Remover despesa",
 
-            "aria-label": "Remover despesa " + (despesa.nome.trim() || "sem nome"),
+            "aria-label": "Remover despesa " + (despesa.nome.trim() || textoTraduzido("Sem nome")),
 
             text: "×"
 
@@ -1087,7 +1090,8 @@ function renderDespesas() {
         .sort((a, b) => a.categoria.localeCompare(b.categoria, LOCALES[idiomaAtual] || "pt-BR"));
     ui.listaDespesas.replaceChildren(...grupos.map((grupo) => criarEl("section", {
         class: "despesa-grupo" + (grupo.excedido ? " acima-do-orcamento" : ""),
-        "aria-label": grupo.excedido ? `${grupo.categoria}, orçamento excedido` : grupo.categoria
+        "data-i18n-preserve-aria": "",
+        "aria-label": grupo.excedido ? `${grupo.categoria}, ${textoTraduzido("orçamento excedido")}` : grupo.categoria
     }, [
         criarEl("div", { class: "despesa-grupo-topo" }, [
             criarEl("h3", { class: "despesa-grupo-categoria", text: grupo.categoria }),
@@ -1345,10 +1349,11 @@ function renderGraficoMensal() {
         grupo.append(barras, criarEl("span", { class: "grafico-mes", text: p.nome }));
         return grupo;
     }));
-    destino.setAttribute("aria-label", "Entradas e despesas nos últimos três meses: " + pontos.map((p) =>
+    destino.setAttribute("data-i18n-preserve-aria", "");
+    destino.setAttribute("aria-label", textoTraduzido("Entradas e despesas nos últimos três meses:") + " " + pontos.map((p) =>
         new Intl.DateTimeFormat(LOCALES[idiomaAtual] || "pt-BR", { month: "long", year: "numeric" })
             .format(new Date(Number(p.chave.slice(0, 4)), Number(p.chave.slice(5, 7)) - 1, 1))
-        + ", entradas " + formatarMoeda(p.receitas) + ", despesas " + formatarMoeda(p.despesas)
+        + ", " + textoTraduzido("entradas") + " " + formatarMoeda(p.receitas) + ", " + textoTraduzido("despesas") + " " + formatarMoeda(p.despesas)
     ).join("; "));
 }
 
@@ -1390,11 +1395,12 @@ function renderGraficoCategorias() {
         ]);
     }));
 
+    rosquinha.setAttribute("data-i18n-preserve-aria", "");
     rosquinha.setAttribute("aria-label", itens.length
-        ? "Despesas por categoria em " + rotuloMes + ". Total " + formatarMoeda(total) + ". " + itens.map(([nome, valor]) =>
+        ? textoTraduzido("Despesas por categoria em") + " " + rotuloMes + ". " + textoTraduzido("Total") + " " + formatarMoeda(total) + ". " + itens.map(([nome, valor]) =>
             nome + ": " + formatarMoeda(valor) + (valoresOcultos ? "" : ", " + formatarPercentual((valor / total) * 100))
         ).join("; ")
-        : "Nenhuma despesa com valor registrado em " + rotuloMes + ".");
+        : textoTraduzido("Nenhuma despesa com valor registrado em") + " " + rotuloMes + ".");
 }
 
 function renderTudo(persistir = true) {
@@ -1665,8 +1671,7 @@ document.querySelectorAll(".bloco-retrair").forEach((botao) => {
         const conteudo = document.getElementById(botao.getAttribute("aria-controls"));
         if (!conteudo) return;
         botao.setAttribute("aria-expanded", String(!expandido));
-        const titulo = botao.closest(".bloco-topo")
-            .querySelector("h2, h3").textContent.trim().toLowerCase();
+        const titulo = botao.getAttribute("aria-controls") === "conteudo-receitas" ? "entradas" : "despesas";
         botao.setAttribute("aria-label", (expandido ? "Expandir " : "Recolher ") + titulo);
         conteudo.hidden = expandido;
         if (botao.dataset.registraTela) registrarUltimaTela(botao.dataset.registraTela);
@@ -2187,7 +2192,7 @@ function salvarDespesa() {
 
 function nomeParaMensagem(despesa) {
 
-    return despesa.nome.trim() || "Sem nome";
+    return despesa.nome.trim() || textoTraduzido("Sem nome");
 
 }
 
@@ -2577,7 +2582,7 @@ function renomearCategoria(antigo) {
 
 
 
-    const entrada = prompt("Novo nome para a categoria “" + antigo + "”:", antigo);
+    const entrada = prompt(textoTraduzido("Novo nome para a categoria “" + antigo + "”:"), antigo);
 
 
 
@@ -2656,7 +2661,7 @@ function removerCategoria(nome) {
 
 
 
-    if (!confirm(aviso)) return;
+    if (!confirm(textoTraduzido(aviso))) return;
 
 
 
@@ -2915,7 +2920,7 @@ function copiarDoMesAnterior() {
 
     if ((destino.receitas.length || destino.despesas.length)
 
-        && !confirm("Este mês já tem lançamentos. Adicionar os de " + nomeMes(mes) + " junto com eles?")) {
+        && !confirm(textoTraduzido("Este mês já tem lançamentos. Adicionar os de " + nomeMes(mes) + " junto com eles?"))) {
 
         return;
 
@@ -2977,7 +2982,7 @@ function limparMes() {
 
 
 
-    if (!confirm("Apagar todas as entradas e despesas de " + nomeMes(periodo.mes) + " de " + periodo.ano + "? Essa ação não pode ser desfeita.")) {
+    if (!confirm(textoTraduzido("Apagar todas as entradas e despesas de " + nomeMes(periodo.mes) + " de " + periodo.ano + "? Essa ação não pode ser desfeita."))) {
 
         return;
 
@@ -3011,7 +3016,7 @@ function excluirTudo() {
         avisar("Não há lançamentos para excluir.");
         return;
     }
-    if (!confirm("Excluir todas as entradas e despesas de todos os meses? Essa ação não pode ser desfeita.")) return;
+    if (!confirm(textoTraduzido("Excluir todas as entradas e despesas de todos os meses? Essa ação não pode ser desfeita."))) return;
     Object.values(estado.meses).forEach((mes) => {
         mes.receitas = [];
         mes.despesas = [];
@@ -3140,10 +3145,10 @@ function importarBackup(arquivo) {
         const resultado = await recuperacaoFinanceira.restaurar({
             chave: chaveEstadoAtual, backup: bruto, validar: validarBackup,
             normalizar: backup => { const novo = normalizarEstado(backup); novo.tema ||= estado.tema; return novo; },
-            confirmar: () => confirm("Restaurar o backup? Todos os dados atuais serao substituidos."),
+            confirmar: () => confirm(textoTraduzido("Restaurar o backup? Todos os dados atuais serão substituídos.")),
             persistir: (key, next) => persistirEstadoFinanceiro(key, next, false, true)
         });
-        if (resultado.estado === "invalido") { avisar("Arquivo invalido."); return; }
+        if (resultado.estado === "invalido") { avisar("Arquivo inválido."); return; }
         if (resultado.estado === "cancelado") return;
         if (!resultado.persistido) { avisar("Falha ao persistir; dados anteriores preservados."); return; }
         estado = resultado.dados;
@@ -3208,9 +3213,9 @@ let estadoServiceWorker = "Estado do Service Worker ainda não consultado.";
 let verificacaoAtualizacaoAtiva = false;
 const confirmacaoAtualizacao = criarConfirmacaoAtualizacao((versaoAtual, versaoNova) => {
     registrarResultadoVerificacao(`Atualização disponível: ${versaoAtual} → ${versaoNova}.`, versaoNova);
-    return window.confirm(
+    return window.confirm(textoTraduzido(
         `Uma nova versão do Controle Financeiro está disponível.\n\nVersão instalada: ${versaoAtual}\nVersão disponível: ${versaoNova}\n\nDeseja atualizar agora?`
-    );
+    ));
 });
 try {
     preferenciasMenu = normalizarPreferenciasMenu(storage.lerJson(CHAVE_PREFERENCIAS_MENU));
@@ -3240,13 +3245,20 @@ function atualizarDiagnostico() {
     const recuperacao = recuperacaoFinanceira.protegido
         ? " Dados existentes não foram alterados; gravação automática bloqueada."
         : "";
-    ui.diagnosticoDados.textContent = `${receitas + despesas} lançamentos (${receitas} receitas, ${despesas} despesas) · ${categorias} categorias · ${armazenamento}${recuperacao}`;
+    ui.diagnosticoDados.replaceChildren(
+        criarEl("span", { text: `${receitas + despesas} lançamentos (${receitas} receitas, ${despesas} despesas) · ${categorias} categorias · ` }),
+        criarEl("span", { text: armazenamento }),
+        criarEl("span", { text: recuperacao })
+    );
     ui.ultimaOperacaoDados.textContent = preferenciasMenu.ultimaOperacao;
     ui.versaoInstalada.textContent = versaoInstalada;
     ui.versaoPublicada.textContent = preferenciasMenu.versaoPublicada;
     ui.dataVerificacaoAtualizacao.textContent = preferenciasMenu.ultimaVerificacao;
     ui.resultadoVerificacaoAtualizacao.textContent = preferenciasMenu.resultadoVerificacao;
-    ui.diagnosticoApp.textContent = `${estadoServiceWorker} Armazenamento: ${storage.persistente ? "persistente disponível." : "somente memória; os dados podem se perder ao recarregar ou fechar o app."}`;
+    ui.diagnosticoApp.replaceChildren(
+        criarEl("span", { text: estadoServiceWorker + " " }),
+        criarEl("span", { text: storage.persistente ? "Armazenamento: persistente disponível." : "Armazenamento: somente memória; os dados podem se perder ao recarregar ou fechar o app." })
+    );
 }
 
 async function atualizarEstadoServiceWorker() {
@@ -3468,7 +3480,7 @@ ui.idiomaInterface.addEventListener("change", () => {
     idiomaAtual = preferenciasMenu.idioma;
     aplicarIdioma(idiomaAtual);
     aplicarPreferenciasMenu();
-    renderTudo();
+    renderTudo(false);
     salvarPreferenciasMenu();
 });
 ui.moedaInterface.addEventListener("change", () => {
@@ -3562,7 +3574,7 @@ $("calcular-resultado").addEventListener("click", () => {
         const resultado = calcularExpressao(ui.visorCalculadora.value);
         ui.visorCalculadora.value = String(Number(resultado.toFixed(10))).replace(".", ",");
     } catch (_) {
-        ui.visorCalculadora.setCustomValidity("Expressão inválida");
+        ui.visorCalculadora.setCustomValidity(textoTraduzido("Expressão inválida"));
         ui.visorCalculadora.reportValidity();
         ui.visorCalculadora.setCustomValidity("");
     }
@@ -3787,7 +3799,7 @@ const writeSyncMeta = async (uid, meta) => {
         for (const key of Object.keys(meta)) {
             if (JSON.stringify(base[key]) === JSON.stringify(meta[key])) continue;
             if (key === "lastConfirmed") {
-                if (!current.outbox.length && !current.conflicts.length && (!current.lastConfirmed || meta[key] > current.lastConfirmed)) current[key] = meta[key];
+                if (!current.outbox.length && !current.conflicts.length && !current.conflictDecisions?.some(item => item.status !== 'confirmed') && (!current.lastConfirmed || meta[key] > current.lastConfirmed)) current[key] = meta[key];
             } else if (key === "remoteRevisions") {
                 current[key] ||= {};
                 for (const [entity,revision] of Object.entries(meta[key] || {})) {
@@ -3797,8 +3809,14 @@ const writeSyncMeta = async (uid, meta) => {
                 const identity = item => key === "outbox" ? item.id : JSON.stringify(item);
                 const before = new Set((base[key] || []).map(identity));
                 const after = new Set((meta[key] || []).map(identity));
-                current[key] = (current[key] || []).filter(item => key === "outbox" || !before.has(identity(item)) || after.has(identity(item)));
-                for (const item of meta[key] || []) if (!before.has(identity(item)) && !current[key].some(x => identity(x) === identity(item))) current[key].push(structuredClone(item));
+                const decisionFor = item => current.conflictDecisions?.find(decision => equivalentConflict(decision.conflict, item));
+                current[key] = (current[key] || []).filter(item => {
+                    const decision = key === 'conflicts' && decisionFor(item);
+                    return key === 'outbox' || decision && decision.status !== 'confirmed'
+                        || !before.has(identity(item)) || after.has(identity(item));
+                });
+                for (const item of meta[key] || []) if (!before.has(identity(item)) && !current[key].some(x => identity(x) === identity(item))
+                    && !(key === 'conflicts' && item.kind !== 'settings' && decisionFor(item)?.status === 'confirmed')) current[key].push(structuredClone(item));
             } else {
                 if (JSON.stringify(current[key]) !== JSON.stringify(base[key]) && JSON.stringify(current[key]) !== JSON.stringify(meta[key])) throw new Error("Metadados alterados por outra aba");
                 current[key] = structuredClone(meta[key]);
@@ -3813,14 +3831,13 @@ const writeSyncMeta = async (uid, meta) => {
     return saved;
 };
 function setSyncStatus(message, error = false) {
-    const idioma = ui.idiomaInterface?.value || "pt-BR";
-    const count = /^(?:Há |Sincronizado com )(\d+) conflito\(s\) (?:para revisar|para revisão)\.$/.exec(message);
-    const conflitos = { en: (n) => `${n} sync conflict(s) need review.`, es: (n) => `Hay ${n} conflicto(s) de sincronización por revisar.`, fr: (n) => `${n} conflit(s) de synchronisation à examiner.`, de: (n) => `${n} Synchronisierungskonflikt(e) müssen geprüft werden.`, ja: (n) => `確認が必要な同期競合が ${n} 件あります。` };
-    const text = count && idioma !== "pt-BR" ? conflitos[idioma](count[1]) : textoTraduzido(message, idioma);
-    syncUi.status.textContent = text; syncUi.status.dataset.state = error ? "error" : ""; syncUi.retry.hidden = !error;
+    syncUi.status.textContent = message; syncUi.status.dataset.state = error ? "error" : ""; syncUi.retry.hidden = !error;
     void renderSyncConflicts().catch(() => {});
 }
-function formatLastSync(date) { const idioma = ui.idiomaInterface?.value || "pt-BR"; const prefix = textoTraduzido("Última sincronização confirmada:", idioma); return `${prefix} ${new Date(date).toLocaleString(LOCALES[idioma] || LOCALES["pt-BR"])}`; }
+function formatLastSync(date) {
+    if (syncUi.last.dataset) syncUi.last.dataset.i18nDate = String(date);
+    return `Última sincronização confirmada: ${new Date(date).toLocaleString(LOCALES["pt-BR"])}`;
+}
 function resetFinancialInteractions() {
     ultimaRemocao = null; receitaEmEdicao = null; receitaSerieEmCriacao = null;
     despesaEmEdicao = null; despesaParaRemover = null; receitaParaRemover = null;
@@ -3990,7 +4007,7 @@ async function onFirebaseUser(user) {
     idbBloqueado = true;
     syncStopListener?.(); syncSettingsStop?.(); syncConflictsStop?.(); syncStopListener = null; syncSettingsStop = null; syncConflictsStop = null; syncUser = user || null; updateGoogleLoginButton(); syncRemoteRecords = []; syncRemoteRecordsLoaded = false; syncRemoteSettings = null;
     chaveEstadoAtual = key;
-    settingsConflictActive = false; syncUi.last.textContent = ""; syncUi.conflictList?.replaceChildren();
+    settingsConflictActive = false; syncUi.last.textContent = ""; if (syncUi.last.dataset) delete syncUi.last.dataset.i18nDate; syncUi.conflictList?.replaceChildren();
     if (previousUid !== uid) resetFinancialInteractions();
     try {
     if (!user) {
@@ -4002,7 +4019,7 @@ async function onFirebaseUser(user) {
         setSyncStatus("Somente neste dispositivo."); return;
     }
     chaveEstadoAtual = chaveLocalConta(user.uid); estado = normalizarEstado(null); renderTudo(false);
-    syncUi.account.textContent = user.email || user.displayName || user.uid; syncUi.login.hidden = true; syncUi.logout.hidden = false; syncUi.enabledLine.hidden = false;
+    syncUi.account.setAttribute?.("data-i18n-preserve", ""); syncUi.account.textContent = user.email || user.displayName || user.uid; syncUi.login.hidden = true; syncUi.logout.hidden = false; syncUi.enabledLine.hidden = false;
     const saved = lerEstadoPersistido(key);
     if (!["valido", "ausente"].includes(saved.estado)) throw new Error("Dados legados inv?lidos");
     chaveEstadoAtual = key; estado = normalizarEstado(saved.estado === "valido" ? saved.valor : null); renderTudo(false);
@@ -4064,7 +4081,7 @@ async function onFirebaseUser(user) {
                 meta = await readSyncMeta(uid);
                 if (!current()) return;
                 if (meta.firstLinkReviewed || meta.initialized) {
-                    setSyncStatus("Vinculo ja revisado em outra aba. Tente novamente para continuar.", true); return;
+                    setSyncStatus("Vínculo já revisado em outra aba. Tente novamente para continuar.", true); return;
                 }
                 const localState = meta.firstLinkSource !== "anonymous" || saved.estado === "valido" || registrosFinanceiros(estado).length
                     || !settingsEquivalent(financialSettings(estado), financialSettings(normalizarEstado(null))) ? structuredClone(estado)
@@ -4075,7 +4092,7 @@ async function onFirebaseUser(user) {
                     && settingsEquivalent(financialSettings(localState), financialSettings(normalizarEstado(null)));
                 const local = registrosFinanceiros(localState), validRemote = remote.filter((item) => item.month && item.type && item.id && item.record);
                 const merged = combinarRegistros(local, validRemote);
-                if (!confirm(`Primeiro vínculo com ${user.email || "esta conta"}.\n\nNeste dispositivo: ${local.length} lançamentos.\nNa nuvem: ${validRemote.length}.\nPossíveis duplicidades, que serão mantidas: ${merged.possiveisDuplicatas.length}.\nConflitos de mesmo ID, preservados dos dois lados: ${merged.conflitos.length}.\nConfigurações financeiras na nuvem: ${remoteSettings ? "sim" : "não"}.\n\nSerá guardado um backup local antes da combinação. Continuar?`)) { setSyncStatus("Vínculo aguardando sua confirmação.", true); return; }
+                if (!confirm(textoTraduzido(`Primeiro vínculo com ${user.email || textoTraduzido("esta conta")}.\n\nNeste dispositivo: ${local.length} lançamentos.\nNa nuvem: ${validRemote.length}.\nPossíveis duplicidades, que serão mantidas: ${merged.possiveisDuplicatas.length}.\nConflitos de mesmo ID, preservados dos dois lados: ${merged.conflitos.length}.\nConfigurações financeiras na nuvem: ${remoteSettings ? textoTraduzido("sim") : textoTraduzido("não")}.\n\nSerá guardado um backup local antes da combinação. Continuar?`))) { setSyncStatus("Vínculo aguardando sua confirmação.", true); return; }
                 migrationBackup(localState, { get: (k) => localStorage.getItem(k), set: (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch { return false; } } }, user.uid);
                 const months = {};
                 for (const item of merged.records) { months[item.month] ||= { receitas: [], despesas: [] }; months[item.month][item.type].push(item.record); }
@@ -4085,7 +4102,7 @@ async function onFirebaseUser(user) {
                 if (remoteSettings && !settingsEquivalent(financialSettings(next), remoteSettings)) {
                     const existingConflict = (meta.conflicts || []).some(item => item.kind === "settings"
                         && settingsEquivalent(item.local, financialSettings(next)) && settingsEquivalent(item.remote, remoteSettings));
-                    const useLocal = existingConflict || confirm("As categorias ou os orcamentos diferem. OK mantem os deste dispositivo; Cancelar usa os da nuvem. As duas copias serao preservadas no registro de conflito.");
+                    const useLocal = existingConflict || confirm(textoTraduzido("As categorias ou os orçamentos diferem. OK mantém os deste dispositivo; Cancelar usa os da nuvem. As duas cópias serão preservadas no registro de conflito."));
                     await registerSettingsConflict(uid, financialSettings(next), remoteSettings, undefined, session);
                     if (!current()) return;
                     if (!useLocal) next = normalizarEstado({ ...next, categorias: remoteSettings.categories, orcamentos: remoteSettings.budgets });
@@ -4141,7 +4158,8 @@ async function onFirebaseUser(user) {
         syncUi.last.textContent = finalMeta.lastConfirmed ? formatLastSync(finalMeta.lastConfirmed) : "Ainda não há sincronização confirmada.";
         if (!navigator.onLine) setSyncStatus("Offline — as alterações serão enviadas quando houver conexão.");
         else if (finalMeta.outbox?.length) setSyncStatus("Aguardando envio.");
-        else if (finalMeta.conflicts?.length) setSyncStatus(`Há ${finalMeta.conflicts.length} conflito(s) para revisar.`);
+        else if (finalMeta.conflictDecisions?.some(item => item.status !== 'confirmed')) setSyncStatus("Aguardando sincronização");
+        else if (pendingConflictCount(finalMeta)) setSyncStatus(`Há ${pendingConflictCount(finalMeta)} conflito(s) para revisar.`);
     } catch (error) { if (!current()) return; console.warn("Falha de sincronizacao.", error?.code || "unknown", error?.message, { requestedUid: uid, activeUid: syncUser?.uid || null, session, activeSession: syncSessions.current() }); setSyncStatus("Falha ao carregar a conta. Os dados locais foram mantidos.", true); }
 }
 let syncPublishChain = Promise.resolve();
@@ -4167,11 +4185,22 @@ async function publishFirebaseState(financialState, remote = syncRemoteRecords, 
     const prior = idbPendente.catch(() => {});
     const staged = prior.then(async () => {
         if (idbBloqueado) throw new Error("Persistencia bloqueada");
-        if (isCurrentSyncSession(session, uid) && financialStatesEquivalent(financialState, estadoParaSalvar()) && syncUi.enabled.checked && !(await readSyncMeta(uid)).restoredPending)
+        if (isCurrentSyncSession(session, uid) && financialStatesEquivalent(financialState, estadoParaSalvar()) && syncUi.enabled.checked) {
+            const meta = await readSyncMeta(uid);
+            if (meta.restoredPending) return;
+            const decision = !reviewedConflict && !skipSettings && meta.conflictDecisions?.find(item => item.status !== 'confirmed');
+            if (decision && (decision.conflict.kind === 'settings'
+                ? settingsEquivalent(financialSettings(decision.state), financialSettings(financialState))
+                : financialStatesEquivalent(decision.state, financialState))) return {resumeDecision: decision};
             return stageFirebaseState(uid, financialState, remote, reviewedConflict, deletions);
+        }
     });
     idbPendente = staged;
     const prepared = await staged;
+    if (prepared?.resumeDecision) {
+        if (isCurrentSyncSession(session, uid)) return resolveSyncConflict(prepared.resumeDecision.conflict, prepared.resumeDecision.choice);
+        return;
+    }
     if (prepared) financialState = structuredClone(prepared);
     const pending = syncPublishChain.catch(() => {}).then(() => {
         if (isCurrentSyncSession(session, uid)) return publishFirebaseStateNow(financialState, remote, skipSettings, reviewedConflict);
@@ -4246,7 +4275,7 @@ async function publishFirebaseStateNow(financialState, remote = syncRemoteRecord
             if (!canWriteSettings()) throw Object.assign(new Error('Stale settings'), {code:'sync/settings-stale'});
             updateSettingsConflictActive(uid, persisted, session);
             const remaining = (persisted.conflicts || []).filter(item => item.kind === 'settings' &&
-                !(reviewedConflict?.kind === 'settings' && JSON.stringify(item) === JSON.stringify(reviewedConflict)));
+                !(reviewedConflict?.kind === 'settings' && equivalentConflict(item, reviewedConflict)));
             if (remaining.length || !canWriteSettings()) throw Object.assign(new Error('Pending settings conflicts'), {code:'sync/settings-stale'});
             const durableNow = await idbBanco.ler('estado:' + uid);
             if (!canWriteSettings() || !durableNow || !financialStatesEquivalent(durableNow.dados, financialState))
@@ -4280,7 +4309,8 @@ async function publishFirebaseStateNow(financialState, remote = syncRemoteRecord
     updateSettingsConflictActive(uid, finalMeta, session);
     if (settingsConflict) setSyncStatus("Conflito de configurações preservado para revisão.", true);
     else if (finalMeta.outbox?.length) setSyncStatus("Aguardando envio.");
-    else if (finalMeta.conflicts?.length) setSyncStatus(`Há ${finalMeta.conflicts.length} conflito(s) para revisar.`);
+    else if (finalMeta.conflictDecisions?.some(item => item.status !== 'confirmed')) setSyncStatus("Aguardando sincronização");
+    else if (pendingConflictCount(finalMeta)) setSyncStatus(`Há ${pendingConflictCount(finalMeta)} conflito(s) para revisar.`);
     else if (!canPublish() || skipSettings || settingsConflictActive || unappliedRemote
         || !settingsEquivalent(settings, syncRemoteSettings)) { defer(); }
     else {
@@ -4410,7 +4440,8 @@ async function onRemoteConflicts(remoteConflicts, session, snapshotMetadata) {
     meta.conflicts = after.filter((item) => !resolved.has(item.operationId || item.operation?.id));
     const saved = await writeSyncMeta(capturedUid, meta); if (syncUser?.uid !== capturedUid || !isCurrentSyncSession(session, capturedUid)) return; updateSettingsConflictActive(capturedUid, saved, session);
     renderSyncConflicts();
-    if (meta.conflicts.length) setSyncStatus(`Há ${meta.conflicts.length} conflito(s) para revisar.`);
+    if (pendingConflictCount(saved)) setSyncStatus(`Há ${pendingConflictCount(saved)} conflito(s) para revisar.`);
+    else if (saved.conflictDecisions?.some(item => item.status !== 'confirmed')) setSyncStatus("Aguardando sincronização");
 }
 async function onRecordsSnapshot(records, metadata, session, uid) {
     if (!isCurrentSyncSession(session, uid)) return;
@@ -4431,7 +4462,7 @@ syncUi.login.addEventListener("click", startGoogleLogin);
 syncUi.logout.addEventListener("click", () => { if (firebaseClient) void firebaseClient.logout(); });
 syncUi.retry.addEventListener("click", () => { if (syncUser) void onFirebaseUser(syncUser); else void loadFirebaseSync(); });
 syncUi.restore.addEventListener("click", async () => {
-    if (!syncUser || !confirm("Combinar os registros do backup com os dados atuais da nuvem? Nenhum registro remoto ausente no backup será excluído.")) return;
+    if (!syncUser || !confirm(textoTraduzido("Combinar os registros do backup com os dados atuais da nuvem? Nenhum registro remoto ausente no backup será excluído."))) return;
     const session = syncSessions.current(), uid = syncUser.uid;
     try {
         const remote = validarRegistrosRemotos(await firebaseClient.list(uid, { serverOnly: true }));
@@ -4467,26 +4498,62 @@ syncUi.enabled.addEventListener("change", async () => {
         if (!enabled) {
             syncStopListener?.(); syncSettingsStop?.(); syncConflictsStop?.();
             syncStopListener = null; syncSettingsStop = null; syncConflictsStop = null;
-            setSyncStatus("Sincroniza??o desativada. Os dados permanecem locais.");
+            setSyncStatus("Sincronização desativada. Os dados permanecem locais.");
         } else void onFirebaseUser(syncUser);
-    } catch (error) { if (isCurrentSyncSession(session, uid)) setSyncStatus("N?o foi poss?vel salvar a prefer?ncia de sincroniza??o.", true); }
+    } catch (error) { if (isCurrentSyncSession(session, uid)) setSyncStatus("Não foi possível salvar a preferência de sincronização.", true); }
 });
 async function renderSyncConflicts() {
-    const capturedUid = syncUser?.uid;
+    const rendering = (renderSyncConflicts.version || 0) + 1;
+    renderSyncConflicts.version = rendering;
+    const uid = syncUser?.uid, session = syncSessions.current(), key = chaveEstadoAtual;
+    const meta = uid ? await readSyncMeta(uid) : {conflicts:[]};
+    if (rendering !== renderSyncConflicts.version || syncUser?.uid !== uid || chaveEstadoAtual !== key || !isCurrentSyncSession(session, uid)) return;
     syncUi.conflictList.replaceChildren();
-    const conflicts = syncUser ? (await readSyncMeta(syncUser.uid)).conflicts || [] : [];
-    if (syncUser?.uid !== capturedUid) return;
-    syncUi.conflicts.hidden = conflicts.length === 0;
-    conflicts.forEach((conflict, index) => {
-        const row = document.createElement("section"); row.className = "ajustes-secao";
-        const title = document.createElement("strong"); title.textContent = conflict.kind || "Conflito"; row.append(title);
-        const details = document.createElement("pre"); details.className = "nota";
-        details.textContent = JSON.stringify(conflict, (_key, value) => valoresOcultos && typeof value === "number" ? "••••" : value, 2); row.append(details);
-        const actions = document.createElement("div"); actions.className = "acoes";
-        const choices = conflict.kind === "settings" ? [["local", "Manter configurações locais"], ["remote", "Usar configurações da nuvem"]] : [["local", "Manter versão local"], ["remote", "Usar versão da nuvem"], ["both", "Manter as duas versões"]];
-        choices.forEach(([choice, label]) => { const button = document.createElement("button"); button.type = "button"; button.className = "btn btn-secundario"; button.textContent = label; button.addEventListener("click", () => void resolveSyncConflict(index, choice)); actions.append(button); });
+    const groups = [];
+    for (const conflict of meta.conflicts || []) if (!groups.some(item => equivalentConflict(item, conflict))) groups.push(conflict);
+    syncUi.conflicts.hidden = !groups.length && !meta.conflictHistory?.length;
+    for (const conflict of groups) {
+        const decision = meta.conflictDecisions?.find(item => equivalentConflict(item.conflict, conflict) && item.status !== 'confirmed');
+        const row = document.createElement('section'); row.className = 'ajustes-secao sync-conflict';
+        const title = document.createElement('strong'); title.textContent = decision?.status === 'failed' ? 'Falha — aguardando sincronização' : decision ? 'Aguardando sincronização' : 'Decisão pendente'; row.append(title);
+        const sides = document.createElement('div'); sides.className = 'sync-conflict-comparison';
+        for (const [label, value] of [['Dispositivo', conflict.local || conflict.operation?.value], ['Nuvem', conflict.remote]]) {
+            const side = document.createElement('div'), heading = document.createElement('h4'); heading.textContent = label; side.append(heading);
+            const content = document.createElement('p'); content.setAttribute('data-i18n-preserve','');
+            if (conflict.kind === 'settings') {
+                const other = label === 'Dispositivo' ? conflict.remote : conflict.local;
+                const lines = [];
+                if (!recordsEquivalent([...(value?.categories || [])].sort(), [...(other?.categories || [])].sort())) lines.push('Categorias: ' + (value?.categories || []).join(', '));
+                if (!recordsEquivalent(value?.budgets, other?.budgets)) {
+                    for (const [scope, entries] of Object.entries(value?.budgets || {})) {
+                        const walk = (obj, comparison, path) => { for (const [name, amount] of Object.entries(obj || {})) if (amount && typeof amount === 'object') walk(amount, comparison?.[name], path ? path + ' / ' + name : name); else if (!recordsEquivalent(amount, comparison?.[name])) lines.push((path ? path + ' / ' : '') + name + ': ' + (valoresOcultos ? '••••' : String(amount))); };
+                        walk(entries, other?.budgets?.[scope], scope === 'padrao' ? 'Orçamentos' : 'Orçamentos mensais');
+                    }
+                }
+                content.textContent = lines.join('\n') || (!recordsEquivalent(value?.budgets, other?.budgets) ? 'Nenhum orçamento diferente configurado nesta versão' : 'Sem diferenças financeiras');
+            } else {
+                const record = value?.record || value;
+                content.textContent = value?.deleted ? 'Excluído' : [record?.nome || record?.descricao, record?.categoria, record?.data, valoresOcultos ? '••••' : record?.valor].filter(item => item !== undefined).join(' · ');
+            }
+            side.append(content); sides.append(side);
+        }
+        row.append(sides);
+        const details = document.createElement('details'), summary = document.createElement('summary'), pre = document.createElement('pre');
+        summary.textContent = 'Detalhes técnicos'; pre.setAttribute('data-i18n-preserve',''); pre.textContent = JSON.stringify(conflict, (_key,value) => valoresOcultos && typeof value === 'number' ? '••••' : value, 2); details.append(summary, pre); row.append(details);
+        const actions = document.createElement('div'); actions.className = 'acoes';
+        const choices = decision ? [[decision.choice, 'Tentar sincronizar']] : conflict.kind === 'settings' ? [['local','Manter configurações locais'],['remote','Usar configurações da nuvem']] : [['local','Manter versão local'],['remote','Usar versão da nuvem'],['both','Manter as duas versões']];
+        for (const [choice,label] of choices) {
+            const button = document.createElement('button'); button.type = 'button'; button.className = 'btn btn-secundario'; button.textContent = label;
+            button.addEventListener('click', async () => { button.disabled = true; try { await resolveSyncConflict(conflict, choice); } catch { if (isCurrentSyncSession(session, uid)) setSyncStatus('Falha no envio. As alterações continuam salvas localmente.', true); } finally { button.disabled = false; } }); actions.append(button);
+        }
         row.append(actions); syncUi.conflictList.append(row);
-    });
+    }
+    if (meta.conflictHistory?.length) {
+        const history = document.createElement('details'), summary = document.createElement('summary'), content = document.createElement('pre');
+        history.className = 'sync-conflict'; summary.textContent = 'Sincronizado: ' + meta.conflictHistory.length;
+        content.setAttribute('data-i18n-preserve', ''); content.textContent = JSON.stringify(meta.conflictHistory, (_key,value) => valoresOcultos && typeof value === 'number' ? '••••' : value, 2);
+        history.append(summary, content); syncUi.conflictList.append(history);
+    }
 }
 async function resolveSyncConflict(index, choice) {
     if (!syncUser) return;
@@ -4494,8 +4561,16 @@ async function resolveSyncConflict(index, choice) {
     const current = () => isCurrentSyncSession(session, conflictUserUid) && chaveEstadoAtual === conflictKey;
     const meta = await readSyncMeta(conflictUserUid);
     if (!current()) return;
-    const conflict = meta.conflicts?.[index]; if (!conflict) return;
+    const conflict = typeof index === 'number' ? meta.conflicts?.[index] : meta.conflicts?.find(item => equivalentConflict(item, index)); if (!conflict) return;
+    const decision = meta.conflictDecisions?.find(item => equivalentConflict(item.conflict, conflict) && item.status !== 'confirmed');
     if (!["local", "remote", "both"].includes(choice)) return;
+    if (decision && choice !== decision.choice) return;
+    const matchesDecision = state => conflict.kind === 'settings'
+        ? settingsEquivalent(financialSettings(decision.state), financialSettings(state))
+        : financialStatesEquivalent(decision.state, state);
+    if (decision && !matchesDecision(estadoParaSalvar())) {
+        setSyncStatus("A escolha aguarda sincronização; há alterações posteriores para revisar.", true); return;
+    }
     let nextState = structuredClone(estado);
     let resolutionRemote = syncRemoteRecords, deletions = [];
     if (conflict.kind === "settings") {
@@ -4538,46 +4613,74 @@ async function resolveSyncConflict(index, choice) {
                 if (at >= 0) list[at] = record; else list.push(record);
                 if (conflict.preserved?.id && choice === "local") { const copied = list.findIndex((entry) => entry.id === conflict.preserved.id); if (copied >= 0) list.splice(copied, 1); }
             }
-            meta.outbox = (meta.outbox || []).filter((entry) => entry.entityKey !== operation?.entityKey);
         }
     }
     if (!validarBackup(nextState)) { setSyncStatus("A resolução contém dados inválidos ou excede o limite mensal. Os dados locais foram preservados.", true); return; }
     const normalized = normalizarEstado(nextState);
-    const persisted = await persistirEstadoFinanceiro(conflictKey, normalized, choice !== "remote");
+    if (decision && !matchesDecision(normalized)) {
+        setSyncStatus("A escolha aguarda sincronização; há alterações posteriores para revisar.", true); return;
+    }
+    const persisted = await idbServico.coordenarSettings(conflictUserUid, () => persistirEstadoFinanceiro(conflictKey, normalized, false, false, false, (queue, mergedState) => {
+        if (!current() || !queue.conflicts.some(item => equivalentConflict(item, conflict))) throw Object.assign(new Error('Conflict changed'), {code:'persistence/cancelled'});
+        queue.conflictDecisions ||= [];
+        const existing = queue.conflictDecisions.find(item => equivalentConflict(item.conflict, conflict) && item.status !== 'confirmed');
+        if (existing && existing.choice !== choice) throw Object.assign(new Error('Concurrent conflict decision'), {code:'persistence/cancelled'});
+        if (existing) { existing.status = 'pending'; existing.state = structuredClone(mergedState || normalized); }
+        if (!existing) {
+            const entity = conflict.kind !== 'settings' && (conflict.operation?.entityKey || syncEntityKey(conflict.remote || conflict.operation?.value || conflict.local || conflict));
+            const superseded = entity ? queue.outbox.filter(op => op.entityKey === entity) : [];
+            if (superseded.some(op => queue.attempted?.[op.id] || !meta.outbox.some(old => recordsEquivalent(old, op))))
+                throw Object.assign(new Error('An operation is in flight or changed; retry after synchronization'), {code:'persistence/cancelled'});
+            if (entity) queue.outbox = queue.outbox.filter(op => op.entityKey !== entity);
+            queue.conflictDecisions.push({ conflict: structuredClone(conflict), choice, state: structuredClone(mergedState || normalized), supersededOperations: structuredClone(superseded), status: 'pending', decidedAt: new Date().toISOString() });
+        }
+    }));
     if (!current()) return;
     if (!persisted) { setSyncStatus("Não foi possível salvar a resolução. A cópia local e o conflito foram preservados.", true); return; }
     if (!current()) return;
-    estado = normalized; renderTudo(false);
-    if (conflict.kind === "settings" && choice === "remote") { syncRemoteSettings = conflict.remote; meta.settingsBaseline = financialSettings(estado); }
-    await writeSyncMeta(conflictUserUid, meta);
+    estado = normalizarEstado(idbBase); renderTudo(false);
+    setSyncStatus("Aguardando sincronização");
+    if (conflict.kind === "settings" && choice === "remote") syncRemoteSettings = conflict.remote;
+    // The decision is already durable. Never overwrite that transaction with a stale queue.
     if (!current()) return;
-    if (conflict.source === "firestore" && conflict.operationId) {
-        try {
-            if (choice !== "remote") await publishFirebaseState(estado, resolutionRemote, false, conflict, deletions);
-            if (!isCurrentSyncSession(session, conflictUserUid)) return;
-            if (!await firebaseClient.resolveConflict(conflictUserUid, conflict.operationId, choice)) throw new Error("O conflito remoto não está disponível para confirmar a escolha.");
-            if (!isCurrentSyncSession(session, conflictUserUid)) return;
-        } catch (error) { if (!isCurrentSyncSession(session, conflictUserUid)) return; console.warn("Falha de sincronizacao.", error?.code || "unknown", error?.message); setSyncStatus("A escolha foi salva localmente, mas não foi possível confirmar a resolução na nuvem. Tente novamente.", true); return; }
-    } else if (choice !== "remote") {
-        try {
-            const result = await publishFirebaseState(estado, resolutionRemote, false, conflict, deletions);
-            if (!isCurrentSyncSession(session, conflictUserUid)) return;
-            if (conflict.kind === "settings" && result?.settingsConfirmed !== true) {
-                setSyncStatus("A escolha continua pendente; o conflito foi preservado até a confirmação das configurações.", true); return;
-            }
-        }
-        catch (error) { if (!isCurrentSyncSession(session, conflictUserUid)) return; console.warn("Falha de sincronizacao.", error?.code || "unknown", error?.message); setSyncStatus("A escolha foi salva localmente e aguarda envio.", true); return; }
+    try {
+    if (!navigator.onLine) return;
+    if (choice !== 'remote') {
+        const result = await publishFirebaseState(estado, resolutionRemote, false, conflict, deletions);
+        if (!current()) return;
+        if (conflict.kind === 'settings' && result?.settingsConfirmed !== true) return;
     }
-    if (!current()) return;
-    const latestMeta = await readSyncMeta(conflictUserUid);
-    if (!current()) return;
-    const targetOperationId = conflict.operationId || conflict.operation?.id;
-    if (targetOperationId) latestMeta.conflicts = (latestMeta.conflicts || []).filter((entry) => (entry.operationId || entry.operation?.id) !== targetOperationId);
-    else {
-        const target = JSON.stringify(conflict), at = (latestMeta.conflicts || []).findIndex((entry) => JSON.stringify(entry) === target);
-        if (at >= 0) latestMeta.conflicts.splice(at, 1);
+    if (!current() || !navigator.onLine || idbBloqueado) return;
+    // Verify the selected value on the server, including the cloud choice. Local writes are not ACKs.
+    const confirmed = conflict.kind === 'settings'
+        ? settingsEquivalent(financialSettings(estado), await firebaseClient.getSettings(conflictUserUid, { serverOnly: true }))
+        : await firebaseClient.list(conflictUserUid, { serverOnly: true }).then(records => {
+            const key = conflict.operation?.entityKey || syncEntityKey(conflict.remote || conflict.operation?.value || conflict.local || conflict);
+            const remote = records.find(item => syncEntityKey(item) === key);
+            const local = registrosFinanceiros(estado).find(item => syncEntityKey(item) === key);
+            return local ? remote && !remote.deleted && recordsEquivalent(local.record, remote.record) : !remote || remote.deleted;
+        });
+    if (!current() || !confirmed) return;
+    if (conflict.source === 'firestore' && conflict.operationId) {
+        if (!await firebaseClient.resolveConflict(conflictUserUid, conflict.operationId, choice)) throw new Error('Remote resolution unavailable');
+        if (!current()) return;
     }
-    await writeSyncMeta(conflictUserUid, latestMeta);
+    const completed = await idbServico.confirmarDecisao(conflictUserUid, conflict, estadoParaSalvar(), () => current() && !idbBloqueado);
+    if (current()) {
+        const queue = completed.get('fila:' + conflictUserUid);
+        updateSettingsConflictActive(conflictUserUid, queue, session);
+        setSyncStatus(queue.conflictDecisions?.some(item => item.status !== 'confirmed') ? "Aguardando sincronização" : "Escolha confirmada na nuvem.");
+    }
+    } catch (error) {
+        if (!current()) return;
+        await idbServico.alterarFila(conflictUserUid, queue => {
+            if (!current()) throw Object.assign(new Error('Session invalidated'), {code:'persistence/cancelled'});
+            const item = queue.conflictDecisions?.find(item => equivalentConflict(item.conflict, conflict) && item.status !== 'confirmed');
+            if (item) item.status = 'failed';
+            return queue;
+        });
+        setSyncStatus('Falha no envio. As alterações continuam salvas localmente.', true);
+    }
     if (current()) renderSyncConflicts();
 }
 syncUi.conflicts.addEventListener("click", () => { renderSyncConflicts(); abrirDialogoModal(syncUi.conflictDialog); });

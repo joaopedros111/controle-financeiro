@@ -8,3 +8,9 @@ firebase-debug.log
 
 # Backups temporarios
 *.bak
+# Arquivos temporários de diagnóstico e staging
+.conflict-stage-location
+
+# Patches históricos de diagnóstico
+docs/BOOTSTRAP-AUTH-2026-10-23.patch
+docs/RECONEXAO-SESSAO-2026-10-23.patch

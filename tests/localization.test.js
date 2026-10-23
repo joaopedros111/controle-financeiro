@@ -1,4 +1,5 @@
 import test from "node:test";
+import {readFile} from "node:fs/promises";
 import assert from "node:assert/strict";
 import { formatarMoeda, IDIOMAS, MOEDAS, textoTraduzido } from "../localization.js";
 import { normalizarPreferenciasMenu } from "../preferences.js";
@@ -50,14 +51,16 @@ test("traduções localizam frases da interface e preservam o português como pa
 });
 
 test("status dinâmico do Service Worker e do armazenamento acompanha o idioma da interface", () => {
-    const diagnostico = "Service Worker ativo (activated); controlando esta página. Armazenamento: persistente disponível.";
+    // The UI renders these independently so dynamic values are never translated as substrings.
+    const diagnostico = idioma => textoTraduzido("Service Worker ativo (activated); controlando esta página.", idioma)
+        + " " + textoTraduzido("Armazenamento: persistente disponível.", idioma);
     assert.equal(
-        textoTraduzido(diagnostico, "en"),
+        diagnostico("en"),
         "Service Worker active (activated); controlling this page. Storage: persistent storage available."
     );
     assert.equal(
-        textoTraduzido(diagnostico, "ja"),
-        "Service Worker有効（activated）このページを制御中。 ストレージ: 永続ストレージを利用できます。"
+        diagnostico("ja"),
+        "Service Worker有効（activated）。このページを制御中。 ストレージ: 永続ストレージを利用できます。"
     );
 });
 
@@ -98,4 +101,28 @@ test("preferências antigas e valores não suportados usam idioma e moeda padrã
 test("recurring income controls are localized in supported interface languages", () => {
     assert.equal(textoTraduzido("Repetir mensalmente por 12 meses", "en"), "Repeat monthly for 12 months");
     assert.equal(textoTraduzido("Cancelar próximas ocorrências", "fr"), "Annuler les prochaines occurrences");
+});
+
+test('catalog has complete unambiguous translations and matching parameters for all six languages',async()=>{
+ const source=await readFile(new URL('../localization.js',import.meta.url),'utf8');
+ const start=source.indexOf('const FRASES =')+14,end=source.indexOf('\n];',start)+2;
+ const rows=Function('return '+source.slice(start,end))(),keys=new Set();
+ for(const row of rows){
+  assert.equal(row.length,IDIOMAS.length,row[0]);assert.equal(keys.has(row[0]),false,'Duplicate source: '+row[0]);keys.add(row[0]);
+  const parameters=[...row[0].matchAll(/[{][0-9]+[}]/g)].map(m=>m[0]).sort();
+  for(const [index,language] of IDIOMAS.entries()){
+   assert.equal(typeof row[index],'string');assert.ok(row[index].trim(),row[0]+' '+language);
+   assert.deepEqual([...row[index].matchAll(/[{][0-9]+[}]/g)].map(m=>m[0]).sort(),parameters,row[0]+' '+language);
+   assert.equal(textoTraduzido(row[0],language),row[index],row[0]+' '+language);
+  }
+ }
+});
+test('complete templates preserve names, amounts and replacement characters without partial substitutions',()=>{
+ for(const language of IDIOMAS){
+  const name='Despesas Janeiro Salvar Moto Serasa $&';
+  assert.ok(textoTraduzido('Editar entrada '+name,language).includes(name));
+  assert.equal(textoTraduzido('Minha categoria Despesas Janeiro',language),'Minha categoria Despesas Janeiro');
+  assert.equal(textoTraduzido('X',language),'X');
+  assert.equal(textoTraduzido('Transferência para Salvar Janeiro',language),'Transferência para Salvar Janeiro');
+ }
 });

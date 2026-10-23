@@ -4,6 +4,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import vm from "node:vm";
+import { textoTraduzido } from "../localization.js";
 import * as sync from "../sync-core.js";
 import { normalizarEstado, normalizarValorMonetario, validarBackup, mesFinanceiroValido, LIMITE_MONETARIO_SEGURO } from "../finance-core.js";
 
@@ -21,7 +22,7 @@ const financialState = (...items) => normalizarEstado({ versao: 3, tema: "claro"
 // Execute the application functions themselves. Only browser/SDK boundaries are stubbed.
 function harness(items = [entry()], initial = financialState(entry())) {
     const values = new Map(), statuses = [], commits = [];
-    const context = vm.createContext({ ...sync, structuredClone, TextEncoder, console,
+    const context = vm.createContext({ ...sync, structuredClone, TextEncoder, console, textoTraduzido,
         validarBackup, normalizarEstado, normalizarValorMonetario, mesFinanceiroValido,
         CHAVE_ESTADO: "controleFinanceiro:v3", IDB_HOMOLOGACAO: false, idbBase: structuredClone(initial),
         setGoogleAuthUser() {}, updateGoogleLoginButton() {}, window: { addEventListener() {} }, idbPendente: Promise.resolve(), idbBloqueado: false,
@@ -42,7 +43,7 @@ function harness(items = [entry()], initial = financialState(entry())) {
         saveSettings: async () => ({ acknowledged: true, revision: "settings-b" }) }
     });
     context.estadoParaSalvar = () => structuredClone(context.estado);
-    context.persistirEstadoFinanceiro = async (key, value) => { if (!context.storage.escreverJson(key, value)) return false; const result = await context.idbServico.aplicarEdicao("alice", context.idbBase, value); context.idbBase = structuredClone(result.estado.dados); return true; };
+    context.persistirEstadoFinanceiro = async (key, value, localEdit, restored, firstLinkReviewed, editQueue = () => {}) => { if (!context.storage.escreverJson(key, value)) return false; const result = await context.idbServico.aplicarEdicao("alice", context.idbBase, value, () => [], editQueue); context.idbBase = structuredClone(result.estado.dados); return true; };
     let serial = Promise.resolve();
     const docs = new Map([["estado:alice",{revisao:0,dados:structuredClone(initial)}],["estado:@local",{revisao:0,dados:financialState()}]]);
     const db = {
@@ -189,7 +190,7 @@ test("falha ao persistir fila impede rede; IDs legados longos não são reescrit
 test("resolução válida persiste antes de remover conflito; tombstone remoto remove registro", { timeout: 5000 }, async () => {
     for (const remote of [entry("r1", 20), { ...entry(), deleted: true, record: undefined }]) {
         if (remote.deleted) delete remote.record;
-        const h = harness();
+        const h = harness([remote]);
         h.context.writeSyncMeta("alice", { outbox: [], conflicts: [{ operation: { value: entry() }, remote }] });
         await h.context.resolveSyncConflict(0, "remote");
         assert.equal(h.meta().conflicts.length, 0);
@@ -584,15 +585,15 @@ test("Unicode malformado é bloqueado para envio, sem reescrever o ID local", { 
 
 test("detalhes de conflitos respeitam valores ocultos", { timeout: 5000 }, async () => {
     const h = harness(), list = { children: [], replaceChildren() { this.children = []; }, append(item) { this.children.push(item); } };
-    h.context.document = { createElement: () => ({ children: [], append(...items) { this.children.push(...items); }, addEventListener() {} }) };
+    h.context.document = { createElement: () => ({ children: [], append(...items) { this.children.push(...items); }, addEventListener() {}, setAttribute() {} }) };
     h.context.syncUi.conflictList = list; h.context.syncUi.conflicts = {};
     h.context.valoresOcultos = true;
     h.context.writeSyncMeta("alice", { outbox: [], conflicts: [{ kind: "test", local: { valor: 12345.67 } }] });
     vm.runInContext(source.slice(source.indexOf("async function renderSyncConflicts("), source.indexOf("async function resolveSyncConflict(")), h.context);
     await h.context.renderSyncConflicts();
-    assert.doesNotMatch(list.children[0].children[1].textContent, /12345\.67/);
+    assert.doesNotMatch(list.children[0].children[2].children[1].textContent, /12345\.67/);
     h.context.valoresOcultos = false; await h.context.renderSyncConflicts();
-    assert.match(list.children[0].children[1].textContent, /12345\.67/);
+    assert.match(list.children[0].children[2].children[1].textContent, /12345\.67/);
 });
 
 test("troca de UID invalida desfazer, edição e diálogos financeiros da conta anterior", { timeout: 5000 }, async () => {

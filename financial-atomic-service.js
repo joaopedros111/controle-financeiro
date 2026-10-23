@@ -2,7 +2,7 @@
 // Não altera o armazenamento legado e não realiza operações de rede.
 import { ConflitoPersistencia } from './transactional-state.js';
 import { combinarEdicaoFinanceira } from './financial-intents.js';
-import { registrosFinanceiros, recordEntityKey, operationId, coalesceOutbox, recordsEquivalent, blockedConflictKeys, validSyncIdentity, functionalSettings, settingsEquivalent, validateRemoteSettings, financialStatesEquivalent } from './sync-core.js';
+import { registrosFinanceiros, recordEntityKey, operationId, coalesceOutbox, recordsEquivalent, blockedConflictKeys, validSyncIdentity, functionalSettings, settingsEquivalent, validateRemoteSettings, financialStatesEquivalent, equivalentConflict } from './sync-core.js';
 
 const copy = (value) => structuredClone(value);
 const validRevision = (value) => Number.isSafeInteger(value) && value >= 0;
@@ -195,7 +195,8 @@ export class ServicoFinanceiroAtomico {
             const state = docs.get(stateKey), queue = docs.get(queueKey);
             if (!state || !this.validarEstado(state.dados) || !queue || !this.validarFila(queue)) throw new Error('Persistência inválida');
             if (isCurrent() && financialStatesEquivalent(state.dados, estadoEsperado)
-                && !queue.outbox.length && !queue.conflicts.length && !queue.restoredPending) {
+                && !queue.outbox.length && !queue.conflicts.length && !queue.restoredPending
+                && !queue.conflictDecisions?.some(item => item.status !== 'confirmed')) {
                 queue.lastConfirmed = !Number.isFinite(Date.parse(queue.lastConfirmed)) || quando > queue.lastConfirmed ? quando : queue.lastConfirmed;
                 queue.migrationPending = false;
                 confirmed = true;
@@ -203,6 +204,25 @@ export class ServicoFinanceiroAtomico {
             return docs;
         });
         return { confirmed, fila: result.get(queueKey) };
+    }
+    async confirmarDecisao(uid, conflict, expected, isCurrent) {
+        return this.coordenarSettings(uid, () => this.db.alterarDocumentos([`estado:${uid}`, `fila:${uid}`], docs => {
+            if (!isCurrent()) throw Object.assign(new Error('Session invalidated'), {code:'persistence/cancelled'});
+            const queue = docs.get(`fila:${uid}`), state = docs.get(`estado:${uid}`);
+            if (!queue || !this.validarFila(queue) || !state || !this.validarEstado(state.dados)) throw new Error('Invalid persistence');
+            const decision = queue.conflictDecisions?.find(item => equivalentConflict(item.conflict, conflict) && item.status !== 'confirmed');
+            if (!decision || !financialStatesEquivalent(state.dados, expected)
+                || !financialStatesEquivalent(decision.state, expected)
+                || conflict.kind !== 'settings' && queue.outbox.some(op => op.entityKey === (conflict.operation?.entityKey || recordEntityKey(conflict.remote || conflict.operation?.value || conflict)))) return docs;
+            const originals = queue.conflicts.filter(item => equivalentConflict(item, conflict));
+            queue.conflictHistory ||= [];
+            queue.conflictHistory.push(...originals.map(item => ({conflict:copy(item), choice:decision.choice, confirmedAt:new Date().toISOString()})));
+            queue.conflicts = queue.conflicts.filter(item => !equivalentConflict(item, conflict));
+            decision.status = 'confirmed';
+            if (conflict.kind === 'settings' && !queue.conflicts.some(item => item.kind === 'settings'))
+                queue.settingsBaseline = {version:expected.versao, categories:copy(expected.categorias), theme:expected.tema, budgets:copy(expected.orcamentos)};
+            return docs;
+        }));
     }
     async alterarFila(uid, transformar) {
         if (!(uid === '@local' || /^[A-Za-z0-9_-]{1,128}$/.test(uid || '')) || typeof transformar !== 'function')

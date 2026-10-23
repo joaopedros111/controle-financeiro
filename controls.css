@@ -181,3 +181,8 @@
     border-color: color-mix(in srgb, var(--vermelho) 45%, var(--borda));
     background: var(--vermelho-suave);
 }
+.sync-conflict { min-width: 0; overflow-wrap: anywhere; }
+.sync-conflict-comparison { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+.sync-conflict-comparison p, .sync-conflict pre { white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; }
+.sync-conflict .acoes { flex-wrap: wrap; }
+@media (max-width: 600px) { .sync-conflict-comparison { grid-template-columns: minmax(0, 1fr); } }
