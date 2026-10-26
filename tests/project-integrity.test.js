@@ -321,14 +321,14 @@ test("valores monetários usam formatação centralizada nas listas, resumos e g
     ]) {
         assert.ok(html.includes(`id="${seletor}"`) || app.includes(`class: "${seletor}"`), `${seletor} sem componente`);
     }
-    assert.match(app, /title: rotulo \+ " em ".*formatarMoeda\(valor\)/);
+    assert.match(app, /const descricao = rotuloPeriodo\(p\)[^;]*formatarMoeda\(p\.receitas\)[\s\S]*?formatarMoeda\(p\.despesas\)/);
     assert.match(app, /formatarMoeda\(p\.receitas\).*formatarMoeda\(p\.despesas\)/);
     assert.match(app, /formatarMoeda\(total\)[\s\S]*formatarMoeda\(valor\)/);
     assert.match(app, /const pago = pagoCentavos \/ 100/);
     assert.match(app, /const pendente = \(despesaCentavos - pagoCentavos\) \/ 100/);
     assert.doesNotMatch(app, /\$\("valor-pago"\)|ui\.valorPago/);
     assert.match(css, /body\.valores-ocultos \.grafico-barras/);
-    assert.match(css, /body\.valores-ocultos #grafico-rosca/);
+    assert.match(css, /body\.valores-ocultos \.categoria-barra/);
     assert.match(css, /html\.app-inicializando \.container/);
     assert.match(html, /class="app-inicializando"/);
 });
@@ -449,15 +449,15 @@ test("resumo do mês mostra quatro indicadores e o comprometimento abaixo da gra
     const fimGrade = resumo.indexOf("</dl>", posicaoGrade);
     const posicaoComprometimento = resumo.indexOf('id="texto-comprometido"');
 
-    assert.doesNotMatch(resumo, /Saldo do mês|id="saldo-rotulo"|Já pago|<dt>A pagar<\/dt>/);
-    for (const rotulo of ["Entradas", "Despesas", "Saldo total", "Falta pagar"]) {
+    assert.doesNotMatch(resumo, /Saldo total|Falta pagar|id="saldo-rotulo"|Já pago|<dt>A pagar<\/dt>/);
+    for (const rotulo of ["Entradas", "Despesas", "Saldo do mês", "Pendente no mês"]) {
         assert.ok(resumo.includes(`<dt>${rotulo}</dt>`), `${rotulo} ausente do resumo`);
     }
     assert.equal((resumo.match(/<dt>/g) || []).length, 4);
     assert.match(resumo, /<dt>Entradas<\/dt>[\s\S]*?<dd id="total-receitas">/);
     assert.match(resumo, /<dt>Despesas<\/dt>[\s\S]*?<dd id="total-despesas">/);
-    assert.match(resumo, /<dt>Saldo total<\/dt>[\s\S]*?<dd id="saldo-valor"/);
-    assert.match(resumo, /<dt>Falta pagar<\/dt>[\s\S]*?<dd id="valor-pendente">/);
+    assert.match(resumo, /<dt>Saldo do mês<\/dt>[\s\S]*?<dd id="saldo-valor"/);
+    assert.match(resumo, /<dt>Pendente no mês<\/dt>[\s\S]*?<dd id="valor-pendente">/);
     assert.ok(posicaoGrade >= 0 && fimGrade > posicaoGrade && posicaoComprometimento > fimGrade);
     assert.match(app, /const saldo = \(receitaCentavos - despesaCentavos\) \/ 100/);
     assert.match(app, /ui\.saldoValor\.textContent = formatarMoeda\(saldo\)/);
