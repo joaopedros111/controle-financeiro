@@ -2115,21 +2115,21 @@ body.valores-ocultos .categoria-barra { visibility: hidden; }
 /* Despesas do mês: todos os elementos na mesma linha */
 .despesa {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 22px auto auto 32px 32px;
+    grid-template-columns: 22px minmax(0, 1fr) auto auto 32px 32px;
     grid-template-rows: auto;
     align-items: center;
     gap: 6px;
 }
 
-.despesa > .despesa-nome {
+.despesa > .pago-despesa {
     grid-column: 1;
     grid-row: 1;
-    min-width: 0;
 }
 
-.despesa > .pago-despesa {
+.despesa > .despesa-nome {
     grid-column: 2;
     grid-row: 1;
+    min-width: 0;
 }
 
 .despesa > .situacao {
@@ -2164,7 +2164,7 @@ body.valores-ocultos .categoria-barra { visibility: hidden; }
 
 @media (max-width: 600px) {
     .despesa {
-        grid-template-columns: minmax(0, 1fr) 20px auto auto 28px 28px;
+        grid-template-columns: 20px minmax(0, 1fr) auto auto 28px 28px;
         grid-template-rows: auto;
         gap: 4px;
     }
