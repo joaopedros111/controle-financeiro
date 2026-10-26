@@ -110,14 +110,12 @@ test("B: duas sessões preservam revisão concorrente e permitem resolução", a
         await context.setOffline(false);
         await expect.poll(async () => (await stored(page, metaKey(account.localId)))?.outbox?.length).toBe(0);
         await second.setOffline(false);
-        await expect.poll(async () => (await stored(other, metaKey(account.localId)))?.conflicts?.filter((item) => item.kind !== "settings").length, { timeout: 30_000 }).toBeGreaterThan(0);
-        expect((await incomes(other, account.localId))[0].valor).toBe(30);
-        await other.locator("#abrir-ajustes").click(); await other.locator("#abrir-conflitos-sincronizacao").click();
-        await other.getByRole("button", { name: "Manter versão local", exact: true }).first().click();
+        await expect.poll(async () => (await stored(other, metaKey(account.localId)))?.automaticHistory?.some(item => JSON.stringify(item.local).includes('30')), { timeout: 30_000 }).toBe(true);
+        await expect.poll(async () => (await incomes(other, account.localId))[0]?.valor).toBe(20);
         await expect.poll(async () => (await stored(other, metaKey(account.localId)))?.conflicts?.filter((item) => item.kind !== "settings").length).toBe(0);
         const records = await remoteRecords(request, account);
         expect(records).toHaveLength(1);
-        expect(Number(records[0].fields.record.mapValue.fields.valor.integerValue || records[0].fields.record.mapValue.fields.valor.doubleValue)).toBe(30);
+        expect(Number(records[0].fields.record.mapValue.fields.valor.integerValue || records[0].fields.record.mapValue.fields.valor.doubleValue)).toBe(20);
     } finally { await second.close(); }
 });
 
@@ -269,7 +267,7 @@ test('L: blocked expected Auth persistence preserves offline financial data and 
  await expect(page.locator('#estado-sincronizacao')).toContainText('armazenamento');
  await addIncome(page,'Preservada durante bloqueio Auth',10);
  const local=await stored(page,'controleFinanceiro:v3');expect(Object.values(local.meses).flatMap(m=>m.receitas).some(r=>r.nome==='Preservada durante bloqueio Auth')).toBe(true);
- await page.evaluate(()=>{window.__allowAuthStorage=true;document.querySelector('#tentar-sincronizacao').click();});
+ await page.evaluate(()=>{window.__allowAuthStorage=true;window.dispatchEvent(new Event('focus'));});
  await expect(page.locator('#estado-sincronizacao')).toHaveText('Somente neste dispositivo.');
  await login(page,account);
  // Signing in must preserve the anonymous source; this test must not require

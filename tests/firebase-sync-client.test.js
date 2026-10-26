@@ -50,6 +50,26 @@ function harness() {
 }
 const value = (valor = 10) => ({ month: "2026-10", type: "receitas", id: "r1", record: { id: "r1", nome: "Receita", valor }, deleted: false });
 
+test('automatic recovery upload is immutable, idempotent and isolated by UID', async () => {
+    const h = harness(), item = { id: 'auto-history-synthetic', entityKey: recordEntityKey(value()),
+        policy: 'server-confirmed-wins', local: value(30), remote: { ...value(20), revision: 'server' } };
+    await h.client.saveAutomaticHistory('alice', item);
+    await h.client.saveAutomaticHistory('alice', { ...item, local: value(99) });
+    const rows = await h.client.listAutomaticHistory('alice');
+    assert.equal(rows.length, 1); assert.equal(rows[0].local.value.record.valor, 30);
+    await assert.rejects(h.client.saveAutomaticHistory('bob', item));
+    await assert.rejects(h.client.listAutomaticHistory('bob'));
+});
+
+test('even an edit carrying the tombstone revision cannot resurrect a deleted record', async () => {
+    const h = harness(), deletion = makeOperation(recordEntityKey(value()), { month: '2026-10', type: 'receitas', id: 'r1', deleted: true }, null);
+    await h.client.commit('alice', deletion);
+    const delayed = makeOperation(recordEntityKey(value()), value(99), deletion.id);
+    assert.equal((await h.client.commit('alice', delayed)).conflict, true);
+    const rows = await h.client.list('alice'); assert.equal(rows[0].deleted, true);
+    assert.equal(rows[0].revision, deletion.id);
+});
+
 test("factory real valida UID e listagem completa exige metadados do servidor", async () => {
     const h = harness(); h.data.set("users/alice/records/malformed", { id: "missing-month" });
     const items = await h.client.list("alice");

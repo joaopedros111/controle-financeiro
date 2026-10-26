@@ -100,7 +100,10 @@ if (browser) {
             client.onUser=(callback)=>observe(user=>{authEvent++;log('auth',user?.uid,'callback');return callback(user);});
             for(const operation of ['list','getSettings','listConflicts']){
                 const original=client[operation].bind(client);
-                client[operation]=async(uid,...args)=>{log(operation,uid,'start');try{const result=await original(uid,...args);log(operation,uid,'complete');return result;}catch(error){log(operation,uid,'error',error?.code);throw error;}};
+                client[operation]=async(uid,...args)=>{log(operation,uid,'start');try{
+                    if(operation==='list' && window.__autoTransientFailures>0){window.__autoTransientFailures--;throw Object.assign(new Error('Synthetic synchronization failure'),{code:window.__autoFailureCode||'unavailable'});}
+                    const result=await original(uid,...args);log(operation,uid,'complete');return result;
+                }catch(error){log(operation,uid,'error',error?.code);throw error;}};
             }
             for(const operation of ['listen','listenSettings','listenConflicts']){
                 const original=client[operation].bind(client);

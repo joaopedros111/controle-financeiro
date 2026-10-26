@@ -227,7 +227,7 @@ export function criarFirebaseSync(config) {
                         : { acknowledged: true, duplicate: true };
                 }
                 const old = current.exists() ? current.data() : null;
-                if ((old?.revision || null) !== op.baseRevision) {
+                if ((old?.revision || null) !== op.baseRevision || old?.deleted && !op.value.deleted) {
                     const conflictRef = doc(db, "users", uid, "conflicts", op.id);
                     tx.set(conflictRef, { operationId: op.id, entityKey: op.entityKey, local: op.value, remote: old, createdAt: serverTimestamp() });
                     tx.set(operationRef, { status: "conflict", createdAt: serverTimestamp() });
@@ -237,6 +237,25 @@ export function criarFirebaseSync(config) {
                 tx.set(operationRef, { status: "applied", createdAt: serverTimestamp() });
                 return { acknowledged: true };
             });
+        },
+        async saveAutomaticHistory(uid, item) {
+            ensureUser(uid);
+            if (typeof item.id !== 'string' || !item.id.startsWith('auto-history-') || item.id.length > 128) throw new TypeError('Invalid recovery history identity');
+            const target = doc(db, 'users', uid, 'operations', item.id);
+            return runTransaction(db, async tx => {
+                ensureUser(uid);
+                const existing = await tx.get(target); ensureUser(uid);
+                if (!existing.exists()) tx.set(target, { status: 'conflict', operationId: item.id,
+                    entityKey: item.entityKey, local: { policy: item.policy, value: item.local || {} },
+                    remote: item.remote || {}, createdAt: serverTimestamp() });
+                return { acknowledged: true };
+            });
+        },
+        async listAutomaticHistory(uid) {
+            ensureUser(uid);
+            const result = await getDocsFromServer(collection(db, 'users', uid, 'operations'));
+            ensureUser(uid);
+            return result.docs.filter(item => item.id.startsWith('auto-history-')).map(item => ({ id: item.id, ...item.data() }));
         }
     };
 }

@@ -196,6 +196,9 @@ export class ServicoFinanceiroAtomico {
             if (!state || !this.validarEstado(state.dados) || !queue || !this.validarFila(queue)) throw new Error('Persistência inválida');
             if (isCurrent() && financialStatesEquivalent(state.dados, estadoEsperado)
                 && !queue.outbox.length && !queue.conflicts.length && !queue.restoredPending
+                && !queue.automaticSettingsDirty
+                && !queue.automaticHistory?.some(item => !item.uploaded)
+                && !queue.automaticResolutions?.some(item => !item.confirmed)
                 && !queue.conflictDecisions?.some(item => item.status !== 'confirmed')) {
                 queue.lastConfirmed = !Number.isFinite(Date.parse(queue.lastConfirmed)) || quando > queue.lastConfirmed ? quando : queue.lastConfirmed;
                 queue.migrationPending = false;

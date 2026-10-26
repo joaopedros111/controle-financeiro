@@ -6,6 +6,8 @@ import { apresentarValorFinanceiro, calcularEspacamentosDensidade, normalizarPre
 import { criarConfirmacaoAtualizacao, criarVerificadorAutomatico, instalarAtualizacao, lerVersaoControlador, lerVersaoInstalada, lerVersaoPublicada, validarVersaoAplicacao, verificarComConfirmacao } from "./update-manager.js";
 import { aplicarIdioma, formatarMoeda as formatarMoedaLocalizada, LOCALES, textoTraduzido } from "./localization.js";
 import { firebaseConfig, firebaseConfigurado } from "./firebase-config.js";
+import { AutomaticFinanceSync } from "./automatic-finance-sync.js";
+import { financeSettings, captureRejectedLocalEdit } from "./automatic-sync-policy.js";
 import { chaveLocalConta, registrosFinanceiros, combinarRegistros, migrationBackup, operationId, jsonCanonico, recordsEquivalent, coalesceOutbox, flushSyncQueue, createSyncSessionGuard, validateRemoteSettings, mergeRemoteSettings, validRemoteTombstone, reconcileRemoteConflicts, validateRemoteConflicts, snapshotConfirmed, recordEntityKey, inspectRemoteKeys, validConflictRecord, readSyncMetadata, blockedConflictKeys, validSyncIdentity, financialStatesEquivalent, functionalSettings, settingsEquivalent, equivalentConflict, pendingConflictCount } from "./sync-core.js";
 
 
@@ -597,6 +599,7 @@ function carregarEstado() {
 
 let estado = carregarEstado();
 let idbServico = null;
+let automaticController = null;
 let idbBanco = null;
 let idbBloqueado = false;
 let idbBase = null;
@@ -650,15 +653,31 @@ function salvar() {
                 const prior = queue.outbox.filter(op => op.entityKey === entityKey).at(-1);
                 const baseRevision = prior?.id || queue.remoteRevisions?.[entityKey] || null;
                 return { id: operationId(entityKey, baseRevision, value), entityKey, baseRevision, value };
-            }));
+            }), queue => {
+                if (key !== CHAVE_ESTADO && JSON.stringify([base?.categorias || [], base?.orcamentos || {}])
+                    !== JSON.stringify([proposta.categorias || [], proposta.orcamentos || {}])) {
+                    queue.automaticSettingsDirty = true;
+                    queue.automaticSettingsValue = financeSettings(proposta);
+                }
+            });
         if (key === chaveEstadoAtual && JSON.stringify(estadoParaSalvar()) === JSON.stringify(proposta)) {
             estado = normalizarEstado(result.estado.dados); idbBase = structuredClone(estadoParaSalvar()); renderTudo(false);
         }
         atualizarDiagnostico();
         if (typeof document === "undefined" || !document.querySelector?.(".aviso-acao")) avisar("Alterações confirmadas no armazenamento local IndexedDB.");
         if (key !== CHAVE_ESTADO) window.dispatchEvent(new CustomEvent("finance-local-change", { detail: { uid, state: result.estado.dados, deletedRecords: [] } }));
-    }).catch(error => {
+    }).catch(async error => {
+        if (error?.name === 'ConflitoEdicao' && typeof automaticController !== 'undefined' && automaticController?.session?.uid === uid) {
+            try {
+                await idbServico.alterarFila(uid, queue => captureRejectedLocalEdit(queue, base, proposta));
+                const durable = await idbBanco.ler(`estado:${uid}`);
+                if (key === chaveEstadoAtual) { estado = normalizarEstado(durable.dados); idbBase = structuredClone(estadoParaSalvar()); renderTudo(false); }
+                avisar('Alteração concorrente preservada no histórico. Sincronizando automaticamente.');
+                automaticController.localChanged(); return;
+            } catch { /* Keep the original persistence failure visible below. */ }
+        }
         idbBloqueado = true;
+        if (typeof automaticController !== 'undefined') automaticController?.report(error);
         console.warn("Persistencia transacional interrompida.", error?.name);
         avisar("Outra aba alterou os mesmos dados ou houve falha na gravação. Nenhuma sobrescrita foi aplicada. Recarregue para revisar.");
     });
@@ -1510,7 +1529,10 @@ function desfazerRemocao() {
 
             const destino = estado.meses[chave][lista];
 
-            destino.splice(Math.min(indice, destino.length), 0, item);
+            // Explicit undo creates a new identity in a synced account; it must
+            // not revive a tombstone that may already be confirmed elsewhere.
+            const restaurado = automaticController?.session ? { ...item, id: uid() } : item;
+            destino.splice(Math.min(indice, destino.length), 0, restaurado);
 
         });
 
@@ -3142,6 +3164,16 @@ function importarBackup(arquivo) {
 
 
 
+        if (automaticController?.session) {
+            try {
+                const imported = await automaticController.importBackup(bruto);
+                estado = normalizarEstado(imported); idbBase = structuredClone(estadoParaSalvar());
+                ultimaRemocao = null; renderTudo(false);
+                registrarOperacaoDados("Backup restaurado em " + new Date().toLocaleString("pt-BR") + ".");
+                avisar("Backup salvo localmente. Sincronizando automaticamente.");
+            } catch (error) { avisar(error.message || "Falha ao persistir; dados anteriores preservados."); }
+            return;
+        }
         const resultado = await recuperacaoFinanceira.restaurar({
             chave: chaveEstadoAtual, backup: bruto, validar: validarBackup,
             normalizar: backup => { const novo = normalizarEstado(backup); novo.tema ||= estado.tema; return novo; },
@@ -3774,8 +3806,10 @@ if (recuperacaoFinanceira.protegido) {
 }
 
 /* Firebase synchronization UI is intentionally loaded lazily. */
-const syncUi = { status: $("estado-sincronizacao"), account: $("conta-sincronizacao"), last: $("ultima-sincronizacao"), login: $("entrar-google"), retry: $("tentar-sincronizacao"), restore: $("sincronizar-backup-restaurado"), conflicts: $("abrir-conflitos-sincronizacao"), conflictDialog: $("dialogo-conflitos-sincronizacao"), conflictList: $("lista-conflitos-sincronizacao"), closeConflicts: $("fechar-conflitos-sincronizacao"), logout: $("sair-google"), enabledLine: $("ativar-sincronizacao-linha"), enabled: $("ativar-sincronizacao") };
-if (Object.values(syncUi).every(Boolean)) {
+const syncUi = { status: $("estado-sincronizacao"), account: $("conta-sincronizacao"), last: $("ultima-sincronizacao"), login: $("entrar-google"), retry: null, restore: null, conflicts: null, conflictDialog: null, conflictList: null, closeConflicts: null, logout: $("sair-google"), enabledLine: null, enabled: null };
+// Retained for historical invariant tests only. Never bind the old manual coordinator.
+const LEGACY_MANUAL_SYNC_ENABLED = false;
+if (LEGACY_MANUAL_SYNC_ENABLED && Object.values(syncUi).every(Boolean)) {
 let firebaseClient = null, syncUser = null, syncStopListener = null, syncSettingsStop = null, syncConflictsStop = null, syncRemoteRecords = [], syncRemoteSettings = null, syncRemoteRecordsLoaded = false, settingsConflictActive = false, applyingRemoteSync = false;
 const syncSessions = createSyncSessionGuard();
 const isCurrentSyncSession = (session, uid) => syncSessions.isCurrent(session) && (syncUser?.uid || null) === (uid || null);
@@ -4686,4 +4720,92 @@ async function resolveSyncConflict(index, choice) {
 syncUi.conflicts.addEventListener("click", () => { renderSyncConflicts(); abrirDialogoModal(syncUi.conflictDialog); });
 syncUi.closeConflicts.addEventListener("click", () => syncUi.conflictDialog.close());
 if (!IDB_HOMOLOGACAO && firebaseConfigurado(firebaseConfig)) void loadFirebaseSync();
+}
+
+// The existing Firestore wire protocol stays in use; Epoch is not activated here.
+if (!IDB_HOMOLOGACAO && $("entrar-google") && $("sair-google") && firebaseConfigurado(firebaseConfig)) {
+    const login = $("entrar-google"), logout = $("sair-google"), status = $("estado-sincronizacao"), account = $("conta-sincronizacao");
+    let client = null, initialization = null, initTimer = null;
+    const showStatus = (text, failed = false, confirmedAt = null) => {
+        status.textContent = textoTraduzido(text); status.dataset.state = failed ? 'error' : text === 'Sincronizado' ? 'synced' : text === 'Offline' ? 'offline' : 'syncing';
+        if (confirmedAt) {
+            $("ultima-sincronizacao").dataset.i18nDate = confirmedAt;
+            $("ultima-sincronizacao").textContent = textoTraduzido('Última sincronização confirmada:') + ' ' + new Date(confirmedAt).toLocaleString(LOCALES[idiomaAtual]);
+        }
+    };
+    const resetAccountForms = () => {
+        ultimaRemocao = null; receitaEmEdicao = null; receitaSerieEmCriacao = null; despesaEmEdicao = null; despesaParaRemover = null; receitaParaRemover = null;
+        clearTimeout(temporizadorAviso); temporizadorAviso = null;
+        ui.aviso?.replaceChildren(); ui.aviso?.classList.remove('visivel', 'com-acao');
+        for (const name of ['dialogoReceita','dialogoDespesa','dialogoSerie','dialogoOrcamentos']) ui[name]?.close();
+        for (const name of ['receitaNome','receitaValor','despesaNome','despesaValor']) if (ui[name]) ui[name].value = '';
+    };
+    const initialize = () => {
+        if (initialization) return initialization;
+        login.disabled = true;
+        initialization = (async () => {
+            const sdk = await import(new URL(`./firebase-sync.bundle.js?_release=${encodeURIComponent(VERSAO_BUNDLE || 'local')}`, import.meta.url));
+            client ||= sdk.criarFirebaseSync(firebaseConfig);
+            automaticController ||= new AutomaticFinanceSync({ client, db: idbBanco, service: idbServico,
+                readLegacy: lerEstadoPersistido, waitLocal: async () => { let pending; do { pending = idbPendente; await pending; } while (pending !== idbPendente); },
+                storageBlocked: () => idbBloqueado || recuperacaoFinanceira.protegido,
+                onTransition: user => {
+                    resetAccountForms(); idbBloqueado = true;
+                    chaveEstadoAtual = user ? chaveLocalConta(user.uid) : CHAVE_ESTADO;
+                    estado = normalizarEstado(null); idbBase = structuredClone(estadoParaSalvar()); renderTudo(false);
+                    login.hidden = !!user; logout.hidden = !user;
+                    account.textContent = user?.email || user?.displayName || '';
+                    $("ultima-sincronizacao").textContent = ''; delete $("ultima-sincronizacao").dataset.i18nDate;
+                },
+                onAccount: async user => {
+                    idbBloqueado = false;
+                    if (!user) {
+                        const local = await idbBanco.ler('estado:@local');
+                        if (automaticController.session) return;
+                        estado = normalizarEstado(local?.dados); idbBase = structuredClone(estadoParaSalvar()); renderTudo(false);
+                        showStatus('Somente neste dispositivo.');
+                    }
+                },
+                onState: next => { estado = normalizarEstado(next); idbBase = structuredClone(estadoParaSalvar()); renderTudo(false); },
+                onStatus: showStatus
+            });
+            capturarSessaoPersistencia = () => { const current = automaticController.session; return () => automaticController.session === current; };
+            await automaticController.start();
+        })().catch(error => {
+            automaticController?.stop(); automaticController = null; initialization = null;
+            showStatus(error.message || 'Falha na sincronização.', true);
+            clearTimeout(initTimer);
+            // Recheck storage/session bootstrap automatically; persistent failures stay visible.
+            initTimer = setTimeout(() => { void initialize(); }, 5000);
+        }).finally(() => { login.disabled = false; });
+        return initialization;
+    };
+    login.addEventListener('click', () => {
+        if (!client) { void initialize(); return; }
+        login.disabled = true;
+        try { Promise.resolve(client.login()).catch(error => showStatus(error.message || 'Falha na sincronização.', true)).finally(() => { login.disabled = false; }); }
+        catch (error) { login.disabled = false; showStatus(error.message, true); }
+    });
+    logout.addEventListener('click', () => { void client?.logout().catch(error => showStatus(error.message, true)); });
+    window.addEventListener('finance-local-change', event => {
+        if (automaticController?.session?.uid === event.detail.uid) {
+            if (!automaticController.session.permanent) showStatus(navigator.onLine ? 'Sincronizando' : 'Offline');
+            automaticController.localChanged();
+        }
+    });
+    window.addEventListener('online', () => { if (!automaticController) void initialize(); });
+    window.addEventListener('focus', () => { if (!automaticController) void initialize(); });
+    $("exportar-historico-recuperacao")?.addEventListener('click', async () => {
+        const s = automaticController?.session;
+        if (!s) { avisar('Entre com Google antes de exportar o histórico.'); return; }
+        try {
+            const local = await idbServico.lerFila(s.uid);
+            const remote = navigator.onLine ? await client.listAutomaticHistory(s.uid) : [];
+            if (automaticController.session !== s) return;
+            baixarArquivo(JSON.stringify({ type: 'financial-recovery-history', uid: s.uid,
+                local: local.automaticHistory || [], remote }, null, 2), 'controle-financeiro-recuperacao.json', 'application/json');
+        } catch (error) { avisar(error.message || 'Falha ao exportar histórico.'); }
+    });
+    window.addEventListener('pagehide', () => { clearTimeout(initTimer); automaticController?.stop(); }, { once: true });
+    void initialize();
 }

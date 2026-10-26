@@ -154,3 +154,15 @@ test('falha de gravação de conflito conserva fila anterior', async () => {
     await assert.rejects(s.registrarConflito('u1', {}));
     assert.deepEqual((await s.lerFila('u1')).conflicts, []);
 });
+
+test('whole-sync ACK waits for settings, recovery uploads and automatic conflict acknowledgements', async () => {
+    const db = banco(), service = new ServicoFinanceiroAtomico(db, () => true, filaValida);
+    const state = { versao: 3, categorias: [], tema: 'claro', orcamentos: { padrao: {}, meses: {} }, meses: {} };
+    await service.inicializar('u1', state, { outbox: [], conflicts: [], lastConfirmed: null });
+    for (const pending of [{ automaticSettingsDirty: true }, { automaticHistory: [{ uploaded: false }] }, { automaticResolutions: [{ confirmed: false }] }]) {
+        db.data.set('fila:u1', { outbox: [], conflicts: [], lastConfirmed: null, ...pending });
+        assert.equal((await service.confirmarSincronizacao('u1', state, '2026-10-26T10:00:00Z', () => true)).confirmed, false);
+    }
+    db.data.set('fila:u1', { outbox: [], conflicts: [], lastConfirmed: null, automaticHistory: [{ uploaded: true }], automaticResolutions: [{ confirmed: true }] });
+    assert.equal((await service.confirmarSincronizacao('u1', state, '2026-10-26T10:00:00Z', () => true)).confirmed, true);
+});

@@ -259,17 +259,10 @@
             <p id="ultima-sincronizacao" class="nota"></p>
             <div class="acoes">
                 <button id="entrar-google" class="btn btn-secundario" type="button">Entrar com Google</button>
-                <button id="tentar-sincronizacao" class="btn btn-secundario" type="button" hidden>Tentar novamente</button>
-                <button id="sincronizar-backup-restaurado" class="btn btn-secundario" type="button" hidden>Revisar e sincronizar backup restaurado</button>
-                <button id="abrir-conflitos-sincronizacao" class="btn btn-secundario" type="button" hidden>Revisar conflitos</button>
                 <button id="sair-google" class="btn btn-secundario" type="button" hidden>Sair da conta</button>
             </div>
            
-            <label id="ativar-sincronizacao-linha" class="ajuste-linha ajuste-controle ajuste-alternancia" hidden for="ativar-sincronizacao">
-                <span>Ativar sincronização desta conta</span><input id="ativar-sincronizacao" type="checkbox" checked>
-            </label>
-            <p class="nota">Os dados locais continuam disponíveis offline. Ao vincular uma conta pela primeira vez, o app mostra uma prévia e pede confirmação. Backups não incluem dados de autenticação.</p>
-            <dialog id="dialogo-conflitos-sincronizacao" aria-labelledby="titulo-conflitos-sincronizacao"><div class="dialogo-corpo"><div class="bloco-topo"><h3 id="titulo-conflitos-sincronizacao">Conflitos de sincronização</h3><button id="fechar-conflitos-sincronizacao" class="btn btn-icone" type="button" aria-label="Fechar" autofocus>×</button></div><div id="lista-conflitos-sincronizacao"></div></div></dialog>
+            <p class="nota">Os dados desta conta sincronizam automaticamente. Alterações concorrentes ficam preservadas no histórico de recuperação.</p>
                 </section>
         <section class="ajustes-secao" aria-labelledby="titulo-botao-menu">
             <h3 id="titulo-botao-menu">Botão de opções</h3>
@@ -326,13 +319,14 @@
                 <button id="exportar-csv" class="btn btn-secundario" type="button">Exportar CSV</button>
                 <button id="exportar-backup" class="btn btn-secundario" type="button">Salvar backup</button>
                 <button id="importar-backup" class="btn btn-secundario" type="button">Restaurar backup</button>
+                <button id="exportar-historico-recuperacao" class="btn btn-secundario" type="button">Baixar histórico de recuperação</button>
                 <button id="limpar-mes" class="btn btn-perigo" type="button">Limpar m&#234;s atual</button>
                 <button id="excluir-tudo" class="btn btn-perigo" type="button">Excluir tudo</button>
             </div>
             <input id="arquivo-backup" type="file" accept="application/json,.json" hidden>
             <p id="diagnostico-dados" class="nota" aria-live="polite"></p>
             <p id="ultima-operacao-dados" class="nota"></p>
-            <p class="nota">Restaurar substitui todos os dados atuais; o app pede confirmação antes da troca. Seus dados ficam neste dispositivo. Faça backups periodicamente.</p>
+            <p class="nota">Na conta Google, importar adiciona os dados do backup e sincroniza automaticamente, sem excluir dados ausentes do arquivo.</p>
         </section>
         <section class="ajustes-secao" aria-labelledby="titulo-sobre">
             <h3 id="titulo-sobre">Sobre e diagnóstico</h3>
