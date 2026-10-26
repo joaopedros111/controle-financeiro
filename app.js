@@ -1264,15 +1264,18 @@ function atualizarResumo(persistir = true) {
 
 
 
+    renderIndicadoresPanorama(receitaCentavos, despesaCentavos);
+
     // Barra de comprometimento
 
     const pctDespesa = receita > 0 ? (despesa / receita) * 100 : 0;
 
-    const pctPago = receita > 0 ? Math.min((pago / receita) * 100, 100) : 0;
+    const baseBarra = Math.max(receita, despesa);
+    const pctPago = baseBarra > 0 ? (pago / baseBarra) * 100 : 0;
 
-    const pctPendente = receita > 0
+    const pctPendente = baseBarra > 0
 
-        ? Math.max(0, Math.min((pendente / receita) * 100, 100 - pctPago))
+        ? (pendente / baseBarra) * 100
 
         : 0;
 
@@ -1281,6 +1284,11 @@ function atualizarResumo(persistir = true) {
     ui.barraPago.style.width = pctPago + "%";
 
     ui.barraPendente.style.width = pctPendente + "%";
+
+    ui.barra.setAttribute("role", "img");
+    ui.barra.setAttribute("data-i18n-preserve-aria", "");
+    ui.barra.setAttribute("aria-label", textoTraduzido("Pago") + ": " + formatarMoeda(pago)
+        + "; " + textoTraduzido("Pendente no mês") + ": " + formatarMoeda(pendente));
 
 
 
@@ -1338,6 +1346,21 @@ function atualizarResumo(persistir = true) {
 
 
 
+function renderIndicadoresPanorama(receita, despesa) {
+    const anterior = new Date(periodo.ano, periodo.mes - 2, 1);
+    const dados = estado.meses[chaveMes(anterior.getFullYear(), anterior.getMonth() + 1)];
+    const base = somarCentavos((dados?.despesas || []).map((d) => numero(d.valor)));
+    const economia = receita > 0 ? (receita - despesa) / receita * 100 : null;
+    const variacao = base > 0 ? (despesa - base) / base * 100 : despesa === 0 ? 0 : null;
+    const apresentar = (valor, motivo) => valoresOcultos ? "••••" : valor === null
+        ? textoTraduzido(motivo) : (valor > 0 ? "+" : "") + formatarPercentual(valor);
+    $("taxa-economia").textContent = apresentar(economia, "Não calculável: sem entradas");
+    $("variacao-despesas").textContent = apresentar(variacao, "Não calculável: mês anterior sem despesas");
+    $("variacao-periodo").textContent = new Intl.DateTimeFormat(LOCALES[idiomaAtual] || "pt-BR", {
+        month: "long", year: "numeric"
+    }).format(anterior);
+}
+
 function renderGraficoMensal() {
     const destino = $("grafico-mensal");
     if (!destino) return;
@@ -1345,7 +1368,7 @@ function renderGraficoMensal() {
     const pontos = [];
     let ano = periodo.ano;
     let mes = periodo.mes;
-    for (let i = 0; i < 3; i += 1) {
+    for (let i = 0; i < 6; i += 1) {
         const chave = chaveMes(ano, mes);
         const dados = estado.meses[chave] || { receitas: [], despesas: [] };
         pontos.unshift({
@@ -1360,14 +1383,25 @@ function renderGraficoMensal() {
     }
 
     const escala = Math.max(0, ...pontos.flatMap((p) => [p.receitas, p.despesas]));
-    $("periodo-grafico").textContent = "3 meses";
+    const rotuloPeriodo = (p) => new Intl.DateTimeFormat(LOCALES[idiomaAtual] || "pt-BR", {
+        month: "short", year: "numeric"
+    }).format(new Date(Number(p.chave.slice(0, 4)), Number(p.chave.slice(5, 7)) - 1, 1));
+    $("periodo-grafico").textContent = rotuloPeriodo(pontos[0]) + " – " + rotuloPeriodo(pontos[5]);
+    $("detalhe-grafico-mensal").textContent = "";
     destino.replaceChildren(...pontos.map((p) => {
-        const grupo = criarEl("div", { class: "grafico-grupo" });
+        const descricao = rotuloPeriodo(p) + ": " + textoTraduzido("Entradas") + " " + formatarMoeda(p.receitas)
+            + "; " + textoTraduzido("Despesas") + " " + formatarMoeda(p.despesas);
+        const grupo = criarEl("button", { class: "grafico-grupo", type: "button", "aria-label": descricao,
+            "data-i18n-preserve-aria": "", "aria-pressed": "false" });
+        grupo.addEventListener("click", () => {
+            destino.querySelectorAll("button").forEach((botao) => botao.setAttribute("aria-pressed", "false"));
+            grupo.setAttribute("aria-pressed", "true");
+            $("detalhe-grafico-mensal").textContent = descricao;
+        });
         const barras = criarEl("div", { class: "grafico-barras" });
         [["entrada", p.receitas, "Entradas"], ["despesa", p.despesas, "Despesas"]].forEach(([tipo, valor, rotulo]) => {
             const barra = criarEl("span", {
                 class: "grafico-barra grafico-barra-" + tipo,
-                title: rotulo + " em " + p.nome + "/" + p.chave.slice(0, 4) + ": " + formatarMoeda(valor),
                 "aria-hidden": "true"
             });
             barra.style.height = escala > 0 ? Math.max(valor > 0 ? 4 : 0, (valor / escala) * 100) + "%" : "0%";
@@ -1377,7 +1411,7 @@ function renderGraficoMensal() {
         return grupo;
     }));
     destino.setAttribute("data-i18n-preserve-aria", "");
-    destino.setAttribute("aria-label", textoTraduzido("Entradas e despesas nos últimos três meses:") + " " + pontos.map((p) =>
+    destino.setAttribute("aria-label", textoTraduzido("Entradas e despesas nos últimos seis meses:") + " " + pontos.map((p) =>
         new Intl.DateTimeFormat(LOCALES[idiomaAtual] || "pt-BR", { month: "long", year: "numeric" })
             .format(new Date(Number(p.chave.slice(0, 4)), Number(p.chave.slice(5, 7)) - 1, 1))
         + ", " + textoTraduzido("entradas") + " " + formatarMoeda(p.receitas) + ", " + textoTraduzido("despesas") + " " + formatarMoeda(p.despesas)
@@ -1385,9 +1419,8 @@ function renderGraficoMensal() {
 }
 
 function renderGraficoCategorias() {
-    const rosquinha = $("grafico-rosca");
     const legenda = $("legenda-grafico-categorias");
-    if (!rosquinha || !legenda) return;
+    if (!legenda) return;
 
     const itens = agruparDespesasPorCategoria(obterMes().despesas).sort((a, b) => b[1] - a[1]);
     const total = somarCentavos(itens.map(([, valor]) => valor)) / 100;
@@ -1399,35 +1432,24 @@ function renderGraficoCategorias() {
     $("total-grafico-categorias").textContent = formatarMoeda(total);
     $("vazio-grafico-categorias").hidden = itens.length > 0;
 
-    if (total > 0) {
-        let angulo = 0;
-        const segmentos = itens.map(([nome, valor], indice) => {
-            const inicio = angulo;
-            angulo += indice === itens.length - 1 ? 360 - angulo : (valor / total) * 360;
-            return corDaCategoria(nome) + " " + inicio + "deg " + angulo + "deg";
-        });
-        rosquinha.style.background = "conic-gradient(" + segmentos.join(", ") + ")";
-    } else {
-        rosquinha.style.background = "conic-gradient(var(--borda) 0deg 360deg)";
-    }
-
     legenda.replaceChildren(...itens.map(([nome, valor]) => {
-        const percentual = (valor / total) * 100;
+        const percentual = total > 0 ? (valor / total) * 100 : 0;
         const cor = criarEl("span", { class: "grafico-categoria-cor", "aria-hidden": "true" });
         cor.style.background = corDaCategoria(nome);
+        const trilho = criarEl("span", { class: "categoria-trilho", "aria-hidden": "true" });
+        const barra = criarEl("span", { class: "categoria-barra" });
+        barra.style.width = percentual + "%";
+        barra.style.background = corDaCategoria(nome);
+        trilho.append(barra);
         return criarEl("li", { class: "grafico-categoria-item" }, [
             criarEl("span", { class: "grafico-categoria-nome" }, [cor, criarEl("span", { text: nome })]),
             criarEl("strong", { class: "grafico-categoria-valor", text: formatarMoeda(valor) }),
-            criarEl("small", { class: "grafico-categoria-percentual", text: formatarPercentual(percentual) })
+            criarEl("small", { class: "grafico-categoria-percentual", text: valoresOcultos ? "••••" : formatarPercentual(percentual) }),
+            trilho
         ]);
     }));
 
-    rosquinha.setAttribute("data-i18n-preserve-aria", "");
-    rosquinha.setAttribute("aria-label", itens.length
-        ? textoTraduzido("Despesas por categoria em") + " " + rotuloMes + ". " + textoTraduzido("Total") + " " + formatarMoeda(total) + ". " + itens.map(([nome, valor]) =>
-            nome + ": " + formatarMoeda(valor) + (valoresOcultos ? "" : ", " + formatarPercentual((valor / total) * 100))
-        ).join("; ")
-        : textoTraduzido("Nenhuma despesa com valor registrado em") + " " + rotuloMes + ".");
+
 }
 
 function renderTudo(persistir = true) {

@@ -2080,3 +2080,33 @@ dialog#dialogo-conflitos-sincronizacao[open] { width: min(560px, calc(100vw - 32
         flex-direction: column;
     }
 }
+
+/* Panorama: leitura por toque e categorias proporcionais. */
+@layer components {
+    .legenda-entrada { background: #087f5b; }
+    .legenda-despesa { background: #c94f5c; }
+    .legenda-pago { background: var(--verde); }
+    .legenda-pendente { background: var(--ambar); }
+    .barra { height: 12px; }
+    .barra.estourou { outline: 2px solid var(--vermelho); outline-offset: 2px; }
+    .barra-pendente { background: repeating-linear-gradient(135deg, var(--ambar) 0 5px, color-mix(in srgb, var(--ambar), var(--superficie) 35%) 5px 8px); }
+    .panorama-indicadores { margin-bottom: 20px; gap: 16px; }
+    .panorama-indicadores dd { font-size: 1rem; overflow-wrap: anywhere; }
+    .panorama-indicadores small { color: var(--texto-secundario); }
+    .grafico-meses .grafico-mensal { grid-template-columns: repeat(6, minmax(0, 1fr)); height: 180px; }
+    .grafico-grupo { padding: 3px; border: 0; border-radius: 5px; background: transparent; color: inherit; font: inherit; cursor: pointer; }
+    .grafico-grupo:focus-visible, .grafico-grupo[aria-pressed="true"] { outline: 2px solid var(--texto-secundario); outline-offset: -2px; }
+    .grafico-detalhe { min-height: 2.8em; font-size: .76rem; overflow-wrap: anywhere; color: var(--texto-secundario); }
+    .categoria-total { margin: 0; font-size: .8rem; width: 100%; }
+    .panorama-graficos .legenda-grafico-categorias { max-height: none; overflow: visible; }
+    .panorama-graficos .grafico-categoria-item { grid-template-columns: minmax(0, 1fr) auto; gap: 6px; }
+    .grafico-categoria-percentual { grid-column: 2; padding: 0; text-align: right; }
+    .categoria-trilho { grid-column: 1 / -1; display: block; height: 9px; background: var(--borda); border-radius: 4px; overflow: hidden; }
+    .categoria-barra { display: block; height: 100%; border-radius: inherit; }
+    @media (max-width: 600px) {
+        .panorama-graficos { grid-template-columns: minmax(0, 1fr); }
+        .panorama-graficos .grafico-categorias { border-left: 0; border-top: 1px solid var(--borda); padding: 16px 0 0; }
+        .panorama-indicadores { grid-template-columns: minmax(0, 1fr); }
+    }
+}
+body.valores-ocultos .categoria-barra { visibility: hidden; }

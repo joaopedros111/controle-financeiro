@@ -88,6 +88,7 @@
     </div>
     </div>
 
+    <div class="grafico-legenda compromisso-legenda"><span><i class="legenda-pago"></i>Pago</span><span><i class="legenda-pendente"></i>Pendente no mês</span></div>
     <div class="barra" id="barra">
         <div class="barra-pago" id="barra-pago"></div>
         <div class="barra-pendente" id="barra-pendente"></div>
@@ -106,12 +107,12 @@
         </div>
 
         <div>
-            <dt>Saldo total</dt>
+            <dt>Saldo do mês</dt>
             <dd id="saldo-valor" class="saldo-valor">R$ 0,00</dd>
         </div>
 
         <div>
-            <dt>Falta pagar</dt>
+            <dt>Pendente no mês</dt>
             <dd id="valor-pendente">R$ 0,00</dd>
         </div>
 
@@ -130,6 +131,10 @@
             <h2 id="titulo-grafico">Visão geral</h2>
         </div>
     </div>
+    <dl class="indicadores panorama-indicadores">
+        <div><dt>Taxa de economia</dt><dd id="taxa-economia"></dd></div>
+        <div><dt>Variação das despesas</dt><dd id="variacao-despesas"></dd><small><span>Comparação com</span> <span id="variacao-periodo"></span></small></div>
+    </dl>
     <div class="panorama-graficos">
         <section class="grafico-meses" aria-labelledby="titulo-grafico-meses">
             <div class="grafico-categorias-topo">
@@ -140,7 +145,8 @@
                 <span><i class="legenda-entrada"></i>Entradas</span>
                 <span><i class="legenda-despesa"></i>Despesas</span>
             </div>
-            <div id="grafico-mensal" class="grafico-mensal" role="img" aria-label="Gráfico comparando entradas e despesas dos últimos três meses"></div>
+            <div id="grafico-mensal" class="grafico-mensal" role="group" aria-label="Entradas e despesas nos últimos seis meses:"></div>
+            <p id="detalhe-grafico-mensal" class="grafico-detalhe" aria-live="polite"></p>
         </section>
 
         <section class="grafico-categorias" aria-labelledby="titulo-grafico-categorias">
@@ -149,12 +155,7 @@
             <span id="periodo-grafico-categorias" class="grafico-periodo"></span>
         </div>
         <div class="grafico-categorias-conteudo">
-            <div id="grafico-rosca" class="grafico-rosca" role="img" aria-label="Divisão das despesas por categoria neste mês">
-                <div class="grafico-rosca-centro">
-                    <span>Total no mês</span>
-                    <strong id="total-grafico-categorias">R$ 0,00</strong>
-                </div>
-            </div>
+            <p class="categoria-total"><span>Total no mês</span> <strong id="total-grafico-categorias">R$ 0,00</strong></p>
             <ul id="legenda-grafico-categorias" class="legenda-grafico-categorias" aria-label="Categorias e valores das despesas"></ul>
         </div>
         <p id="vazio-grafico-categorias" class="grafico-categorias-vazio" hidden>Adicione despesas neste mês para ver a divisão por categoria.</p>
