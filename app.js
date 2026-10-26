@@ -26,6 +26,8 @@ import { chaveLocalConta, registrosFinanceiros, combinarRegistros, migrationBack
 const IDB_HOMOLOGACAO = ["localhost", "127.0.0.1"].includes(location.hostname)
     && new URL(location.href).searchParams.get("indexeddb_homologacao") === "1";
 const CHAVE_ESTADO = "controleFinanceiro:v3";
+const CHAVE_TEMA_INICIAL = "controleFinanceiro:tema-inicial";
+const TEMAS_VALIDOS = ["claro", "escuro", "rosa", "pangolim", "floresta"];
 let chaveEstadoAtual = CHAVE_ESTADO;
 const CHAVE_ATUALIZACAO_PENDENTE = "controleFinanceiro:confirmar-interface-atualizada";
 const VERSAO_BUNDLE = new URL(import.meta.url).searchParams.get("_release");
@@ -842,7 +844,12 @@ function renderTema() {
 
 
 
-    const tema = estado.tema || "claro";
+    let tema = estado.tema || "claro";
+    if ((document.documentElement.classList.contains("app-inicializando")
+        || document.documentElement.classList.contains("app-carregando-conta"))
+        && TEMAS_VALIDOS.includes(document.documentElement.dataset.tema)) {
+        tema = document.documentElement.dataset.tema;
+    }
     const nomesTema = { claro: "Claro", escuro: "Escuro", rosa: "Rosa", pangolim: "Pangolim", floresta: "Selva" };
     const ordemTemas = ["claro", "escuro", "rosa", "pangolim", "floresta"];
     const proximoTema = ordemTemas[(ordemTemas.indexOf(tema) + 1) % ordemTemas.length];
@@ -850,6 +857,7 @@ function renderTema() {
 
 
     document.documentElement.dataset.tema = tema;
+    try { localStorage.setItem(CHAVE_TEMA_INICIAL, tema); } catch { /* cache visual opcional */ }
     const coresBarraNavegador = {
         claro: "#f4f6fb", escuro: "#0c1020", rosa: "#fff7fb",
         pangolim: "#fbf3df", floresta: "#edf5ed"
@@ -3749,7 +3757,21 @@ aplicarPreferenciasMenu();
 aplicarPrivacidade();
 atualizarDiagnostico();
 const telaInicialAplicada = abrirSecaoInicial();
-document.documentElement.classList.remove("app-inicializando");
+function concluirCarregamentoConta() {
+    document.documentElement.classList.remove("app-inicializando", "app-carregando-conta");
+    document.body.removeAttribute("aria-busy");
+    $("carregando-aplicativo")?.setAttribute("hidden", "");
+    renderTema();
+}
+function iniciarCarregamentoConta() {
+    document.documentElement.classList.add("app-carregando-conta");
+    document.body.setAttribute("aria-busy", "true");
+    $("carregando-aplicativo")?.removeAttribute("hidden");
+}
+document.body.setAttribute("aria-busy", "true");
+if (IDB_HOMOLOGACAO || !firebaseConfigurado(firebaseConfig) || !$('entrar-google') || !$('sair-google')) {
+    concluirCarregamentoConta();
+}
 let quadroRastreamentoTela = null;
 requestAnimationFrame(() => {
     rastreamentoTelaAtivo = true;
@@ -4750,7 +4772,7 @@ if (!IDB_HOMOLOGACAO && $("entrar-google") && $("sair-google") && firebaseConfig
                 readLegacy: lerEstadoPersistido, waitLocal: async () => { let pending; do { pending = idbPendente; await pending; } while (pending !== idbPendente); },
                 storageBlocked: () => idbBloqueado || recuperacaoFinanceira.protegido,
                 onTransition: user => {
-                    resetAccountForms(); idbBloqueado = true;
+                    resetAccountForms(); iniciarCarregamentoConta(); idbBloqueado = true;
                     chaveEstadoAtual = user ? chaveLocalConta(user.uid) : CHAVE_ESTADO;
                     estado = normalizarEstado(null); idbBase = structuredClone(estadoParaSalvar()); renderTudo(false);
                     login.hidden = !!user; logout.hidden = !user;
@@ -4764,15 +4786,22 @@ if (!IDB_HOMOLOGACAO && $("entrar-google") && $("sair-google") && firebaseConfig
                         if (automaticController.session) return;
                         estado = normalizarEstado(local?.dados); idbBase = structuredClone(estadoParaSalvar()); renderTudo(false);
                         showStatus('Somente neste dispositivo.');
+                        concluirCarregamentoConta();
                     }
                 },
-                onState: next => { estado = normalizarEstado(next); idbBase = structuredClone(estadoParaSalvar()); renderTudo(false); },
+                onState: next => {
+                    estado = normalizarEstado(next); idbBase = structuredClone(estadoParaSalvar()); renderTudo(false);
+                    concluirCarregamentoConta();
+                },
                 onStatus: showStatus
             });
             capturarSessaoPersistencia = () => { const current = automaticController.session; return () => automaticController.session === current; };
             await automaticController.start();
+            concluirCarregamentoConta();
         })().catch(error => {
+            const tinhaContaEmTransicao = Boolean(automaticController?.session);
             automaticController?.stop(); automaticController = null; initialization = null;
+            if (!tinhaContaEmTransicao) concluirCarregamentoConta();
             showStatus(error.message || 'Falha na sincronização.', true);
             clearTimeout(initTimer);
             // Recheck storage/session bootstrap automatically; persistent failures stay visible.

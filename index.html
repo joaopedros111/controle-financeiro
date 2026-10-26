@@ -22,6 +22,17 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <meta name="apple-mobile-web-app-title" content="Finanças">
 
+    <script>
+        // Preferência estritamente visual: evita a piscada do tema padrão antes
+        // de o módulo e o IndexedDB da conta estarem disponíveis.
+        try {
+            const temaInicial = localStorage.getItem("controleFinanceiro:tema-inicial");
+            if (["claro", "escuro", "rosa", "pangolim", "floresta"].includes(temaInicial)) {
+                document.documentElement.dataset.tema = temaInicial;
+            }
+        } catch { /* O bootstrap assíncrono continua mesmo sem localStorage. */ }
+    </script>
+
     <link rel="stylesheet" href="style.css">
     <link rel="stylesheet" href="controls.css">
 </head>
@@ -30,6 +41,11 @@
 <body>
 
 
+
+    <div id="carregando-aplicativo" class="carregando-aplicativo" role="status" aria-live="polite">
+        <span class="carregando-aplicativo-indicador" aria-hidden="true"></span>
+        <span>Carregando seus dados…</span>
+    </div>
 
     <main class="container">
 <nav class="periodo" aria-label="Período">
@@ -319,10 +335,11 @@
                 <button id="exportar-csv" class="btn btn-secundario" type="button">Exportar CSV</button>
                 <button id="exportar-backup" class="btn btn-secundario" type="button">Salvar backup</button>
                 <button id="importar-backup" class="btn btn-secundario" type="button">Restaurar backup</button>
-                <button id="exportar-historico-recuperacao" class="btn btn-secundario" type="button">Baixar histórico de recuperação</button>
+                <button id="exportar-historico-recuperacao" class="btn btn-secundario" type="button" aria-describedby="descricao-historico-recuperacao">Baixar histórico</button>
                 <button id="limpar-mes" class="btn btn-perigo" type="button">Limpar m&#234;s atual</button>
                 <button id="excluir-tudo" class="btn btn-perigo" type="button">Excluir tudo</button>
             </div>
+            <p id="descricao-historico-recuperacao" class="nota">Baixa uma cópia das alterações concorrentes preservadas para recuperação.</p>
             <input id="arquivo-backup" type="file" accept="application/json,.json" hidden>
             <p id="diagnostico-dados" class="nota" aria-live="polite"></p>
             <p id="ultima-operacao-dados" class="nota"></p>

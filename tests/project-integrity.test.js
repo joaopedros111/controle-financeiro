@@ -346,7 +346,8 @@ test("preferências antigas de tela inicial continuam compatíveis sem controles
     assert.match(html, /data-registra-tela="lancamentos"/);
     assert.match(app, /if \(botao\.dataset\.registraTela\) registrarUltimaTela/);
     assert.match(app, /addEventListener\("scroll"/);
-    assert.match(app, /classList\.remove\("app-inicializando"\)[\s\S]*requestAnimationFrame/);
+    assert.match(app, /function concluirCarregamentoConta\(\)[\s\S]*classList\.remove\("app-inicializando", "app-carregando-conta"\)/);
+    assert.match(app, /automaticController\.start\(\)[\s\S]*concluirCarregamentoConta\(\)/);
     assert.match(serviceWorker, /"\.\/preferences\.js"/);
     assert.match(serviceWorker, /"\.\/app\.js"/);
 });
@@ -365,7 +366,8 @@ test("os cinco temas mantêm identificadores, cores e nomes de exibição", asyn
     assert.match(html, /Claro, Escuro, Rosa, Pangolin ou Selva/);
     assert.match(html, /id="alternar-tema"[\s\S]*?<span>Claro<\/span>/);
     assert.match(core, /"claro", "escuro", "rosa", "pangolim", "floresta"/);
-    assert.match(app, /const tema = estado\.tema \|\| "claro"/);
+    assert.match(app, /let tema = estado\.tema \|\| "claro"/);
+    assert.match(app, /localStorage\.setItem\(CHAVE_TEMA_INICIAL, tema\)/);
     assert.doesNotMatch(app, /prefers-color-scheme/);
     assert.match(app, /estado\.tema = ordemTemas\[\(ordemTemas\.indexOf\(atual\) \+ 1\) % ordemTemas\.length\]/);
 });

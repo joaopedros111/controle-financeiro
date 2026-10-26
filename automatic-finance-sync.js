@@ -27,12 +27,23 @@ export class AutomaticFinanceSync {
         this.session = null; this.online = connectivity.navigator?.onLine !== false;
     }
     async start() {
-        this.unAuth = this.client.onUser(user => { const transition = this.useAccount(user), session = this.session; void transition.catch(cause => this.report(cause, session)); });
+        let settleInitial;
+        const initial = new Promise(resolve => { settleInitial = resolve; });
+        let awaitingInitial = true;
+        this.unAuth = this.client.onUser(user => {
+            const transition = this.useAccount(user), session = this.session;
+            void transition.catch(cause => this.report(cause, session)).finally(() => {
+                if (awaitingInitial) { awaitingInitial = false; settleInitial(); }
+            });
+        });
         this.offline = () => { this.online = false; this.status('Offline'); };
         this.reconnect = () => { this.online = true; if (this.session) { this.session.permanent = false; this.session.retryAt = 0; } this.request(0); };
         this.connectivity.addEventListener?.('online', this.reconnect);
         this.connectivity.addEventListener?.('offline', this.offline);
         await this.client.ready();
+        // Não libera a interface entre a restauração do Auth e a hidratação
+        // do estado IndexedDB pertencente ao UID restaurado.
+        await initial;
     }
     stop() {
         this.closeSession(); this.unAuth?.();
