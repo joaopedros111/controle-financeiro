@@ -2115,7 +2115,7 @@ body.valores-ocultos .categoria-barra { visibility: hidden; }
 /* Despesas do mês: todos os elementos na mesma linha */
 .despesa {
     display: grid;
-    grid-template-columns: 22px minmax(0, 1fr) auto auto 32px 32px;
+    grid-template-columns: 22px minmax(0, 1fr) auto auto 38px 38px;
     grid-template-rows: auto;
     align-items: center;
     gap: 6px;
@@ -2184,4 +2184,15 @@ body.valores-ocultos .categoria-barra { visibility: hidden; }
     .despesa > .situacao {
         font-size: .65rem;
     }
+}
+
+/* Padronização dos botões de Entradas e Despesas */
+.receita > button,
+.despesa > button {
+    box-sizing: border-box;
+    width: 38px;
+    min-width: 38px;
+    height: 38px;
+    min-height: 38px;
+    padding: 0;
 }
