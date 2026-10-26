@@ -23,7 +23,6 @@ function setup(language = 'pt-BR') {
         periodo: { ano: 2026, mes: 1 }, estado: { meses: {} }, numero: Number,
         chaveMes: (year, month) => `${year}-${String(month).padStart(2, '0')}`,
         somarCentavos, agruparDespesasPorCategoria,
-        somar: items => somarCentavos(items.map(item => item.valor)) / 100,
         obterMes: () => context.estado.meses['2026-01'] || { despesas: [] },
         corDaCategoria: () => '#123456',
         formatarMoeda: value => context.valoresOcultos ? '••••' : String(value),
@@ -57,26 +56,6 @@ test('Panorama rates handle savings, deficits, zero bases and year rollover with
     assert.equal(c.$('variacao-despesas').textContent, '••••');
 });
 
-test('six months include empty months and expose selected values by click and keyboard button semantics', () => {
-    const c = setup();
-    c.estado.meses['2025-08'] = { receitas: [{ valor: 20 }], despesas: [{ valor: 10 }] };
-    c.renderGraficoMensal();
-    const groups = c.$('grafico-mensal').children;
-    assert.equal(groups.length, 6);
-    assert.match(c.$('periodo-grafico').textContent, /2025.*2026/);
-    assert.equal(groups[0].tag, 'button');
-    groups[0].events.click();
-    assert.match(c.$('detalhe-grafico-mensal').textContent, /Entradas 20; Despesas 10/);
-    groups[5].events.click();
-    assert.equal(groups[0].attrs['aria-pressed'], 'false');
-    assert.match(c.$('detalhe-grafico-mensal').textContent, /Entradas 0; Despesas 0/);
-    c.valoresOcultos = true;
-    c.renderGraficoMensal();
-    c.$('grafico-mensal').children[0].events.click();
-    assert.match(c.$('detalhe-grafico-mensal').textContent, /••••/);
-    assert.doesNotMatch(c.$('detalhe-grafico-mensal').textContent, /Entradas 20|Despesas 10/);
-});
-
 test('category bars use descending totals and show amount and percentage; empty state works', () => {
     const c = setup();
     c.estado.meses['2026-01'] = { despesas: [
@@ -96,8 +75,7 @@ test('category bars use descending totals and show amount and percentage; empty 
 
 test('new Panorama text is translated in all six languages', () => {
     const phrases = ['Saldo do mês', 'Pendente no mês', 'Taxa de economia', 'Variação das despesas',
-        'Comparação com', 'Não calculável: sem entradas', 'Não calculável: mês anterior sem despesas',
-        'Entradas e despesas nos últimos seis meses:'];
+        'Comparação com', 'Não calculável: sem entradas', 'Não calculável: mês anterior sem despesas'];
     for (const language of IDIOMAS.filter(value => value !== 'pt-BR')) {
         for (const phrase of phrases) assert.notEqual(textoTraduzido(phrase, language), phrase);
     }

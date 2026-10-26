@@ -321,13 +321,10 @@ test("valores monetários usam formatação centralizada nas listas, resumos e g
     ]) {
         assert.ok(html.includes(`id="${seletor}"`) || app.includes(`class: "${seletor}"`), `${seletor} sem componente`);
     }
-    assert.match(app, /const descricao = rotuloPeriodo\(p\)[^;]*formatarMoeda\(p\.receitas\)[\s\S]*?formatarMoeda\(p\.despesas\)/);
-    assert.match(app, /formatarMoeda\(p\.receitas\).*formatarMoeda\(p\.despesas\)/);
     assert.match(app, /formatarMoeda\(total\)[\s\S]*formatarMoeda\(valor\)/);
     assert.match(app, /const pago = pagoCentavos \/ 100/);
     assert.match(app, /const pendente = \(despesaCentavos - pagoCentavos\) \/ 100/);
     assert.doesNotMatch(app, /\$\("valor-pago"\)|ui\.valorPago/);
-    assert.match(css, /body\.valores-ocultos \.grafico-barras/);
     assert.match(css, /body\.valores-ocultos \.categoria-barra/);
     assert.match(css, /html\.app-inicializando \.container/);
     assert.match(html, /class="app-inicializando"/);

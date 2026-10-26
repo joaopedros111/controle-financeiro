@@ -1154,11 +1154,6 @@ function corDaCategoria(nome) {
 
 
 
-function somar(lista) {
-    return somarCentavos(lista.map((item) => numero(item.valor))) / 100;
-
-}
-
 function renderListaOrcamentos() {
     const categorias = [...new Set([
         ...estado.categorias,
@@ -1332,8 +1327,6 @@ function atualizarResumo(persistir = true) {
 
     ui.totalValor.textContent = formatarMoeda(pendente);
 
-    renderGraficoMensal();
-
     renderGraficoCategorias();
 
     atualizarDiagnostico();
@@ -1359,63 +1352,6 @@ function renderIndicadoresPanorama(receita, despesa) {
     $("variacao-periodo").textContent = new Intl.DateTimeFormat(LOCALES[idiomaAtual] || "pt-BR", {
         month: "long", year: "numeric"
     }).format(anterior);
-}
-
-function renderGraficoMensal() {
-    const destino = $("grafico-mensal");
-    if (!destino) return;
-
-    const pontos = [];
-    let ano = periodo.ano;
-    let mes = periodo.mes;
-    for (let i = 0; i < 6; i += 1) {
-        const chave = chaveMes(ano, mes);
-        const dados = estado.meses[chave] || { receitas: [], despesas: [] };
-        pontos.unshift({
-            nome: new Intl.DateTimeFormat(LOCALES[idiomaAtual] || "pt-BR", { month: "short" })
-                .format(new Date(2020, mes - 1, 1)).replace(".", "").toLocaleLowerCase(idiomaAtual),
-            chave,
-            receitas: somar(dados.receitas),
-            despesas: somar(dados.despesas)
-        });
-        mes -= 1;
-        if (mes === 0) { mes = 12; ano -= 1; }
-    }
-
-    const escala = Math.max(0, ...pontos.flatMap((p) => [p.receitas, p.despesas]));
-    const rotuloPeriodo = (p) => new Intl.DateTimeFormat(LOCALES[idiomaAtual] || "pt-BR", {
-        month: "short", year: "numeric"
-    }).format(new Date(Number(p.chave.slice(0, 4)), Number(p.chave.slice(5, 7)) - 1, 1));
-    $("periodo-grafico").textContent = rotuloPeriodo(pontos[0]) + " – " + rotuloPeriodo(pontos[5]);
-    $("detalhe-grafico-mensal").textContent = "";
-    destino.replaceChildren(...pontos.map((p) => {
-        const descricao = rotuloPeriodo(p) + ": " + textoTraduzido("Entradas") + " " + formatarMoeda(p.receitas)
-            + "; " + textoTraduzido("Despesas") + " " + formatarMoeda(p.despesas);
-        const grupo = criarEl("button", { class: "grafico-grupo", type: "button", "aria-label": descricao,
-            "data-i18n-preserve-aria": "", "aria-pressed": "false" });
-        grupo.addEventListener("click", () => {
-            destino.querySelectorAll("button").forEach((botao) => botao.setAttribute("aria-pressed", "false"));
-            grupo.setAttribute("aria-pressed", "true");
-            $("detalhe-grafico-mensal").textContent = descricao;
-        });
-        const barras = criarEl("div", { class: "grafico-barras" });
-        [["entrada", p.receitas, "Entradas"], ["despesa", p.despesas, "Despesas"]].forEach(([tipo, valor, rotulo]) => {
-            const barra = criarEl("span", {
-                class: "grafico-barra grafico-barra-" + tipo,
-                "aria-hidden": "true"
-            });
-            barra.style.height = escala > 0 ? Math.max(valor > 0 ? 4 : 0, (valor / escala) * 100) + "%" : "0%";
-            barras.append(barra);
-        });
-        grupo.append(barras, criarEl("span", { class: "grafico-mes", text: p.nome }));
-        return grupo;
-    }));
-    destino.setAttribute("data-i18n-preserve-aria", "");
-    destino.setAttribute("aria-label", textoTraduzido("Entradas e despesas nos últimos seis meses:") + " " + pontos.map((p) =>
-        new Intl.DateTimeFormat(LOCALES[idiomaAtual] || "pt-BR", { month: "long", year: "numeric" })
-            .format(new Date(Number(p.chave.slice(0, 4)), Number(p.chave.slice(5, 7)) - 1, 1))
-        + ", " + textoTraduzido("entradas") + " " + formatarMoeda(p.receitas) + ", " + textoTraduzido("despesas") + " " + formatarMoeda(p.despesas)
-    ).join("; "));
 }
 
 function renderGraficoCategorias() {

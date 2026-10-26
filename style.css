@@ -115,34 +115,14 @@
     .grafico-legenda { display: flex; gap: 16px; margin-bottom: 10px; color: var(--texto-secundario); font-size: .76rem; }
     .grafico-legenda span { display: inline-flex; align-items: center; gap: 7px; }
     .grafico-legenda i { width: 9px; height: 9px; border-radius: 3px; }
-    .legenda-entrada { background: #3b82f6; }
-    .legenda-despesa { background: #14b8a6; }
-    .grafico-mensal {
-        display: grid;
-        grid-template-columns: repeat(6, minmax(0, 1fr));
-        gap: 8px;
-        height: 152px;
-        padding: 4px 2px 0;
-        border-bottom: 1px solid var(--borda);
-        background: repeating-linear-gradient(to bottom, transparent 0, transparent 36px, color-mix(in srgb, var(--borda) 65%, transparent) 37px, transparent 38px);
-    }
-    .grafico-grupo { display: grid; grid-template-rows: minmax(0, 1fr) 24px; min-width: 0; text-align: center; }
-    .grafico-barras { display: flex; align-items: flex-end; justify-content: center; gap: 4px; min-height: 0; }
-    .grafico-barra { display: block; width: min(34%, 18px); min-height: 0; border-radius: 5px 5px 2px 2px; transition: height .28s ease; }
-    .grafico-barra-entrada { background: linear-gradient(180deg, #60a5fa, #2563eb); }
-    .grafico-barra-despesa { background: linear-gradient(180deg, #5eead4, #0f9f91); }
-    .grafico-mes { align-self: end; color: var(--texto-secundario); font-size: .7rem; font-weight: 700; text-transform: capitalize; }
 
     @media (max-width: 380px) {
         .topo { padding: 13px; }
         .marca-icone { flex-basis: 40px; width: 40px; height: 40px; border-radius: 13px; }
         .grafico-bloco { padding: 18px 14px; }
-        .grafico-mensal { gap: 4px; }
         .grafico-periodo { font-size: .66rem; }
     }
-    @media (prefers-reduced-motion: reduce) {
-        .grafico-barra { transition: none; }
-    }
+
 }
 
 @layer components {
@@ -667,8 +647,7 @@ html.app-carregando-conta .container { visibility: hidden; }
 @media (prefers-reduced-motion: reduce) {
     .carregando-aplicativo-indicador { animation: none; border-top-color: var(--borda); }
 }
-body.valores-ocultos .barra,
-body.valores-ocultos .grafico-barras { visibility: hidden; }
+body.valores-ocultos .barra { visibility: hidden; }
 body.valores-ocultos #texto-comprometido { display: none; }
 body.valores-ocultos .grafico-categoria-percentual { display: none; }
 body.valores-ocultos #grafico-rosca { background: conic-gradient(var(--borda) 0deg 360deg) !important; }
@@ -1501,9 +1480,6 @@ dialog#dialogo-receita #campo-repetir-receita { grid-column: 1 / -1; }
     }
     .bloco-topo h2 { letter-spacing: -.035em; }
     .grafico-bloco { background: linear-gradient(180deg, var(--superficie), color-mix(in srgb, var(--superficie-suave) 54%, var(--superficie))); }
-    .grafico-barra { box-shadow: 0 3px 9px -5px currentColor; }
-    .grafico-barra-entrada { background: linear-gradient(180deg, #55c99b, #087f5b); color: #087f5b; }
-    .grafico-barra-despesa { background: linear-gradient(180deg, #f08b92, #c94f5c); color: #c94f5c; }
 
     .btn { transition: transform .16s ease, background-color .18s ease, box-shadow .18s ease, border-color .18s ease; }
     .btn-primario { background: linear-gradient(135deg, var(--primaria), var(--primaria-hover)); box-shadow: 0 7px 16px -9px color-mix(in srgb, var(--primaria) 80%, transparent); }
@@ -1597,20 +1573,12 @@ dialog#dialogo-receita #campo-repetir-receita { grid-column: 1 / -1; }
         background: linear-gradient(145deg, #34d399, #059669 72%, #065f46);
         box-shadow: 0 9px 20px -8px rgba(16, 185, 129, .42), inset 0 1px 0 rgba(255,255,255,.22);
     }
-    :root[data-tema="escuro"] .grafico-barra-entrada { background: linear-gradient(180deg, #6ee7b7, #059669); color: #059669; }
-    :root[data-tema="escuro"] .grafico-barra-despesa { background: linear-gradient(180deg, #fda4af, #e45f70); color: #e45f70; }
-    :root[data-tema="escuro"] .legenda-entrada { background: #059669; }
-    :root[data-tema="escuro"] .legenda-despesa { background: #e45f70; }
     :root[data-tema="escuro"] .resumo::before { background: linear-gradient(90deg, #34d399, #a3e635); }
 
     :root[data-tema="rosa"] .marca-icone {
         background: linear-gradient(145deg, #f276ad, #d74786 72%, #a92b65);
         box-shadow: 0 9px 20px -8px rgba(196, 47, 112, .62), inset 0 1px 0 rgba(255,255,255,.35);
     }
-    :root[data-tema="rosa"] .grafico-barra-entrada { background: linear-gradient(180deg, #f59ac2, #d74786); color: #d74786; }
-    :root[data-tema="rosa"] .grafico-barra-despesa { background: linear-gradient(180deg, #8c83e8, #655bbd); color: #655bbd; }
-    :root[data-tema="rosa"] .legenda-entrada { background: #d74786; }
-    :root[data-tema="rosa"] .legenda-despesa { background: #655bbd; }
     :root[data-tema="rosa"] .resumo::before { background: linear-gradient(90deg, #d74786, #a681e2); }
 }
 
@@ -1665,20 +1633,12 @@ dialog#dialogo-receita #campo-repetir-receita { grid-column: 1 / -1; }
         background: linear-gradient(145deg, #c9924d, #a66c32 72%, #754a28);
         box-shadow: 0 9px 20px -8px rgba(131, 83, 38, .55), inset 0 1px 0 rgba(255,255,255,.35);
     }
-    :root[data-tema="pangolim"] .grafico-barra-entrada { background: linear-gradient(180deg, #c2a46b, #718055); color: #718055; }
-    :root[data-tema="pangolim"] .grafico-barra-despesa { background: linear-gradient(180deg, #d39859, #a66c32); color: #a66c32; }
-    :root[data-tema="pangolim"] .legenda-entrada { background: #718055; }
-    :root[data-tema="pangolim"] .legenda-despesa { background: #a66c32; }
     :root[data-tema="pangolim"] .resumo::before { background: linear-gradient(90deg, #a66c32, #c2a46b); }
 
     :root[data-tema="floresta"] .marca-icone {
         background: linear-gradient(145deg, #5d9669, #39734d 72%, #254d36);
         box-shadow: 0 9px 20px -8px rgba(41, 91, 57, .56), inset 0 1px 0 rgba(255,255,255,.35);
     }
-    :root[data-tema="floresta"] .grafico-barra-entrada { background: linear-gradient(180deg, #83b782, #39734d); color: #39734d; }
-    :root[data-tema="floresta"] .grafico-barra-despesa { background: linear-gradient(180deg, #b99a61, #8b6e3f); color: #8b6e3f; }
-    :root[data-tema="floresta"] .legenda-entrada { background: #39734d; }
-    :root[data-tema="floresta"] .legenda-despesa { background: #8b6e3f; }
     :root[data-tema="floresta"] .resumo::before { background: linear-gradient(90deg, #39734d, #83b782); }
 }
 
@@ -1812,25 +1772,17 @@ dialog#dialogo-receita #campo-repetir-receita { grid-column: 1 / -1; }
 @layer components {
     .panorama-graficos {
         display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
+        grid-template-columns: minmax(0, 1fr);
         align-items: start;
         gap: 14px;
     }
-    .grafico-meses { min-width: 0; }
-    .grafico-meses > .grafico-categorias-topo { min-height: 36px; }
-    .grafico-meses .grafico-categorias-topo h3 { font-size: .84rem; }
-    .grafico-meses .grafico-periodo { font-size: .66rem; }
-    .grafico-meses .grafico-legenda { flex-wrap: wrap; gap: 5px 10px; font-size: .66rem; }
-    .grafico-meses .grafico-mensal { grid-template-columns: repeat(3, minmax(0, 1fr)); height: 138px; gap: 3px; }
-    .grafico-meses .grafico-barra { width: min(38%, 17px); }
-    .grafico-meses .grafico-mes { font-size: .66rem; }
 
     .panorama-graficos .grafico-categorias {
         min-width: 0;
         margin: 0;
-        padding: 0 0 0 14px;
+        padding: 0;
         border: 0;
-        border-left: 1px solid var(--borda);
+        border-left: 0;
     }
     .grafico-categorias-topo { align-items: flex-start; flex-wrap: wrap; gap: 3px 6px; margin-bottom: 10px; }
     .panorama-graficos .grafico-categorias-topo h3 { font-size: .84rem; }
@@ -1849,10 +1801,8 @@ dialog#dialogo-receita #campo-repetir-receita { grid-column: 1 / -1; }
 
     @media (max-width: 380px) {
         .panorama-graficos { gap: 10px; }
-        .panorama-graficos .grafico-categorias { padding-left: 10px; }
-        .grafico-meses .grafico-categorias-topo h3,
+
         .panorama-graficos .grafico-categorias-topo h3 { font-size: .77rem; }
-        .grafico-meses .grafico-periodo,
         .panorama-graficos .grafico-categorias-topo .grafico-periodo { font-size: .6rem; }
     }
 }
@@ -2081,22 +2031,18 @@ dialog#dialogo-conflitos-sincronizacao[open] { width: min(560px, calc(100vw - 32
     }
 }
 
-/* Panorama: leitura por toque e categorias proporcionais. */
+/* Panorama: indicadores e categorias proporcionais. */
 @layer components {
-    .legenda-entrada { background: #087f5b; }
-    .legenda-despesa { background: #c94f5c; }
     .legenda-pago { background: var(--verde); }
     .legenda-pendente { background: var(--ambar); }
     .barra { height: 12px; }
     .barra.estourou { outline: 2px solid var(--vermelho); outline-offset: 2px; }
     .barra-pendente { background: repeating-linear-gradient(135deg, var(--ambar) 0 5px, color-mix(in srgb, var(--ambar), var(--superficie) 35%) 5px 8px); }
-    .panorama-indicadores { margin-bottom: 20px; gap: 16px; }
+    .panorama-indicadores { grid-template-columns: repeat(2, minmax(0, 1fr)); margin-bottom: 20px; gap: 12px; }
+    .panorama-indicadores > div { min-width: 0; }
+    .panorama-indicadores dt, .panorama-indicadores dd, .panorama-indicadores small { white-space: normal; overflow-wrap: anywhere; }
     .panorama-indicadores dd { font-size: 1rem; overflow-wrap: anywhere; }
     .panorama-indicadores small { color: var(--texto-secundario); }
-    .grafico-meses .grafico-mensal { grid-template-columns: repeat(6, minmax(0, 1fr)); height: 180px; }
-    .grafico-grupo { padding: 3px; border: 0; border-radius: 5px; background: transparent; color: inherit; font: inherit; cursor: pointer; }
-    .grafico-grupo:focus-visible, .grafico-grupo[aria-pressed="true"] { outline: 2px solid var(--texto-secundario); outline-offset: -2px; }
-    .grafico-detalhe { min-height: 2.8em; font-size: .76rem; overflow-wrap: anywhere; color: var(--texto-secundario); }
     .categoria-total { margin: 0; font-size: .8rem; width: 100%; }
     .panorama-graficos .legenda-grafico-categorias { max-height: none; overflow: visible; }
     .panorama-graficos .grafico-categoria-item { grid-template-columns: minmax(0, 1fr) auto; gap: 6px; }
@@ -2105,8 +2051,12 @@ dialog#dialogo-conflitos-sincronizacao[open] { width: min(560px, calc(100vw - 32
     .categoria-barra { display: block; height: 100%; border-radius: inherit; }
     @media (max-width: 600px) {
         .panorama-graficos { grid-template-columns: minmax(0, 1fr); }
-        .panorama-graficos .grafico-categorias { border-left: 0; border-top: 1px solid var(--borda); padding: 16px 0 0; }
-        .panorama-indicadores { grid-template-columns: minmax(0, 1fr); }
+
+        .panorama-indicadores { gap: 8px; }
+        .panorama-indicadores > div { padding: 10px 8px; }
+        .panorama-indicadores dt { font-size: .72rem; }
+        .panorama-indicadores dd { font-size: .86rem; line-height: 1.35; }
+        .panorama-indicadores small { font-size: .68rem; line-height: 1.4; }
     }
 }
 body.valores-ocultos .categoria-barra { visibility: hidden; }
