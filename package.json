@@ -6,6 +6,12 @@
     "test": "node --test",
     "build:sync": "node scripts/build-sync.mjs",
     "test:rules": "node scripts/run-local-tests.mjs rules",
+    "test:epoch": "node scripts/run-local-tests.mjs epoch",
+    "test:epoch:browser": "node scripts/run-local-tests.mjs epoch-browser",
+    "test:epoch:realtime": "node scripts/run-local-tests.mjs epoch-realtime",
+    "check:epoch:realtime": "node --check finance-epoch-realtime.js && node --check finance-epoch-transport-emulator.js && node --check tests/finance-epoch-realtime.test.js && node --check e2e/epoch-realtime.spec.mjs",
+    "check:epoch:queue": "node --check finance-epoch-cache.js && node --check finance-epoch-queue.js && node --check finance-epoch-transport-emulator.js && node --check tests/finance-epoch-cache.test.js && node --check tests/fixtures/epoch-queue-browser.js && node --check e2e/epoch-queue.spec.mjs",
+    "check:epoch": "node --check finance-epoch.js && node --check finance-epoch-emulator.js && node --check tests/finance-epoch.test.js && node --check tests/finance-epoch-rules.test.js && node --check scripts/run-local-tests.mjs",
     "test:e2e": "node scripts/run-local-tests.mjs browser",
     "check": "node --check app.js && node --check finance-core.js && node --check preferences.js && node --check localization.js && node --check storage.js && node --check update-manager.js && node --check sync-core.js && node --check firebase-config.js && node --check firebase-sync-entry.js && node --check sw.js && node --check scripts/build-sync.mjs && node --check scripts/prepare-pages.mjs && node --check indexeddb-persistence.js && node --check transactional-state.js && node --check financial-intents.js && node --check financial-atomic-service.js",
     "qa:indexeddb": "node scripts/serve-idb-qa.mjs"

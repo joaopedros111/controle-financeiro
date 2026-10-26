@@ -1,0 +1,88 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function owner(uid) { return request.auth != null && request.auth.uid == uid; }
+    function identity(value) { return value is string && value.matches('^[A-Za-z0-9_-]{1,128}$'); }
+    function active(uid, epoch) {
+      let control = exists(/databases/$(database)/documents/users/$(uid)/control/finance)
+        ? get(/databases/$(database)/documents/users/$(uid)/control/finance).data : {};
+      return control is map ? (owner(uid) && identity(epoch) && control.protocol == 1 && control.status == 'active' && control.activeEpoch == epoch) : false;
+    }
+    function entityCollection(kind) { return kind in ['records', 'categories', 'budgets', 'settings']; }
+    function amount(value) { return value is int && value >= 0 && value <= 1759218604441600; }
+    function payload(kind, id, data) {
+      return data is map ? (
+        kind == 'records' ? (data.keys().hasOnly(['month','type','nome','amountCents','categoryId','paid','fixed','seriesId','installment'])
+          && data.keys().hasAll(['month','type','nome','amountCents'])
+          && data.month is string && data.month.matches('^(20[0-9]{2}|2100)-(0[1-9]|1[0-2])$')
+          && data.type in ['receitas','despesas'] && data.nome is string && data.nome.matches('.*[^\\s].*') && data.nome.size() <= 80
+          && amount(data.amountCents)
+          && (!('categoryId' in data) || identity(data.categoryId))
+          && (!('paid' in data) || data.paid is bool) && (!('fixed' in data) || data.fixed is bool)
+          && (!('seriesId' in data) || identity(data.seriesId))
+          && (!('installment' in data) || (data.installment is map
+            && data.installment.keys().hasOnly(['current','total']) && data.installment.keys().hasAll(['current','total'])
+            && data.installment.current is int && data.installment.total is int
+            && data.installment.current >= 1 && data.installment.total >= 2 && data.installment.current <= data.installment.total)))
+        : kind == 'categories' ? (data.keys().hasOnly(['name']) && data.keys().hasAll(['name'])
+          && data.name is string && data.name.matches('.*[^\\s].*') && data.name.size() <= 40)
+        : kind == 'budgets' ? (data.keys().hasOnly(['categoryId','amountCents']) && data.keys().hasAll(['categoryId','amountCents'])
+          && identity(data.categoryId) && amount(data.amountCents))
+        : (kind == 'settings' && id == 'finance' && data.keys().hasOnly(['currency']) && data.keys().hasAll(['currency'])
+          && data.currency in ['BRL','USD','EUR','JPY'])
+      ) : false;
+    }
+    function validCommand(c, uid, epoch, opId) {
+      return c is map && c.keys().hasOnly(['protocol','uid','epoch','operationId','collection','entityId','baseRevision','action','payload'])
+        && c.keys().hasAll(['protocol','uid','epoch','operationId','collection','entityId','baseRevision','action','payload'])
+        && c.protocol == 1 && c.uid == uid && c.epoch == epoch && c.operationId == opId
+        && identity(opId) && identity(c.entityId) && entityCollection(c.collection)
+        && c.baseRevision is int && c.baseRevision >= 0 && c.baseRevision < 9007199254740991
+        && (c.collection != 'settings' || c.entityId == 'finance')
+        && ((c.action == 'put' && payload(c.collection, c.entityId, c.payload))
+          || (c.action == 'delete' && c.payload is map && c.payload.size() == 0));
+    }
+    function paired(uid, epoch, kind, id, next, opId) {
+      let opPath = /databases/$(database)/documents/users/$(uid)/financeEpochs/$(epoch)/operations/$(opId);
+      let op = existsAfter(opPath) ? getAfter(opPath).data : {};
+      let c = op is map ? op.get('command', {}) : {};
+      let path = /databases/$(database)/documents/users/$(uid)/financeEpochs/$(epoch)/$(kind)/$(id);
+      let present = exists(path);
+      return op.keys().hasAll(['command','resultRevision','appliedAt']) && next is map ? (!exists(opPath)
+        && c.get('collection', '') == kind && c.get('entityId', '') == id
+        && next.keys().hasOnly(['payload','deleted','revision','operationId','updatedAt'])
+        && next.keys().hasAll(['payload','deleted','revision','operationId','updatedAt'])
+        && next.payload == c.payload && next.deleted is bool && next.deleted == (c.action == 'delete')
+        && next.revision is int && next.revision == c.baseRevision + 1
+        && next.operationId == opId && next.updatedAt == request.time
+        && op.resultRevision == next.revision && op.appliedAt == request.time
+        && (present ? (get(path).data.deleted == false && get(path).data.revision == c.baseRevision)
+          : (c.baseRevision == 0 && c.action == 'put'))) : false;
+    }
+    match /users/{uid}/control/finance {
+      allow read: if owner(uid);
+      allow write: if false;
+    }
+    match /users/{uid}/financeEpochs/{epoch}/{kind}/{id} {
+      allow read: if entityCollection(kind) && active(uid, epoch);
+      allow create, update: if entityCollection(kind) ? (active(uid, epoch) ? (identity(id)
+        && paired(uid, epoch, kind, id, request.resource.data, request.resource.data.get('operationId', ''))) : false) : false;
+      allow delete: if false;
+    }
+    match /users/{uid}/financeEpochs/{epoch}/operations/{opId} {
+      allow read: if active(uid, epoch);
+      allow create: if active(uid, epoch) ? (
+        request.resource.data.keys().hasOnly(['command','resultRevision','appliedAt'])
+        && request.resource.data.keys().hasAll(['command','resultRevision','appliedAt'])
+        && validCommand(request.resource.data.command, uid, epoch, opId)
+        && operationPair(uid, epoch, opId, request.resource.data.command)) : false;
+      allow update, delete: if false;
+    }
+    function operationPair(uid, epoch, opId, c) {
+      let path = /databases/$(database)/documents/users/$(uid)/financeEpochs/$(epoch)/$(c.collection)/$(c.entityId);
+      return existsAfter(path) ? paired(uid, epoch, c.collection, c.entityId, getAfter(path).data, opId) : false;
+    }
+    // Legacy paths, inactive namespaces and unknown documents stay closed.
+    match /{document=**} { allow read, write: if false; }
+  }
+}
