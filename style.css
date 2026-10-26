@@ -2060,3 +2060,54 @@ dialog#dialogo-conflitos-sincronizacao[open] { width: min(560px, calc(100vw - 32
     }
 }
 body.valores-ocultos .categoria-barra { visibility: hidden; }
+
+/* Panorama - categorias em layout compacto */
+.panorama-graficos .grafico-categoria-item {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    grid-template-rows: auto auto;
+    align-items: center;
+    column-gap: 8px;
+    row-gap: 5px;
+}
+
+.panorama-graficos .grafico-categoria-nome {
+    grid-column: 1;
+    grid-row: 1;
+    min-width: 0;
+}
+
+.panorama-graficos .grafico-categoria-valor {
+    grid-column: 2;
+    grid-row: 1;
+    white-space: nowrap;
+}
+
+.panorama-graficos .grafico-categoria-percentual {
+    grid-column: 3;
+    grid-row: 1;
+    padding: 0;
+    text-align: right;
+    white-space: nowrap;
+}
+
+.panorama-graficos .categoria-trilho {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    width: 100%;
+}
+
+@media (max-width: 414px) {
+    .panorama-graficos .grafico-categoria-item {
+        column-gap: 5px;
+        row-gap: 4px;
+    }
+
+    .panorama-graficos .grafico-categoria-valor {
+        font-size: .65rem;
+    }
+
+    .panorama-graficos .grafico-categoria-percentual {
+        font-size: .61rem;
+    }
+}
