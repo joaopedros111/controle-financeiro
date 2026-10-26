@@ -1025,35 +1025,21 @@ function criarLinhaDespesa(despesa) {
 
 
 
-    linha.append(
-
-        criarEl("input", {
-
-            type: "checkbox",
-
-            class: "pago-despesa",
-
-            checked: despesa.pago,
-
-            title: despesa.pago ? "Marcar como a pagar" : "Marcar como paga",
-
-            "aria-label": "Despesa paga"
-
+linha.append(
+    criarEl("div", { class: "despesa-nome" }, [
+        criarEl("span", {
+            class: "nome-despesa",
+            text: despesa.nome.trim() || textoTraduzido("Sem nome")
         }),
-
-        criarEl("div", { class: "despesa-nome" }, [
-
-            criarEl("span", {
-
-                class: "nome-despesa",
-
-                text: despesa.nome.trim() || textoTraduzido("Sem nome")
-
-            }),
-
-            ...marcaDaDespesa(despesa)
-
-        ]),
+        ...marcaDaDespesa(despesa)
+    ]),
+    criarEl("input", {
+        type: "checkbox",
+        class: "pago-despesa",
+        checked: despesa.pago,
+        title: despesa.pago ? "Marcar como a pagar" : "Marcar como paga",
+        "aria-label": "Despesa paga"
+    }),
 
         criarEl("span", {
 
