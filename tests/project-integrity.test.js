@@ -412,7 +412,7 @@ test("orçamento foi removido da tela inicial e o gerenciamento fica em Opções
     assert.match(app, /agruparLancamentosComOrcamento\(despesas, estado\.categorias, estado\.orcamentos\)/);
     assert.match(core, /export function agruparLancamentosComOrcamento/);
     assert.match(app, /estado\.orcamentos\.padrao/);
-    assert.match(core, /return \{ padrao, meses: \{\} \}/);
+    assert.match(core, /return \{ padrao, meses \}/);
     assert.match(app, /campo\.type = valoresOcultos \? "password" : "number"/);
     assert.match(core, /export function calcularOrcamentosPorCategoria/);
     assert.match(app, /const CHAVE_ESTADO = "controleFinanceiro:v3"/);

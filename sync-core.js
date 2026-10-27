@@ -136,11 +136,11 @@ export function validateRemoteSettings(settings) {
         || typeof settings.revision !== "string" || !settings.revision || settings.revision.length > 128
         || !validTimestamp(settings.updatedAt)) return false;
     const budgets = settings.budgets;
-    // The persisted finance-core model normalizes month-specific overrides to an empty map.
     if (!budgets || typeof budgets !== "object" || Array.isArray(budgets)
         || Object.keys(budgets).some((key) => !["padrao", "meses"].includes(key))
         || !validBudgetMap(budgets.padrao) || Object.keys(budgets.padrao).some((category) => !settings.categories.includes(category)) || !budgets.meses || typeof budgets.meses !== "object"
-        || Array.isArray(budgets.meses) || Object.keys(budgets.meses).length !== 0) return false;
+        || Array.isArray(budgets.meses) || Object.entries(budgets.meses).some(([month, map]) => !mesFinanceiroValido(month)
+            || !validBudgetMap(map) || Object.keys(map).some(category => !settings.categories.includes(category)))) return false;
     return true;
 }
 

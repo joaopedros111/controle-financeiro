@@ -1,12 +1,14 @@
 import { chaveLocalConta, registrosFinanceiros, recordEntityKey, makeOperation, validateRemoteSettings, validRemoteTombstone,
     validateRemoteConflicts, snapshotConfirmed, inspectRemoteKeys, settingsEquivalent, recordsEquivalent, validConflictRecord,
-    functionalSettings, readSyncMetadata } from './sync-core.js';
+    functionalSettings, readSyncMetadata, operationId } from './sync-core.js';
 import { normalizarEstado, validarBackup, validarTotaisMonetarios } from './finance-core.js';
-import { financeSettings, reconcileAutomatic, prepareAutomaticBackup, transientSyncError } from './automatic-sync-policy.js';
+import { financeSettings, reconcileAutomatic, prepareGenerationRestore, transientSyncError } from './automatic-sync-policy.js';
 
 const error = (code, message) => Object.assign(new Error(message), { code });
+const upgradeMessage = 'Atualização obrigatória: esta versão não é compatível com a geração da conta. Os dados locais foram preservados.';
+const recoveryStatus = 'Dados ativos sincronizados; há alterações somente no histórico de recuperação.';
 const pending = queue => queue.outbox.length || queue.automaticSettingsDirty || queue.conflicts.length
-    || queue.automaticHistory?.some(item => !item.uploaded) || queue.automaticResolutions?.some(item => !item.confirmed);
+    || queue.compatibilityBlocked || queue.restoreJob || queue.automaticHistory?.some(item => !item.uploaded) || queue.automaticResolutions?.some(item => !item.confirmed);
 function validateRecords(items) {
     if (!Array.isArray(items) || inspectRemoteKeys(items).duplicates.length || inspectRemoteKeys(items).mismatches.length) throw error('sync/invalid-data', 'Dados remotos incompatíveis. As cópias locais foram preservadas.');
     const state = { meses: {} };
@@ -22,8 +24,8 @@ function validateRecords(items) {
 
 export class AutomaticFinanceSync {
     constructor({ client, db, service, readLegacy, onAccount, onState, onStatus, onTransition = () => {}, waitLocal = async () => {}, storageBlocked = () => false,
-        connectivity = globalThis, delayMs = 200, maxDelayMs = 30000 }) {
-        Object.assign(this, { client, db, service, readLegacy, onAccount, onState, onStatus, onTransition, waitLocal, storageBlocked, connectivity, delayMs, maxDelayMs });
+        connectivity = globalThis, delayMs = 200, maxDelayMs = 30000, requiredProtocol = 1 }) {
+        Object.assign(this, { client, db, service, readLegacy, onAccount, onState, onStatus, onTransition, waitLocal, storageBlocked, connectivity, delayMs, maxDelayMs, requiredProtocol });
         this.session = null; this.online = connectivity.navigator?.onLine !== false;
     }
     async start() {
@@ -70,7 +72,11 @@ export class AutomaticFinanceSync {
         await this.service.alterarFila(s.uid, q => { if (!this.current(s)) throw error('persistence/cancelled', 'Sessão alterada.');
             q.automaticHasLocalSettings ??= saved.estado === 'valido' || !!existing;
             return q; });
-        this.onState(initialized.estado.dados);
+        s.generation = initialized.fila.generation || 'legacy';
+        this.emitState(s, initialized.estado, initialized.fila);
+        if (this.requiredProtocol > 1 && (!this.client.generationSnapshot || !this.client.generationMarker || this.client.protocolVersion < this.requiredProtocol || !this.client.protocolVersion)) {
+            await this.report(error('sync/upgrade-required', upgradeMessage), s); return;
+        }
         this.request(0);
     }
     request(delay = this.delayMs) {
@@ -87,6 +93,17 @@ export class AutomaticFinanceSync {
     }
     report(cause, s = this.session) {
         if (!s || !this.current(s)) return;
+        if (cause.code === 'sync/upgrade-required' || (cause.code === 'permission-denied' && !this.client.generationSnapshot)) {
+            s.permanent = true;
+            this.status(upgradeMessage, true);
+            return this.service.alterarFila(s.uid, queue => {
+                if (!this.current(s)) throw error('persistence/cancelled', 'Sessão alterada.');
+                queue.compatibilityBlocked = { code: 'sync/upgrade-required' }; return queue;
+            }).then(async queue => {
+                const stored = await this.db.ler(`estado:${s.uid}`);
+                if (this.current(s)) { this.emitState(s, stored, queue); this.status(upgradeMessage, true); }
+            }).catch(failure => { if (this.current(s)) this.status(failure.message || upgradeMessage, true); });
+        }
         this.status(transientSyncError(cause) ? 'Sincronizando' : (cause.message || 'Falha na sincronização.'), !transientSyncError(cause));
         if (transientSyncError(cause)) {
             const delay = Math.min(this.maxDelayMs, this.delayMs * 2 ** Math.min(s.attempt++, 8));
@@ -104,21 +121,49 @@ export class AutomaticFinanceSync {
             this.status('Sincronizando');
             await this.cycle(s);
             if (this.current(s)) { s.attempt = 0; s.retryAt = 0; }
-        } catch (cause) { this.report(cause, s); }
+        } catch (cause) { await this.report(cause, s); }
         finally { s.running = false; if (this.current(s) && s.again && !s.permanent) this.request(); }
     }
     async snapshot(s) {
-        const [records, settings, conflicts] = await Promise.all([this.client.list(s.uid), this.client.getSettings(s.uid), this.client.listConflicts(s.uid)]);
+        if (!this.client.generationSnapshot && this.client.generationMarker && await this.client.generationMarker(s.uid)) throw error('sync/upgrade-required', upgradeMessage);
+        const data = this.client.generationSnapshot ? await this.client.generationSnapshot(s.uid) : null;
+        if (data?.protocol > (this.client.protocolVersion || 2)) throw error('sync/upgrade-required', upgradeMessage);
+        const [records, settings, conflicts] = data ? [data.records, data.settings, data.conflicts]
+            : await Promise.all([this.client.list(s.uid), this.client.getSettings(s.uid), this.client.listConflicts(s.uid)]);
         if (!this.current(s)) throw error('persistence/cancelled', 'Sessão alterada.');
         validateRecords(records);
         if (!validateRemoteSettings(settings) || !validateRemoteConflicts(conflicts)) throw error('sync/invalid-data', 'Configurações remotas inválidas.');
-        return { records, settings, conflicts };
+        return { records, settings, conflicts, generation: data?.generation || 'legacy' };
     }
     async reconcile(s, snapshot) {
-        const changed = await this.db.alterarDocumentos([`estado:${s.uid}`, `fila:${s.uid}`], docs => {
+        const known = await this.service.lerFila(s.uid);
+        if (this.client.generationMarker) {
+            const marker = await this.client.generationMarker(s.uid);
+            if ((marker?.activeGeneration || 'legacy') !== snapshot.generation) throw error('aborted', 'Snapshot de geração anterior descartado.');
+        }
+        const recoveryKey = known.compatibilityBlocked
+            ? `restore-recovery:${s.uid}:compat-${operationId(s.uid, snapshot.generation, known)}`
+            : `restore-recovery:${s.uid}:before-${snapshot.generation}`;
+        const adopting = !known.restoreJob && (known.compatibilityBlocked || (known.generation || 'legacy') !== snapshot.generation);
+        const keys = [`estado:${s.uid}`, `fila:${s.uid}`, ...(adopting ? [recoveryKey] : [])];
+        const changed = await this.db.alterarDocumentos(keys, docs => {
             if (!this.current(s)) throw error('persistence/cancelled', 'Sessão alterada.');
-            const stored = docs.get(`estado:${s.uid}`), before = docs.get(`fila:${s.uid}`);
+            const stored = docs.get(`estado:${s.uid}`); let before = docs.get(`fila:${s.uid}`);
+            if (before.restoreJob) throw error('sync/restore-in-progress', 'Restauração em preparação.');
+            if ((before.generation || 'legacy') !== (known.generation || 'legacy')) throw error('aborted', 'Geração local mudou durante a leitura.');
+            if (before.compatibilityBlocked || (before.generation || 'legacy') !== snapshot.generation) {
+                if (!adopting) throw error('aborted', 'Geração local mudou durante a leitura.');
+                if (!docs.get(recoveryKey)) docs.set(recoveryKey, { state: structuredClone(stored.dados), queue: structuredClone(before), reason: 'generation-replaced' });
+                const notices = [...(before.recoveryNotices || [])];
+                if ((before.outbox.length || before.automaticSettingsDirty || before.conflicts.length || before.restoredPending)
+                    && !notices.some(item => item.id === recoveryKey)) notices.push({ id: recoveryKey, code: 'archived-offline', acknowledged: false });
+                before = { outbox: [], conflicts: [], remoteRevisions: {}, initialized: true, automaticPolicyInitialized: true,
+                    generation: snapshot.generation, recoveryNotices: notices, recoveryKeys: [...new Set([...(before.recoveryKeys || []), recoveryKey])] };
+                stored.dados = normalizarEstado({ meses: {}, tema: stored.dados.tema });
+                s.stops.splice(0).forEach(stop => stop()); s.ready = false;
+            }
             const plan = reconcileAutomatic(stored.dados, before, snapshot.records, snapshot.settings, snapshot.conflicts);
+            for (const op of plan.queue.outbox) if (plan.queue.generation && !op.generation) op.generation = plan.queue.generation;
             if (!validarBackup(plan.state) || !validarTotaisMonetarios(plan.state)) throw error('sync/invalid-data', 'Combinação financeira inválida.');
             // Resume explicit old backup/first-account work. Ordinary snapshots do not stage records.
             if (before.restoredPending || !before.initialized) {
@@ -132,10 +177,23 @@ export class AutomaticFinanceSync {
             stored.dados = plan.state; stored.revisao++;
             docs.set(`estado:${s.uid}`, stored); docs.set(`fila:${s.uid}`, plan.queue); return docs;
         });
-        if (this.current(s)) this.onState(changed.get(`estado:${s.uid}`).dados);
+        if (this.current(s)) {
+            s.generation = snapshot.generation;
+            this.emitState(s, changed.get(`estado:${s.uid}`), changed.get(`fila:${s.uid}`));
+        }
         return changed.get(`fila:${s.uid}`);
     }
     async cycle(s) {
+        const initialQueue = await this.service.lerFila(s.uid);
+        if (initialQueue.compatibilityBlocked) {
+            // Only a successful, supported server read can release the durable gate.
+            const compatible = await this.snapshot(s);
+            if (!this.current(s)) return;
+            if (!initialQueue.restoreJob) await this.reconcile(s, compatible);
+            else await this.service.alterarFila(s.uid, queue => { if (!this.current(s)) throw error('persistence/cancelled', 'Sessão alterada.'); delete queue.compatibilityBlocked; return queue; });
+        }
+        if (initialQueue.restoreJob) await this.resumeRestore(s, initialQueue.restoreJob);
+        if (!this.current(s)) return;
         const localVersion = s.localVersion || 0;
         let snapshot = await this.snapshot(s);
         await this.reconcile(s, snapshot); if (!this.current(s)) return;
@@ -148,7 +206,7 @@ export class AutomaticFinanceSync {
         const settings = financeSettings(stored.dados);
         if (!snapshot.settings || queue.automaticSettingsDirty || !queue.settingsBaseline && !settingsEquivalent(settings, snapshot.settings)) {
             const result = await this.service.coordenarSettings(s.uid,
-                () => this.client.saveSettings(s.uid, settings, snapshot.settings?.revision || null, () => this.current(s)), true);
+                () => this.client.saveSettings(s.uid, settings, snapshot.settings?.revision || null, () => this.current(s), snapshot.generation), true);
             if (!this.current(s)) return;
             if (result.conflict) { s.again = true; return; }
             if (!result.acknowledged) throw error('sync/invalid-ack', 'Configurações sem confirmação remota.');
@@ -160,7 +218,7 @@ export class AutomaticFinanceSync {
         }
         for (const item of queue.automaticHistory || []) if (!item.uploaded) {
             if (!this.current(s)) return;
-            await this.client.saveAutomaticHistory(s.uid, item);
+            await this.client.saveAutomaticHistory(s.uid, item, snapshot.generation);
             await this.service.alterarFila(s.uid, q => { if (!this.current(s)) throw error('persistence/cancelled', 'Sessão alterada.');
                 const target = q.automaticHistory?.find(row => row.id === item.id); if (target) target.uploaded = true; return q; });
         }
@@ -168,7 +226,7 @@ export class AutomaticFinanceSync {
         if (queue.outbox.length) { s.again = true; return; }
         for (const resolution of queue.automaticResolutions || []) if (!resolution.confirmed) {
             if (!this.current(s)) return;
-            if (!await this.client.resolveConflict(s.uid, resolution.id, resolution.choice)) throw error('sync/invalid-ack', 'Histórico sem confirmação remota.');
+            if (!await this.client.resolveConflict(s.uid, resolution.id, resolution.choice, snapshot.generation)) throw error('sync/invalid-ack', 'Histórico sem confirmação remota.');
             await this.service.alterarFila(s.uid, q => { if (!this.current(s)) throw error('persistence/cancelled', 'Sessão alterada.');
                 const item = q.automaticResolutions?.find(row => row.id === resolution.id); if (item) item.confirmed = true; return q; });
         }
@@ -192,32 +250,79 @@ export class AutomaticFinanceSync {
         if (!stillConfirmed || (s.localVersion || 0) !== localVersion) { s.again = true; return; }
         if (!this.online) { this.status('Offline'); return; }
         if (!s.ready) this.listen(s);
-        this.status('Sincronizado', false, confirmation.fila.lastConfirmed);
+        const notices = (await this.service.lerFila(s.uid)).recoveryNotices || [];
+        this.status(notices.some(item => !item.acknowledged) ? recoveryStatus : 'Sincronizado', false, confirmation.fila.lastConfirmed);
     }
     listen(s) {
         s.ready = true;
         const received = (_data, meta) => { if (this.current(s) && snapshotConfirmed(meta)) this.request(); };
-        const failure = cause => { if (!this.current(s)) return; s.stops.splice(0).forEach(stop => stop()); s.ready = false; this.report(cause, s); };
-        s.stops.push(this.client.listen(s.uid, received, failure), this.client.listenSettings(s.uid, received, failure), this.client.listenConflicts(s.uid, received, failure));
+        const failure = cause => {
+            if (!this.current(s)) return;
+            s.stops.splice(0).forEach(stop => stop()); s.ready = false;
+            if (cause.code === 'permission-denied' && this.client.generationSnapshot) this.request(0); else this.report(cause, s);
+        };
+        s.stops.push(this.client.listen(s.uid, received, failure, s.generation), this.client.listenSettings(s.uid, received, failure, s.generation), this.client.listenConflicts(s.uid, received, failure, s.generation));
+        if (this.client.listenGeneration) s.stops.push(this.client.listenGeneration(s.uid, received, failure));
     }
-    async importBackup(raw) {
-        const s = this.session;
-        if (!s) throw error('sync/sign-in-required', 'Entre com Google antes de importar para a conta.');
-        await this.waitLocal(); if (!this.current(s)) throw error('persistence/cancelled', 'Sessão alterada.');
+    emitState(s, stored, queue) {
+        if (!this.current(s) || (s.visibleRevision ?? -1) > stored.revisao) return;
+        s.visibleRevision = stored.revisao;
+        this.onState(stored.dados, { generation: queue?.generation || 'legacy',
+            recoveryNotices: (queue?.recoveryNotices || []).filter(item => !item.acknowledged), compatibilityBlocked: Boolean(queue?.compatibilityBlocked) });
+    }
+    async resumeRestore(s, job) {
+        if (!this.client.publishRestore) throw error('sync/upgrade-required', 'Atualize o cliente antes de restaurar.');
+        await this.client.publishRestore(s.uid, job, () => this.current(s));
+        if (!this.current(s)) return;
         const result = await this.db.alterarDocumentos([`estado:${s.uid}`, `fila:${s.uid}`], docs => {
             if (!this.current(s)) throw error('persistence/cancelled', 'Sessão alterada.');
-            const stored = docs.get(`estado:${s.uid}`), queue = docs.get(`fila:${s.uid}`), before = stored.dados;
-            const next = prepareAutomaticBackup(raw, before, queue);
-            const old = new Map(registrosFinanceiros(before).map(item => [recordEntityKey(item), item]));
-            for (const item of registrosFinanceiros(next)) if (!old.has(recordEntityKey(item))) {
-                const key = recordEntityKey(item);
-                queue.outbox.push(makeOperation(key, { ...item, deleted: false }, queue.remoteRevisions?.[key] || null));
-            }
-            if (!validarBackup(next) || !validarTotaisMonetarios(next)) throw error('sync/invalid-backup', 'Backup excede os limites financeiros.');
-            queue.restoredPending = false; stored.dados = next; stored.revisao++;
-            docs.set(`estado:${s.uid}`, stored); docs.set(`fila:${s.uid}`, queue); return docs;
+            const queue = docs.get(`fila:${s.uid}`);
+            if (!queue.restoreJob && queue.generation === job.generation) return docs;
+            if (queue.restoreJob?.generation !== job.generation) throw error('sync/restore-conflict', 'Restauração local alterada.');
+            queue.restoreJob = null; queue.generation = job.generation; queue.initialized = true;
+            queue.settingsBaseline = functionalSettings(financeSettings(job.state));
+            queue.automaticSettingsDirty = false; queue.automaticSettingsValue = null;
+            docs.set(`fila:${s.uid}`, queue); return docs;
         });
-        if (this.current(s)) { this.onState(result.get(`estado:${s.uid}`).dados); this.localChanged(); }
+        this.emitState(s, result.get(`estado:${s.uid}`), result.get(`fila:${s.uid}`));
+    }
+    async importBackup(raw, confirm = () => false) {
+        let s = this.session;
+        if (!s) throw error('sync/sign-in-required', 'Entre com Google antes de importar para a conta.');
+        if ((await this.service.lerFila(s.uid)).compatibilityBlocked) throw error('sync/upgrade-required', upgradeMessage);
+        if (!this.client.publishRestore) throw error('sync/upgrade-required', 'Atualize o cliente antes de restaurar.');
+        if ((await this.service.lerFila(s.uid)).compatibilityBlocked) throw error('sync/upgrade-required', upgradeMessage);
+        const previous = await this.db.ler(`estado:${s.uid}`);
+        const restored = prepareGenerationRestore(raw, previous?.dados?.tema);
+        if (!validarTotaisMonetarios(restored)) throw error('sync/invalid-backup', 'Backup excede os limites financeiros.');
+        if (!confirm()) return null;
+        await this.waitLocal(); if (!this.current(s)) throw error('persistence/cancelled', 'Sessão alterada.');
+        let observedGeneration = null;
+        if (this.online && this.client.generationMarker) {
+            try { observedGeneration = (await this.client.generationMarker(s.uid))?.activeGeneration || 'legacy'; }
+            catch (cause) { if (!transientSyncError(cause)) throw cause; }
+        }
+        if (!this.current(s)) throw error('persistence/cancelled', 'Sessão alterada.');
+        // Invalidate old in-flight callbacks without changing Auth or the account.
+        this.closeSession();
+        s = { uid: s.uid, user: s.user, stops: [], attempt: 0, ready: false, permanent: false };
+        this.session = s;
+        const generation = globalThis.crypto.randomUUID();
+        const recoveryKey = `restore-recovery:${s.uid}:${generation}`;
+        const result = await this.db.alterarDocumentos([`estado:${s.uid}`, `fila:${s.uid}`, recoveryKey], docs => {
+            if (!this.current(s)) throw error('persistence/cancelled', 'Sessão alterada.');
+            const stored = docs.get(`estado:${s.uid}`), queue = docs.get(`fila:${s.uid}`), before = stored.dados;
+            if (queue.compatibilityBlocked) throw error('sync/upgrade-required', upgradeMessage);
+            docs.set(recoveryKey, { state: structuredClone(before), queue: structuredClone(queue), reason: 'explicit-restore' });
+            const nextQueue = { generation, initialized: true, automaticPolicyInitialized: true, outbox: [], conflicts: [], remoteRevisions: {},
+                recoveryNotices: [...(queue.recoveryNotices || []), ...((queue.outbox.length || queue.automaticSettingsDirty || queue.conflicts.length)
+                    ? [{ id: recoveryKey, code: 'archived-offline', acknowledged: false }] : [])],
+                recoveryKeys: [...(queue.recoveryKeys || []), recoveryKey],
+                restoreJob: { generation, baseGeneration: observedGeneration || queue.restoreJob?.baseGeneration || queue.generation || 'legacy', state: restored } };
+            stored.dados = restored; stored.revisao++;
+            docs.set(`estado:${s.uid}`, stored); docs.set(`fila:${s.uid}`, nextQueue); return docs;
+        }).catch(cause => { if (this.current(s)) this.localChanged(); throw cause; });
+        if (this.current(s)) { this.emitState(s, result.get(`estado:${s.uid}`), result.get(`fila:${s.uid}`)); this.localChanged(); }
         return result.get(`estado:${s.uid}`).dados;
     }
 }

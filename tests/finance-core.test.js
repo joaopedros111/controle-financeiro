@@ -127,7 +127,7 @@ test("modelo v3 adiciona orçamentos e migra estados e backups v2 sem orçamento
         orcamentos: { padrao: { Casa: 500 }, meses: { "2026-10": { Casa: 420 } } }
     });
     assert.equal(validarBackup(novo), true);
-    assert.deepEqual(normalizarEstado(novo).orcamentos, { padrao: { Casa: 500 }, meses: {} });
+    assert.deepEqual(normalizarEstado(novo).orcamentos, { padrao: { Casa: 500 }, meses: { "2026-10": { Casa: 420 } } });
 });
 
 test("valida limites de orçamento não negativos e períodos de personalização", () => {
@@ -277,7 +277,7 @@ test("limite zero é definido e categoria sem orçamento não assume limite zero
     assert.equal(zero.restanteCentavos, -500);
 });
 
-test("personalizações mensais antigas são removidas e o limite padrão passa a valer em todos os meses", () => {
+test("personalizações mensais são preservadas sem alterar o cálculo atual pelo limite padrão", () => {
     const orcamentos = { padrao: { Casa: 500 }, meses: { "2026-10": { Casa: 420 } } };
     const despesas = [{ categoria: "Casa", valor: 100 }];
     const normalizados = normalizarEstado({
@@ -287,7 +287,7 @@ test("personalizações mensais antigas são removidas e o limite padrão passa 
     const outubro = calcularOrcamentosPorCategoria(["Casa"], despesas, normalizados)[0];
     const novembro = calcularOrcamentosPorCategoria(["Casa"], despesas, normalizados)[0];
 
-    assert.deepEqual(normalizados, { padrao: { Casa: 500 }, meses: {} });
+    assert.deepEqual(normalizados, orcamentos);
     assert.equal(outubro.limiteCentavos, 50000);
     assert.equal(novembro.limiteCentavos, 50000);
 });
@@ -330,7 +330,7 @@ test("nomes especiais de categoria continuam sendo propriedades de orçamento pr
     assert.equal(Object.hasOwn(renomeado.padrao, "__proto__"), false);
 });
 
-test("persistência remove personalizações mensais antigas e restaura os limites padrão", async () => {
+test("persistência preserva personalizações mensais para restauração e sincronização", async () => {
     const { criarArmazenamento } = await import("../storage.js");
     const dados = new Map();
     const local = {
@@ -344,7 +344,7 @@ test("persistência remove personalizações mensais antigas e restaura os limit
     });
     assert.equal(criarArmazenamento(local).escreverJson("controleFinanceiro:v3", estado), true);
     const reiniciado = normalizarEstado(criarArmazenamento(local).lerJson("controleFinanceiro:v3"));
-    assert.deepEqual(reiniciado.orcamentos, { padrao: { Casa: 500 }, meses: {} });
+    assert.deepEqual(reiniciado.orcamentos, { padrao: { Casa: 500 }, meses: { "2026-10": { Casa: 450 } } });
 });
 
 test("backup recusa valores e identificadores inválidos", () => {

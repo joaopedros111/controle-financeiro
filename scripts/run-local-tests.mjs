@@ -87,6 +87,11 @@ if (browser) {
                 };
             }
             const client=production(config), auth=getAuth();
+            const generationSnapshot=client.generationSnapshot.bind(client);
+            client.generationSnapshot=async(...args)=>{
+                if(window.__requiredProtocolForTest)throw Object.assign(new Error('Synthetic unsupported generation protocol'),{code:'sync/upgrade-required'});
+                return generationSnapshot(...args);
+            };
             connectAuthEmulator(auth,"http://127.0.0.1:9099",{disableWarnings:true});
             connectFirestoreEmulator(getFirestore(),"127.0.0.1",8080);
             // Synthetic-only diagnostics: never capture credentials, tokens or financial payloads.
@@ -107,7 +112,7 @@ if (browser) {
             }
             for(const operation of ['listen','listenSettings','listenConflicts']){
                 const original=client[operation].bind(client);
-                client[operation]=(uid,callback,failure)=>{log(operation,uid,'start');return original(uid,callback,error=>{log(operation,uid,'error',error?.code);failure?.(error);});};
+                client[operation]=(uid,callback,failure,...args)=>{log(operation,uid,'start');return original(uid,callback,error=>{log(operation,uid,'error',error?.code);failure?.(error);},...args);};
             }
             client.login=()=>signInWithEmailAndPassword(auth,window.__testEmail,"synthetic-password-only");
             return client;

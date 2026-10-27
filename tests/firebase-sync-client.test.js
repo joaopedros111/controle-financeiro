@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import vm from "node:vm";
+import { withFinanceGenerations } from '../finance-generation-transport.js';
 import { snapshotConfirmed, makeOperation, recordEntityKey, validConflictRecord, validSyncIdentity, unicodeWellFormed } from "../sync-core.js";
 
 const source = (await readFile(new URL("../firebase-sync-entry.js", import.meta.url), "utf8"))
@@ -16,7 +17,7 @@ function harness() {
         return { exists: () => present, data: () => structuredClone(value), metadata: { fromCache: false, hasPendingWrites: false } };
     };
     let lock = Promise.resolve(), failWrite = false;
-    const context = vm.createContext({ snapshotConfirmed, validConflictRecord, recordEntityKey, validSyncIdentity, unicodeWellFormed, console,
+    const context = vm.createContext({ withFinanceGenerations: legacy => legacy, snapshotConfirmed, validConflictRecord, recordEntityKey, validSyncIdentity, unicodeWellFormed, console,
         initializeApp: () => ({}), initializeAuth: (_app,options) => { context.authOptions=options; return auth; }, GoogleAuthProvider: class {},
         browserLocalPersistence: {type:'LOCAL'}, indexedDBLocalPersistence: {type:'LOCAL-IDB'}, browserSessionPersistence: {type:'SESSION'}, browserPopupRedirectResolver: {},
         localStorage: {setItem:(k,v)=>data.set(k,v),getItem:k=>data.get(k)??null,removeItem:k=>data.delete(k)},
@@ -167,7 +168,7 @@ test("cliente de produção executa transações e configurações nas regras do
     assert.match(host, /^(127\.0\.0\.1|localhost)$/, "Somente o Emulator local pode receber os testes.");
     const rules = await readFile(new URL("../firestore.rules", import.meta.url), "utf8");
     const env = await initializeTestEnvironment({ projectId: "demo-sync-client-contract", firestore: { host, port: Number(port), rules } });
-    const dependencies = { ...sdk, snapshotConfirmed, validConflictRecord, recordEntityKey, validSyncIdentity, unicodeWellFormed,
+    const dependencies = { ...sdk, withFinanceGenerations, snapshotConfirmed, validConflictRecord, recordEntityKey, validSyncIdentity, unicodeWellFormed,
         initializeApp: () => ({}), initializeAuth: () => ({ currentUser: { uid: "alice" } }), GoogleAuthProvider: class {},
         browserLocalPersistence: {},indexedDBLocalPersistence:{},browserSessionPersistence:{},browserPopupRedirectResolver:{},
         localStorage: {setItem(k,v){this[k]=v;},getItem(k){return this[k]??null;},removeItem(k){delete this[k];}},

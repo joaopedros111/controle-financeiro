@@ -23,6 +23,7 @@ async function idbState(page, uid) {
 }
 
 test.beforeEach(async ({ context, page, request }) => {
+    page.on('dialog', dialog => dialog.accept());
     expect(process.env.FIRESTORE_EMULATOR_HOST).toBe('127.0.0.1:8080');
     await request.delete(`${firestore}/emulator/v1/projects/${project}/databases/(default)/documents`);
     await request.delete(`${auth}/emulator/v1/projects/${project}/accounts`);

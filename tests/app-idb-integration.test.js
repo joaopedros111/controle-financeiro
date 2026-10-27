@@ -16,6 +16,7 @@ function database() {
     const docs = new Map(); let previous = Promise.resolve();
     const db = {
         docs,
+        ler: async key => clone(docs.get(key) ?? null),
         alterarDocumentos(keys, cb) {
             const run = previous.then(() => {
                 const input = new Map(keys.map((k) => [k, clone(docs.get(k) ?? null)]));
@@ -68,6 +69,34 @@ test('app.js bloqueia edição obsoleta sem alterar dados anteriores', async () 
     assert.equal(b.context.idbBloqueado, true);
     assert.equal(b.writes(), 0);
     assert.match(messages.at(-1), /Outra aba alterou/);
+});
+
+test('rejected restore/generation/compatibility edits remain durable after reload without adding any outbox operation', async () => {
+    for (const kind of ['generation', 'restore', 'compatibility']) {
+        const db = database(), service = new ServicoFinanceiroAtomico(db, validarBackup, q => Array.isArray(q?.outbox) && Array.isArray(q?.conflicts));
+        const baseline = state(item('keep'), item('would-be-deleted')), messages = [];
+        const queue = { generation: 'new', outbox: [{ id: 'existing-operation' }], conflicts: [],
+            ...(kind === 'restore' ? { restoreJob: { generation: 'new' } } : {}),
+            ...(kind === 'compatibility' ? { compatibilityBlocked: { code: 'sync/upgrade-required' } } : {}) };
+        await service.inicializar('local', baseline, queue);
+        const a = tab(service, baseline, messages), proposed = state(item('keep', 42));
+        Object.assign(a.context, { idbGeneration: 'legacy', idbBanco: db, renderAvisosFinanceiros() {}, automaticController: { localChanged() {} } });
+        await a.save(proposed);
+        const stored = db.docs.get('fila:local');
+        assert.deepEqual(stored.outbox, queue.outbox);
+        assert.deepEqual(db.docs.get('estado:local').dados, baseline);
+        assert.equal(stored.recoveryKeys.length, 1);
+        const recovered = db.docs.get(stored.recoveryKeys[0]);
+        assert.deepEqual(recovered.base, baseline); assert.deepEqual(recovered.proposta, proposed);
+        assert.equal(stored.recoveryNotices[0].code, 'rejected-edit');
+        assert.ok(messages.some(text => text.includes('não foi aplicada') && text.includes('Baixar histórico')));
+        const reloaded = tab(service, clone(db.docs.get('estado:local').dados), []);
+        assert.deepEqual(db.docs.get(stored.recoveryKeys[0]).state, proposed);
+        assert.equal(reloaded.context.estado.meses['2026-10'].receitas[0].valor, 10);
+        assert.equal(a.context.idbBloqueado, false);
+        await service.preservarEdicaoRejeitada('local', baseline, proposed, recovered.reason);
+        assert.equal(db.docs.get('fila:local').recoveryKeys.length, 1, 'retries do not duplicate recovery notices');
+    }
 });
 
 test('receipt status persists in the existing atomic store across reloads and independent tab edits', async () => {

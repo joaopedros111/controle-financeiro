@@ -69,11 +69,133 @@ service cloud.firestore {
         && data.name is string && data.name.size() > 0 && data.name.size() <= 40
         && (data.keys().hasAny(['budget']) ? (data.budget is number ? (data.budget >= 0 && data.budget <= 17592186044416) : false) : true);
     }
+    // One atomic pointer publishes a completely sealed financial generation.
+    function legacyActive(uid) {
+      return !exists(/databases/$(database)/documents/users/$(uid)/control/restore);
+    }
+    function currentGeneration(uid) {
+      return legacyActive(uid) ? 'legacy' : get(/databases/$(database)/documents/users/$(uid)/control/restore).data.activeGeneration;
+    }
+    function generationActive(uid, generation) { return owner(uid) && currentGeneration(uid) == generation; }
+    function generationPath(uid, generation) { return /databases/$(database)/documents/users/$(uid)/financeGenerations/$(generation); }
+    function generationWritable(uid, generation) {
+      let root = get(generationPath(uid, generation)).data;
+      return owner(uid) && (currentGeneration(uid) == generation
+        || (root.status == 'staging' && currentGeneration(uid) == root.baseGeneration));
+    }
+    function snapshotPath(uid, generation, id) {
+      return /databases/$(database)/documents/users/$(uid)/financeGenerations/$(generation)/settingsSnapshots/$(id);
+    }
+    function validGenerationId(id) { return id is string && id.matches('^[A-Za-z0-9_-]{1,128}$') && id != 'legacy'; }
+    function validGeneration(data) {
+      return data.keys().hasOnly(['baseGeneration','recordCount','written','lastKey','settingsId','status','createdAt'])
+        && data.keys().hasAll(['baseGeneration','recordCount','written','lastKey','settingsId','status','createdAt'])
+        && data.baseGeneration is string && data.recordCount is int && data.recordCount >= 0
+        && data.written is int && data.written >= 0 && data.written <= data.recordCount
+        && data.lastKey is string && data.lastKey.size() <= 1500 && validGenerationId(data.settingsId)
+        && data.status in ['staging','ready'] && data.createdAt is timestamp;
+    }
+    function advanceGeneration(uid, generation, old, next) {
+      let recordPath = /databases/$(database)/documents/users/$(uid)/financeGenerations/$(generation)/records/$(next.lastKey);
+      return next.diff(old).affectedKeys().hasOnly(['written','lastKey']) && next.written == old.written + 1
+        && !exists(recordPath) && existsAfter(recordPath) && getAfter(recordPath).data.index == old.written;
+    }
+    function sealGeneration(uid, generation, old, next) {
+      let settings = /databases/$(database)/documents/users/$(uid)/financeGenerations/$(generation)/settings/finance;
+      return next.diff(old).affectedKeys().hasOnly(['status']) && next.status == 'ready' && next.written == next.recordCount
+        && existsAfter(settings) && getAfter(settings).data.snapshot == next.settingsId
+        && get(snapshotPath(uid, generation, next.settingsId)).data.status == 'ready';
+    }
+    match /users/{uid}/control/restore {
+      allow read: if owner(uid);
+      allow create, update: if owner(uid) && request.resource.data.keys().hasOnly(['protocol','activeGeneration','previousGeneration','activatedAt'])
+        && request.resource.data.keys().hasAll(['protocol','activeGeneration','previousGeneration','activatedAt'])
+        && request.resource.data.protocol == 2 && validGenerationId(request.resource.data.activeGeneration)
+        && request.resource.data.previousGeneration == currentGeneration(uid) && request.resource.data.activatedAt == request.time
+        && get(generationPath(uid, request.resource.data.activeGeneration)).data.status == 'ready'
+        && get(generationPath(uid, request.resource.data.activeGeneration)).data.baseGeneration == currentGeneration(uid);
+      allow delete: if false;
+    }
+    match /users/{uid}/financeGenerations/{generation} {
+      allow read: if owner(uid);
+      allow create: if owner(uid) && validGenerationId(generation) && validGeneration(request.resource.data)
+        && request.resource.data.baseGeneration == currentGeneration(uid) && request.resource.data.written == 0
+        && request.resource.data.lastKey == '' && request.resource.data.status == 'staging' && request.resource.data.createdAt == request.time;
+      allow update: if owner(uid) && validGeneration(request.resource.data) && resource.data.status == 'staging'
+        && currentGeneration(uid) == resource.data.baseGeneration
+        && (request.resource.data.status == 'ready' ? sealGeneration(uid, generation, resource.data, request.resource.data)
+          : advanceGeneration(uid, generation, resource.data, request.resource.data));
+      allow delete: if false;
+      match /records/{id} {
+        allow get: if owner(uid);
+        allow list: if owner(uid) && get(generationPath(uid, generation)).data.status == 'ready';
+        allow create, update: if owner(uid) && (validRecordShape(request.resource.data.get('value', null))
+          ? (validRevision(request.resource.data.value) && (generationActive(uid, generation)
+            ? request.resource.data.keys().hasOnly(['value'])
+            : (request.resource.data.keys().hasOnly(['index','value']) && !exists(/databases/$(database)/documents/users/$(uid)/financeGenerations/$(generation)/records/$(id))
+              && generationWritable(uid, generation) && get(generationPath(uid, generation)).data.status == 'staging'
+              && request.resource.data.index == get(generationPath(uid, generation)).data.written
+              && getAfter(generationPath(uid, generation)).data.written == request.resource.data.index + 1
+              && getAfter(generationPath(uid, generation)).data.lastKey == id))) : false);
+        allow delete: if false;
+      }
+      match /settingsSnapshots/{snapshot} {
+        allow read: if owner(uid);
+        allow create: if generationWritable(uid, generation) && validGenerationId(snapshot)
+          && request.resource.data.keys().hasOnly(['count','written','hash','status'])
+          && request.resource.data.keys().hasAll(['count','written','hash','status'])
+          && request.resource.data.count is int && request.resource.data.count > 0 && request.resource.data.written == 0
+          && request.resource.data.status == 'staging' && request.resource.data.hash is string && request.resource.data.hash.size() <= 128;
+        allow update: if generationWritable(uid, generation) && resource.data.status == 'staging'
+          && ((request.resource.data.diff(resource.data).affectedKeys().hasOnly(['written'])
+              && request.resource.data.written == resource.data.written + 1 && request.resource.data.written <= resource.data.count
+              && existsAfter(/databases/$(database)/documents/users/$(uid)/financeGenerations/$(generation)/settingsSnapshots/$(snapshot)/chunks/$(string(resource.data.written))))
+            || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
+              && request.resource.data.status == 'ready' && resource.data.written == resource.data.count));
+        allow delete: if false;
+        match /chunks/{chunk} {
+          allow read: if owner(uid);
+          allow create: if generationWritable(uid, generation)
+            && request.resource.data.keys().hasOnly(['index','text']) && request.resource.data.keys().hasAll(['index','text'])
+            && request.resource.data.index is int && request.resource.data.index >= 0 && chunk == string(request.resource.data.index)
+            && request.resource.data.text is string && request.resource.data.text.size() <= 128000
+            && get(snapshotPath(uid, generation, snapshot)).data.status == 'staging'
+            && get(snapshotPath(uid, generation, snapshot)).data.written == request.resource.data.index
+            && getAfter(snapshotPath(uid, generation, snapshot)).data.written == request.resource.data.index + 1;
+          allow update, delete: if false;
+        }
+      }
+      match /settings/finance {
+        allow read: if owner(uid);
+        allow create, update: if owner(uid) && request.resource.data.keys().hasOnly(['snapshot','updatedAt'])
+          && request.resource.data.keys().hasAll(['snapshot','updatedAt']) && validGenerationId(request.resource.data.snapshot)
+          && request.resource.data.updatedAt == request.time
+          && get(snapshotPath(uid, generation, request.resource.data.snapshot)).data.status == 'ready'
+          && (generationActive(uid, generation) || (generationWritable(uid, generation)
+            && getAfter(generationPath(uid, generation)).data.status == 'ready'
+            && request.resource.data.snapshot == getAfter(generationPath(uid, generation)).data.settingsId));
+        allow delete: if false;
+      }
+      match /operations/{id} {
+        allow read: if owner(uid);
+        allow create: if generationActive(uid, generation) && request.resource.data.keys().hasOnly(['status','createdAt','local'])
+          && request.resource.data.status in ['applied','conflict'] && request.resource.data.createdAt == request.time;
+        allow update, delete: if false;
+      }
+      match /conflicts/{id} {
+        allow read: if owner(uid);
+        allow create: if generationActive(uid, generation) && request.resource.data.keys().hasOnly(['operationId','entityKey','local','remote','createdAt'])
+          && request.resource.data.operationId == id && request.resource.data.local is map && request.resource.data.createdAt == request.time;
+        allow update: if generationActive(uid, generation) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['resolved','resolution','resolvedAt'])
+          && request.resource.data.resolved == true && request.resource.data.resolution in ['local','remote','both'] && request.resource.data.resolvedAt == request.time;
+        allow delete: if false;
+      }
+    }
     match /users/{uid}/records/{recordId} {
       allow read: if owner(uid);
       // Active record includes `record`; tombstone is the same envelope without `record`.
       allow create, update: if owner(uid) && (validRecordShape(request.resource.data)
-        ? validRevision(request.resource.data) : false);
+        ? (validRevision(request.resource.data) && legacyActive(uid)) : false);
       allow delete: if false;
     }
     match /users/{uid}/settings/{settingsId} {
@@ -84,11 +206,11 @@ service cloud.firestore {
     // V2 settings are additive: the old finance document remains readable as a fallback.
     match /users/{uid}/settingsV2/{settingsId} {
       allow read: if owner(uid);
-      allow create, update: if owner(uid) && settingsId == 'finance' && validSettingsManifest(request.resource.data);
+      allow create, update: if owner(uid) && legacyActive(uid) && settingsId == 'finance' && validSettingsManifest(request.resource.data);
       allow delete: if false;
       match /generations/{generation}/categories/{categoryId} {
         allow read: if owner(uid);
-        allow create: if owner(uid) && generation.size() > 0 && generation.size() <= 128
+        allow create: if owner(uid) && legacyActive(uid) && generation.size() > 0 && generation.size() <= 128
           && categoryId.matches('^c_[A-Za-z0-9%_.-]{1,500}$')
           && validCategorySetting(request.resource.data);
         allow update: if false;
@@ -97,12 +219,12 @@ service cloud.firestore {
     }
     match /users/{uid}/operations/{operationId} {
       allow read: if owner(uid);
-      allow create: if owner(uid) && bounded(request.resource.data) && request.resource.data.status in ['applied','conflict'];
+      allow create: if owner(uid) && legacyActive(uid) && bounded(request.resource.data) && request.resource.data.status in ['applied','conflict'];
       allow update, delete: if false;
     }
     match /users/{uid}/conflicts/{conflictId} {
       allow read: if owner(uid);
-      allow create: if owner(uid) && request.resource.data is map
+      allow create: if owner(uid) && legacyActive(uid) && request.resource.data is map
         && request.resource.data.keys().hasOnly(['operationId','entityKey','local','remote','createdAt'])
         && request.resource.data.keys().hasAll(['operationId','entityKey','local','remote','createdAt'])
         && request.resource.data.operationId == conflictId && conflictId.size() <= 128
@@ -110,7 +232,7 @@ service cloud.firestore {
         && request.resource.data.local is map
         && (request.resource.data.remote == null || request.resource.data.remote is map)
         && validStamp(request.resource.data.get('createdAt', null));
-      allow update: if owner(uid) && resource.data.keys().hasOnly(['operationId','entityKey','local','remote','createdAt'])
+      allow update: if owner(uid) && legacyActive(uid) && resource.data.keys().hasOnly(['operationId','entityKey','local','remote','createdAt'])
         && request.resource.data.keys().hasOnly(['operationId','entityKey','local','remote','createdAt','resolved','resolution','resolvedAt'])
         && request.resource.data.keys().hasAll(['operationId','entityKey','local','remote','createdAt','resolved','resolution','resolvedAt'])
         && request.resource.data.operationId == resource.data.operationId
@@ -124,7 +246,7 @@ service cloud.firestore {
     }
     match /users/{uid}/meta/{metaId} {
       allow read: if owner(uid);
-      allow create, update: if owner(uid) && metaId == 'sync' && bounded(request.resource.data);
+      allow create, update: if owner(uid) && legacyActive(uid) && metaId == 'sync' && bounded(request.resource.data);
       allow delete: if false;
     }
     match /users/{uid}/{document=**} { allow read, write: if false; }

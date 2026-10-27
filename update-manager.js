@@ -62,11 +62,11 @@ export function lerVersaoPublicada({ agora = Date.now(), ...opcoes } = {}) {
     return lerMetadados(url, { ...opcoes, cache: "no-store" });
 }
 
-export async function verificarComConfirmacao({ instalada, publicada, confirmar, atualizar }) {
+export async function verificarComConfirmacao({ instalada, publicada, confirmar, atualizar, obrigatoria = false }) {
     const comparacao = compararVersoes(publicada, instalada);
     if (comparacao < 0) throw new Error("A versão publicada é anterior à versão instalada. Confira os metadados de publicação.");
     if (comparacao <= 0) return "atualizado";
-    if (!confirmar(instalada, publicada)) return "cancelado";
+    if (!obrigatoria && !confirmar(instalada, publicada)) return "cancelado";
     await atualizar();
     return "atualizado-agora";
 }

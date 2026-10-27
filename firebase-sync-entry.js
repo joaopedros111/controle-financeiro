@@ -1,4 +1,5 @@
 import { initializeApp } from "firebase/app";
+import { withFinanceGenerations } from "./finance-generation-transport.js";
 import { snapshotConfirmed, validConflictRecord, recordEntityKey, validSyncIdentity, unicodeWellFormed } from "./sync-core.js";
 import { initializeAuth, browserPopupRedirectResolver, GoogleAuthProvider, browserLocalPersistence, indexedDBLocalPersistence, browserSessionPersistence, signInWithPopup, signInWithRedirect, getRedirectResult, onAuthStateChanged, signOut } from "firebase/auth";
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, memoryLocalCache, getFirestore, collection, doc, getDocs, getDocsFromServer, getDoc, getDocFromServer, onSnapshot, runTransaction, serverTimestamp, query, orderBy, setDoc, Timestamp } from "firebase/firestore";
@@ -66,7 +67,7 @@ export function criarFirebaseSync(config) {
     let db;
     try { db = initializeFirestore(app, { localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }) }); }
     catch { try { db = initializeFirestore(app, { localCache: memoryLocalCache() }); } catch { db = getFirestore(app); } }
-    return {
+    const legacy = {
         async ready() {
             await auth.authStateReady();
             verificarPersistenciaAuth();
@@ -258,4 +259,5 @@ export function criarFirebaseSync(config) {
             return result.docs.filter(item => item.id.startsWith('auto-history-')).map(item => ({ id: item.id, ...item.data() }));
         }
     };
+    return withFinanceGenerations(legacy, db, ensureUser);
 }

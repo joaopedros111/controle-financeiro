@@ -223,7 +223,9 @@ test("configuração remota é rejeitada inteira se qualquer categoria ou orçam
     assert.equal(validateRemoteSettings(valid), true);
     assert.equal(validateRemoteSettings({ ...valid, categories: ["Casa", 12] }), false);
     assert.equal(validateRemoteSettings({ ...valid, budgets: { ...valid.budgets, padrao: { Casa: "10" } } }), false);
-    assert.equal(validateRemoteSettings({ ...valid, budgets: { ...valid.budgets, meses: { "2026-10": { Casa: 20 } } } }), false);
+    assert.equal(validateRemoteSettings({ ...valid, budgets: { ...valid.budgets, meses: { "2026-10": { Casa: 20 } } } }), true);
+    assert.equal(validateRemoteSettings({ ...valid, budgets: { ...valid.budgets, meses: { "2026-13": { Casa: 20 } } } }), false);
+    assert.equal(validateRemoteSettings({ ...valid, budgets: { ...valid.budgets, meses: { "2026-10": { Casa: -1 } } } }), false);
     assert.equal(validateRemoteSettings({ ...valid, injected: { unsafe: true } }), false);
     const many = Array.from({ length: 14 }, (_, index) => `Categoria ${index}`);
     const manySettings = { ...valid, categories: many, budgets: { padrao: Object.fromEntries(many.map((category, index) => [category, index * 10])), meses: {} } };

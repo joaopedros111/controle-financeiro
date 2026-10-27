@@ -606,6 +606,9 @@ let automaticController = null;
 let idbBanco = null;
 let idbBloqueado = false;
 let idbBase = null;
+let idbGeneration = 'legacy';
+let avisosFinanceiros = [];
+let atualizacaoObrigatoria = false;
 let idbPendente = Promise.resolve();
 // The local-only application has no Firebase session. When synchronization is
 // available its closure also guards same-UID session changes during persistence.
@@ -644,6 +647,7 @@ function estadoParaSalvar() {
 function salvar() {
     if (recuperacaoFinanceira.protegido || idbBloqueado || !idbServico) return;
     const proposta = structuredClone(estadoParaSalvar()), base = structuredClone(idbBase);
+    const expectedGeneration = typeof idbGeneration === 'undefined' ? null : idbGeneration;
     if (!validarTotaisMonetarios(proposta)) { avisar("Os totais mensais excedem o limite monetário seguro."); return; }
     const key = chaveEstadoAtual, uid = key === CHAVE_ESTADO ? (IDB_HOMOLOGACAO ? "local" : "@local") : key.split(":").at(-1);
     idbBase = structuredClone(proposta);
@@ -662,7 +666,7 @@ function salvar() {
                     queue.automaticSettingsDirty = true;
                     queue.automaticSettingsValue = financeSettings(proposta);
                 }
-            });
+            }, () => true, expectedGeneration);
         if (key === chaveEstadoAtual && JSON.stringify(estadoParaSalvar()) === JSON.stringify(proposta)) {
             estado = normalizarEstado(result.estado.dados); idbBase = structuredClone(estadoParaSalvar()); renderTudo(false);
         }
@@ -670,6 +674,19 @@ function salvar() {
         if (typeof document === "undefined" || !document.querySelector?.(".aviso-acao")) avisar("Alterações confirmadas no armazenamento local IndexedDB.");
         if (key !== CHAVE_ESTADO) window.dispatchEvent(new CustomEvent("finance-local-change", { detail: { uid, state: result.estado.dados, deletedRecords: [] } }));
     }).catch(async error => {
+        if (['sync/generation-changed', 'sync/restore-in-progress', 'sync/upgrade-required'].includes(error?.code)) {
+            try {
+                const queue = await idbServico.preservarEdicaoRejeitada(uid, base, proposta, error.code);
+                const durable = await idbBanco.ler(`estado:${uid}`);
+                if (key === chaveEstadoAtual) {
+                    estado = normalizarEstado(durable.dados); idbBase = structuredClone(estadoParaSalvar()); idbGeneration = queue.generation || 'legacy';
+                    renderAvisosFinanceiros({ recoveryNotices: queue.recoveryNotices, compatibilityBlocked: queue.compatibilityBlocked });
+                    renderTudo(false);
+                    avisar('A edição não foi aplicada porque ocorreu uma restauração ou incompatibilidade. A cópia está disponível em Baixar histórico.');
+                }
+                automaticController?.localChanged(); return;
+            } catch (recoveryError) { error = recoveryError; }
+        }
         if (error?.name === 'ConflitoEdicao' && typeof automaticController !== 'undefined' && automaticController?.session?.uid === uid) {
             try {
                 await idbServico.alterarFila(uid, queue => captureRejectedLocalEdit(queue, base, proposta));
@@ -716,11 +733,26 @@ async function persistirEstadoFinanceiro(key, next, localEdit = false, restored 
     if (!idbServico || idbBloqueado || key !== chaveEstadoAtual) return false;
     const uid = key === CHAVE_ESTADO ? (IDB_HOMOLOGACAO ? "local" : "@local") : key.split(":").at(-1);
     const base = structuredClone(idbBase);
+    const expectedGeneration = typeof idbGeneration === 'undefined' ? null : idbGeneration;
     const sessionCurrent = capturarSessaoPersistencia();
     const canPersist = () => sessionCurrent() && key === chaveEstadoAtual && !idbBloqueado;
     try {
         await idbPendente;
         if (!canPersist()) return false;
+        if (restored && key === CHAVE_ESTADO) {
+            const recoveryKey = `restore-recovery:${uid}:${globalThis.crypto.randomUUID()}`;
+            const stateKey = `estado:${uid}`, queueKey = `fila:${uid}`;
+            const restoredDocs = await idbBanco.alterarDocumentos([stateKey, queueKey, recoveryKey], docs => {
+                if (!canPersist() || !validarBackup(next) || !validarTotaisMonetarios(next)) throw new Error('Restauração inválida.');
+                const previous = docs.get(stateKey), queue = docs.get(queueKey);
+                docs.set(recoveryKey, { state: structuredClone(previous.dados), queue: structuredClone(queue), reason: 'explicit-local-restore' });
+                docs.set(stateKey, { ...previous, revisao: previous.revisao + 1, dados: structuredClone(next) });
+                docs.set(queueKey, { outbox: [], conflicts: [], remoteRevisions: {}, recoveryKeys: [...(queue.recoveryKeys || []), recoveryKey] });
+                return docs;
+            });
+            idbBase = structuredClone(restoredDocs.get(stateKey).dados); idbGeneration = 'legacy';
+            return true;
+        }
         const result = await idbServico.aplicarEdicao(uid, base, next, localEdit ? (changes, queue) => changes.map(value => {
             const entityKey = recordEntityKey(value), baseRevision = queue.remoteRevisions?.[entityKey] || null;
             return { id: operationId(entityKey, baseRevision, value), entityKey, baseRevision, value };
@@ -732,7 +764,7 @@ async function persistirEstadoFinanceiro(key, next, localEdit = false, restored 
                 for (const conflict of firstLinkReviewed.conflicts || [])
                     if (!queue.conflicts.some(item => recordsEquivalent(item, conflict))) queue.conflicts.push(conflict);
             }
-        }, canPersist);
+        }, canPersist, expectedGeneration);
         if (!canPersist()) return false;
         idbBase = structuredClone(result.estado.dados);
         return true;
@@ -1398,7 +1430,35 @@ function renderTudo(persistir = true) {
     renderDespesas();
 
     atualizarResumo(persistir);
+    if (typeof renderAvisosFinanceiros === 'function') renderAvisosFinanceiros();
 
+}
+
+function renderAvisosFinanceiros(meta) {
+    if (typeof document === 'undefined') return;
+    if (meta) {
+        avisosFinanceiros = (meta.recoveryNotices || []).filter(item => !item.acknowledged);
+        atualizacaoObrigatoria = Boolean(meta.compatibilityBlocked);
+    }
+    const recovery = document.getElementById('aviso-recuperacao-financeira');
+    if (recovery) {
+        recovery.hidden = avisosFinanceiros.length === 0;
+        const messages = [];
+        if (avisosFinanceiros.some(item => item.code === 'rejected-edit')) messages.push(textoTraduzido('A edição não foi aplicada porque ocorreu uma restauração ou incompatibilidade. A cópia está disponível em Baixar histórico.'));
+        if (avisosFinanceiros.some(item => item.code === 'archived-offline')) messages.push(textoTraduzido('Alterações locais anteriores à restauração ou atualização foram arquivadas sem aplicação. Estão disponíveis em Baixar histórico.'));
+        const paragraph = recovery.querySelector('p'), text = messages.join(' ');
+        if (paragraph.textContent !== text) paragraph.textContent = text;
+    }
+    const compatibility = document.getElementById('aviso-compatibilidade-financeira');
+    if (compatibility) compatibility.hidden = !atualizacaoObrigatoria;
+    const selectors = '.receita input,.receita button,.despesa input,.despesa button,#adicionar-receita,#adicionar-despesa,#form-receita input,#form-receita button[type="submit"],#form-despesa input,#form-despesa select,#form-despesa button[type="submit"],#lista-orcamentos input,#lista-orcamentos button,#lista-categorias button,#adicionar-categoria,#nova-categoria,#limpar-mes,#importar-backup';
+    document.querySelectorAll(selectors).forEach(element => {
+        if (atualizacaoObrigatoria && element.dataset.compatDisabled === undefined) {
+            element.dataset.compatDisabled = String(element.disabled); element.disabled = true;
+        } else if (!atualizacaoObrigatoria && element.dataset.compatDisabled !== undefined) {
+            element.disabled = element.dataset.compatDisabled === 'true'; delete element.dataset.compatDisabled;
+        }
+    });
 }
 
 
@@ -3142,7 +3202,8 @@ function importarBackup(arquivo) {
 
         if (automaticController?.session) {
             try {
-                const imported = await automaticController.importBackup(bruto);
+                const imported = await automaticController.importBackup(bruto, () => confirm(textoTraduzido("Restaurar o backup? Todos os dados atuais serão substituídos.")));
+                if (!imported) return;
                 estado = normalizarEstado(imported); idbBase = structuredClone(estadoParaSalvar());
                 ultimaRemocao = null; renderTudo(false);
                 registrarOperacaoDados("Backup restaurado em " + new Date().toLocaleString("pt-BR") + ".");
@@ -3596,7 +3657,8 @@ ui.alternarVisibilidadeResumo.addEventListener("click", () => {
     valoresOcultos = !valoresOcultos;
     renderTudo(false);
 });
-async function verificarAtualizacao({ automatico = false } = {}) {
+async function verificarAtualizacao({ automatico = false, obrigatoria = false } = {}) {
+    obrigatoria ||= !automatico && atualizacaoObrigatoria;
     if (verificacaoAtualizacaoAtiva) return "em-andamento";
     verificacaoAtualizacaoAtiva = true;
     const botao = ui.atualizarApp;
@@ -3616,16 +3678,19 @@ async function verificarAtualizacao({ automatico = false } = {}) {
             ? { version: versaoControlador }
             : await lerVersaoInstalada();
         versaoInstalada = instalada.version;
-        if (automatico && confirmacaoAtualizacao.foiAdiada(publicada.version)) {
+        if (!obrigatoria && automatico && confirmacaoAtualizacao.foiAdiada(publicada.version)) {
             ui.statusAtualizacao.textContent = `A versão ${publicada.version} está disponível. A atualização foi adiada.`;
             return "adiada";
         }
         const resultado = await verificarComConfirmacao({
             instalada: instalada.version,
             publicada: publicada.version,
+            obrigatoria,
             confirmar: (versaoAtual, versaoNova) =>
                 confirmacaoAtualizacao.confirmar(versaoAtual, versaoNova, automatico),
             atualizar: async () => {
+                await idbPendente;
+                if (idbBloqueado) throw new Error('Preserve os dados locais antes de atualizar: a persistência está bloqueada.');
                 if (!("serviceWorker" in navigator)) throw new Error("Este navegador não oferece atualização por Service Worker.");
                 const escopo = new URL("./", import.meta.url).href;
                 const registro = await navigator.serviceWorker.getRegistration(escopo);
@@ -3651,6 +3716,10 @@ async function verificarAtualizacao({ automatico = false } = {}) {
             return "cancelado";
         }
 
+        if (resultado === "atualizado" && obrigatoria) {
+            ui.statusAtualizacao.textContent = textoTraduzido('Atualização obrigatória: esta versão não é compatível com a geração da conta. Os dados locais foram preservados.');
+            return 'incompativel';
+        }
         if (resultado === "atualizado") {
             const registro = await atualizarEstadoServiceWorker();
             if (registro) await registro.update();
@@ -3682,6 +3751,8 @@ function solicitarVerificacaoAutomatica() {
 }
 
 ui.atualizarApp.addEventListener("click", () => { void verificarAtualizacao(); });
+document.getElementById('atualizar-compatibilidade-financeira')?.addEventListener('click', () => { void verificarAtualizacao({ obrigatoria: true }); });
+document.getElementById('baixar-recuperacao-financeira')?.addEventListener('click', () => document.getElementById('exportar-historico-recuperacao')?.click());
 document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible") solicitarVerificacaoAutomatica();
 });
@@ -4717,7 +4788,8 @@ if (!IDB_HOMOLOGACAO && $("entrar-google") && $("sair-google") && firebaseConfig
     const login = $("entrar-google"), logout = $("sair-google"), status = $("estado-sincronizacao"), account = $("conta-sincronizacao");
     let client = null, initialization = null, initTimer = null;
     const showStatus = (text, failed = false, confirmedAt = null) => {
-        status.textContent = textoTraduzido(text); status.dataset.state = failed ? 'error' : text === 'Sincronizado' ? 'synced' : text === 'Offline' ? 'offline' : 'syncing';
+        if (text === 'Atualização obrigatória: esta versão não é compatível com a geração da conta. Os dados locais foram preservados.') renderAvisosFinanceiros({ recoveryNotices: avisosFinanceiros, compatibilityBlocked: true });
+        status.textContent = textoTraduzido(text); status.dataset.state = failed ? 'error' : text === 'Sincronizado' ? 'synced' : text.startsWith('Dados ativos sincronizados;') ? 'recovery' : text === 'Offline' ? 'offline' : 'syncing';
         if (confirmedAt) {
             $("ultima-sincronizacao").dataset.i18nDate = confirmedAt;
             $("ultima-sincronizacao").textContent = textoTraduzido('Última sincronização confirmada:') + ' ' + new Date(confirmedAt).toLocaleString(LOCALES[idiomaAtual]);
@@ -4737,9 +4809,11 @@ if (!IDB_HOMOLOGACAO && $("entrar-google") && $("sair-google") && firebaseConfig
             const sdk = await import(new URL(`./firebase-sync.bundle.js?_release=${encodeURIComponent(VERSAO_BUNDLE || 'local')}`, import.meta.url));
             client ||= sdk.criarFirebaseSync(firebaseConfig);
             automaticController ||= new AutomaticFinanceSync({ client, db: idbBanco, service: idbServico,
+                requiredProtocol: 2,
                 readLegacy: lerEstadoPersistido, waitLocal: async () => { let pending; do { pending = idbPendente; await pending; } while (pending !== idbPendente); },
                 storageBlocked: () => idbBloqueado || recuperacaoFinanceira.protegido,
                 onTransition: user => {
+                    renderAvisosFinanceiros({ recoveryNotices: [], compatibilityBlocked: false });
                     resetAccountForms(); iniciarCarregamentoConta(); idbBloqueado = true;
                     chaveEstadoAtual = user ? chaveLocalConta(user.uid) : CHAVE_ESTADO;
                     estado = normalizarEstado(null); idbBase = structuredClone(estadoParaSalvar()); renderTudo(false);
@@ -4750,6 +4824,7 @@ if (!IDB_HOMOLOGACAO && $("entrar-google") && $("sair-google") && firebaseConfig
                 onAccount: async user => {
                     idbBloqueado = false;
                     if (!user) {
+                        idbGeneration = 'legacy';
                         const local = await idbBanco.ler('estado:@local');
                         if (automaticController.session) return;
                         estado = normalizarEstado(local?.dados); idbBase = structuredClone(estadoParaSalvar()); renderTudo(false);
@@ -4757,7 +4832,9 @@ if (!IDB_HOMOLOGACAO && $("entrar-google") && $("sair-google") && firebaseConfig
                         concluirCarregamentoConta();
                     }
                 },
-                onState: next => {
+                onState: (next, meta) => {
+                    idbGeneration = meta?.generation || 'legacy';
+                    renderAvisosFinanceiros(meta);
                     estado = normalizarEstado(next); idbBase = structuredClone(estadoParaSalvar()); renderTudo(false);
                     concluirCarregamentoConta();
                 },
@@ -4797,10 +4874,20 @@ if (!IDB_HOMOLOGACAO && $("entrar-google") && $("sair-google") && firebaseConfig
         if (!s) { avisar('Entre com Google antes de exportar o histórico.'); return; }
         try {
             const local = await idbServico.lerFila(s.uid);
-            const remote = navigator.onLine ? await client.listAutomaticHistory(s.uid) : [];
+            const restorations = await Promise.all((local.recoveryKeys || []).map(key => idbBanco.ler(key)));
+            let remote = [], remoteUnavailable = false;
+            try { if (navigator.onLine) remote = await client.listAutomaticHistory(s.uid); }
+            catch { remoteUnavailable = true; }
             if (automaticController.session !== s) return;
             baixarArquivo(JSON.stringify({ type: 'financial-recovery-history', uid: s.uid,
-                local: local.automaticHistory || [], remote }, null, 2), 'controle-financeiro-recuperacao.json', 'application/json');
+                local: local.automaticHistory || [], restorations, remote, remoteUnavailable }, null, 2), 'controle-financeiro-recuperacao.json', 'application/json');
+            const included = new Set((local.recoveryNotices || []).map(item => item.id));
+            const queue = await idbServico.alterarFila(s.uid, queue => {
+                if (automaticController.session !== s) throw new Error('Sessão alterada.');
+                for (const notice of queue.recoveryNotices || []) if (included.has(notice.id)) notice.acknowledged = true;
+                return queue;
+            });
+            if (automaticController.session === s) { renderAvisosFinanceiros(queue); automaticController.localChanged(); }
         } catch (error) { avisar(error.message || 'Falha ao exportar histórico.'); }
     });
     window.addEventListener('pagehide', () => { clearTimeout(initTimer); automaticController?.stop(); }, { once: true });

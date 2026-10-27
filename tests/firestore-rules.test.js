@@ -2,9 +2,10 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { initializeTestEnvironment, assertSucceeds } from "@firebase/rules-unit-testing";
-import { doc, setDoc, getDoc, deleteDoc, updateDoc, runTransaction, serverTimestamp, Timestamp } from "firebase/firestore";
+import { collection, getDocsFromServer, doc, setDoc, getDoc, deleteDoc, updateDoc, runTransaction, serverTimestamp, Timestamp } from "firebase/firestore";
+import { withFinanceGenerations } from '../finance-generation-transport.js';
 import { LIMITE_MONETARIO_SEGURO, mesFinanceiroValido, normalizarEstado, validarBackup } from "../finance-core.js";
-import { makeOperation } from "../sync-core.js";
+import { makeOperation, recordEntityKey as financialKey } from "../sync-core.js";
 
 const host = process.env.FIRESTORE_EMULATOR_HOST;
 async function assertDenied(operation) {
@@ -57,6 +58,76 @@ test("Firestore rules have no public grants and deny unknown user paths", async 
     assert.match(rules, /match \/users\/\{uid\}\/\{document=\*\*\} \{ allow read, write: if false; \}/);
     assert.match(rules, /allow delete: if false;/);
     assert.doesNotMatch(rules, /allow\s+read\s*,\s*write\s*:\s*if\s+true/);
+});
+
+test('generation barrier atomically publishes complete restores, fences legacy/offline clients and retains recovery namespaces', { skip: !host && 'Requires Firestore Emulator' }, async () => {
+    const [hostname, port] = host.split(':');
+    assert.match(hostname, /^(127\.0\.0\.1|localhost)$/);
+    const rules = await readFile(new URL('../firestore.rules', import.meta.url), 'utf8');
+    const env = await initializeTestEnvironment({ projectId: 'demo-controle-financeiro', firestore: { host: hostname, port: Number(port), rules } });
+    try {
+        const uid = 'generation-owner', db = env.authenticatedContext(uid).firestore();
+        const legacy = {
+            list: async () => (await getDocsFromServer(collection(db, 'users', uid, 'records'))).docs.map(item => ({ ...item.data(), _docId: item.id })),
+            getSettings: async () => null, listConflicts: async () => [], listAutomaticHistory: async () => []
+        };
+        const client = withFinanceGenerations(legacy, db, value => assert.equal(value, uid));
+        const raw = normalizarEstado({ categorias: ['Casa'], tema: 'claro', meses: { '2026-10': {
+            receitas: [{ id: 'same', nome: 'Salary', valor: 100, recebido: true }, { id: 'deleted', nome: 'Restored', valor: 25 }],
+            despesas: [{ id: 'expense', nome: 'Bill', categoria: 'Casa', valor: 20, pago: true }]
+        } }, orcamentos: { padrao: { Casa: 200 }, meses: { '2026-10': { Casa: 150 } } } });
+        const first = { month: '2026-10', type: 'receitas', id: 'same', record: { id: 'same', nome: 'Old', valor: 999 }, deleted: false, revision: 'old', updatedAt: serverTimestamp() };
+        const legacyRef = doc(db, 'users', uid, 'records', financialKey(first));
+        await setDoc(legacyRef, first);
+        const dead = { month: first.month, type: first.type, id: 'deleted', deleted: true, revision: 'dead', updatedAt: serverTimestamp() };
+        await setDoc(doc(db, 'users', uid, 'records', financialKey(dead)), dead);
+        const job = { generation: 'restore-one', baseGeneration: 'legacy', state: raw };
+        let checks = 0;
+        await assert.rejects(client.publishRestore(uid, job, () => ++checks < 6), { code: 'persistence/cancelled' });
+        assert.equal((await client.generationSnapshot(uid)).generation, 'legacy');
+        // A staged generation cannot be sealed or activated without its records.
+        await assert.rejects(updateDoc(doc(db, 'users', uid, 'financeGenerations', job.generation), { status: 'ready' }), error => error.code === 'permission-denied');
+        await assert.rejects(setDoc(doc(db, 'users', uid, 'control', 'restore'), {
+            protocol: 2, activeGeneration: job.generation, previousGeneration: 'legacy', activatedAt: serverTimestamp()
+        }), error => error.code === 'permission-denied');
+        await client.publishRestore(uid, job);
+        const restored = await client.generationSnapshot(uid);
+        assert.equal(restored.records.length, 3);
+        assert.equal(restored.records.find(item => item.id === 'same').record.valor, 100);
+        assert.equal(restored.records.find(item => item.id === 'same').record.recebido, true);
+        assert.equal(restored.records.find(item => item.id === 'expense').record.pago, true);
+        assert.deepEqual(restored.settings.budgets, raw.orcamentos);
+        assert.equal((await getDoc(legacyRef)).data().record.valor, 999, 'old remote state remains readable for recovery');
+        // This is a real old-client write, without the new wrapper or generation metadata.
+        await assert.rejects(setDoc(doc(db, 'users', uid, 'records', 'offline-created-before-restore'), {
+            ...first, updatedAt: Timestamp.now()
+        }), error => error.code === 'permission-denied');
+        assert.equal((await getDoc(doc(db, 'users', uid, 'records', 'offline-created-before-restore'))).exists(), false);
+        const fresh = { month: '2026-10', type: 'receitas', id: 'normal-new', record: { id: 'normal-new', nome: 'New', valor: 15, recebido: false }, deleted: false };
+        const create = { ...makeOperation(financialKey(fresh), fresh, null), generation: job.generation };
+        await client.commit(uid, create);
+        const edit = { ...makeOperation(create.entityKey, { ...fresh, record: { ...fresh.record, valor: 30 } }, create.id), generation: job.generation };
+        await client.commit(uid, edit);
+        const deletion = { ...makeOperation(create.entityKey, { month: fresh.month, type: fresh.type, id: fresh.id, deleted: true }, edit.id), generation: job.generation };
+        await client.commit(uid, deletion);
+        assert.equal((await client.generationSnapshot(uid)).records.find(item => item.id === fresh.id).deleted, true);
+        const second = { generation: 'restore-two', baseGeneration: job.generation, state: raw };
+        await client.publishRestore(uid, second);
+        assert.equal((await client.generationSnapshot(uid)).records.some(item => item.id === fresh.id), false);
+        await assert.rejects(client.commit(uid, { ...create, id: 'old-offline-operation' }), { code: 'sync/generation-changed' });
+        await assert.rejects(setDoc(doc(db, 'users', uid, 'financeGenerations', job.generation, 'records', create.entityKey), {
+            value: { ...fresh, revision: 'stale', updatedAt: Timestamp.now() }
+        }), error => error.code === 'permission-denied');
+        const settings = (await client.generationSnapshot(uid)).settings;
+        const updated = { version: 3, theme: settings.theme, categories: settings.categories, budgets: { ...settings.budgets, meses: { '2026-11': { Casa: 80 } } } };
+        await client.saveSettings(uid, updated, settings.revision, () => true, second.generation);
+        assert.equal((await client.generationSnapshot(uid)).settings.budgets.meses['2026-11'].Casa, 80);
+        const outsider = env.authenticatedContext('generation-outsider').firestore();
+        await assertDenied(getDoc(doc(outsider, 'users', uid, 'control', 'restore')));
+        await client.publishRestore(uid, { generation: 'restore-empty', baseGeneration: second.generation,
+            state: normalizarEstado({ categorias: ['Casa'], meses: {} }) });
+        assert.equal((await client.generationSnapshot(uid)).records.length, 0);
+    } finally { await env.cleanup(); }
 });
 
 test("núcleo financeiro define limites de mês, ID, nome, precisão e agregado", () => {

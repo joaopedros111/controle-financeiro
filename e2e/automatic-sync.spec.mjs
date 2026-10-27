@@ -14,7 +14,10 @@ const rows = async (page, uid) => Object.values((await read(page, st(uid)))?.dad
 async function prepare(context, page, email) {
     await context.route('**/*', route => ['localhost', '127.0.0.1'].includes(new URL(route.request().url()).hostname) ? route.continue() : route.abort('blockedbyclient'));
     await page.addInitScript(email => { window.__testEmail = email; window.syncDialogs = []; }, email);
-    page.on('dialog', dialog => { void page.evaluate(text => window.syncDialogs.push(text), dialog.message()).catch(() => {}); void dialog.dismiss(); });
+    page.on('dialog', dialog => {
+        if (dialog.message().startsWith('Restaurar o backup?')) { void dialog.accept(); return; }
+        void page.evaluate(text => window.syncDialogs.push(text), dialog.message()).catch(() => {}); void dialog.dismiss();
+    });
     await page.goto('/');
     await page.locator('#abrir-ajustes').click();
     await expect(page.locator('#entrar-google')).toBeEnabled(); await page.locator('#entrar-google').click();
@@ -42,8 +45,14 @@ async function edit(page, value) {
     await page.locator('#form-receita button[type="submit"]').click();
 }
 async function remote(request, uid, kind) {
-    const response = await request.get(`${firestore}/v1/projects/${project}/databases/(default)/documents/users/${uid}/${kind}`, { headers: { Authorization: 'Bearer owner' } });
-    expect(response.ok()).toBeTruthy(); return (await response.json()).documents || [];
+    const base = `${firestore}/v1/projects/${project}/databases/(default)/documents/users/${uid}`;
+    const options = { headers: { Authorization: 'Bearer owner' } };
+    const marker = await request.get(`${base}/control/restore`, options);
+    const generation = marker.ok() ? (await marker.json()).fields.activeGeneration.stringValue : null;
+    const response = await request.get(`${base}${generation ? '/financeGenerations/' + generation : ''}/${kind}`, options);
+    expect(response.ok()).toBeTruthy();
+    return ((await response.json()).documents || []).map(item => kind === 'records' && generation
+        ? { ...item, fields: item.fields.value.mapValue.fields } : item);
 }
 test.beforeEach(async ({ request }) => {
     expect(process.env.FIRESTORE_EMULATOR_HOST).toBe('127.0.0.1:8080');
@@ -67,12 +76,14 @@ test('automatic UI: backup A reaches B, B edits reach A, no decisions/buttons an
     await expect.poll(async () => (await rows(page, uid)).find(item => item.id === 'salary')?.valor).toBe(1200);
     await importFile(page, backup);
     await expect(page.locator('#estado-sincronizacao')).toHaveText('Sincronizado');
+    await expect.poll(async () => (await rows(other, uid)).find(item => item.id === 'salary')?.valor).toBe(backup.meses['2026-10'].receitas[0].valor);
     expect((await remote(request, uid, 'records'))).toHaveLength(2);
     for (const tab of [page, other]) {
         expect(await tab.locator('#tentar-sincronizacao, #abrir-conflitos-sincronizacao, #sincronizar-backup-restaurado, #dialogo-conflitos-sincronizacao, #ativar-sincronizacao').count()).toBe(0);
         expect(await tab.evaluate(() => window.syncDialogs)).toEqual([]);
     }
-    expect((await remote(request, uid, 'operations')).some(item => item.name.includes('/auto-history-'))).toBe(true);
+    const recoveryKeys = (await read(page, q(uid))).recoveryKeys;
+    expect((await read(page, recoveryKeys.at(-1))).state.meses['2026-10'].receitas.find(item => item.id === 'salary').valor).toBe(1200);
 });
 
 test('automatic UI: concurrent edit/edit chooses server and archives rejection; deletion wins delayed editing', async ({ page, context, request }, info) => {
@@ -103,13 +114,13 @@ test('automatic UI: concurrent edit/edit chooses server and archives rejection; 
 test('automatic UI: backup offline persists across restart and reconnects without a sync click', async ({ page, context, request }, info) => {
     const { uid, other } = await pair({ page, context, request }, info);
     await context.setOffline(true); await importFile(page, backup);
-    await expect.poll(async () => (await read(page, q(uid))).outbox.length).toBe(2);
+    await expect.poll(async () => Boolean((await read(page, q(uid))).restoreJob)).toBe(true);
     await page.reload({ waitUntil: 'domcontentloaded' });
-    expect((await read(page, q(uid))).backupJobs[0].status).toBe('pending');
+    expect((await read(page, q(uid))).restoreJob).toBeTruthy();
     await context.setOffline(false);
     await expect.poll(async () => (await rows(other, uid)).length).toBe(2);
     await expect(page.locator('#estado-sincronizacao')).toHaveText('Sincronizado');
-    expect((await read(page, q(uid))).backupJobs[0].status).toBe('confirmed');
+    expect((await read(page, q(uid))).restoreJob).toBeNull();
 });
 
 test('automatic UI: online transient failures retry with backoff; an offline deletion defeats a newer remote edit', async ({ page, context, request }, info) => {
@@ -147,7 +158,8 @@ test('automatic UI: existing remote conflicts settle once, including rejected de
         const client = sdk.productionClientForTest(firebaseConfig); await client.ready();
         const value = { month: '2026-10', type: 'receitas', id: 'salary', deleted,
             ...(deleted ? {} : { record: { id: 'salary', nome: 'Salary', valor: 99 } }) };
-        return client.commit(uid, makeOperation(recordEntityKey(value), value, null));
+        const generation = (await client.generationMarker(uid))?.activeGeneration;
+        return client.commit(uid, { ...makeOperation(recordEntityKey(value), value, null), generation });
     }, { uid, deleted });
     expect((await rejected(false)).conflict).toBe(true);
     await expect.poll(async () => (await remote(request, uid, 'conflicts')).every(item => item.fields.resolved?.booleanValue === true)).toBe(true);
@@ -167,17 +179,17 @@ test('automatic UI: existing remote conflicts settle once, including rejected de
     expect(await other.evaluate(() => window.syncDialogs)).toEqual([]);
 });
 
-test('automatic UI: a permanent error remains visible after another edit and queued data survives recovery', async ({ page, context, request }, info) => {
+test('automatic UI: a permanent restore error preserves the job and blocks edits until publication resumes', async ({ page, context, request }, info) => {
     const { uid, other } = await pair({ page, context, request }, info);
     await page.evaluate(() => { window.__autoTransientFailures = 1; window.__autoFailureCode = 'permission-denied'; });
     await importFile(page, { versao: 3, meses: { '2026-10': { receitas: [{ id: 'salary', nome: 'Salary', valor: 10 }], despesas: [] } } });
     await expect(page.locator('#estado-sincronizacao')).toHaveAttribute('data-state', 'error');
     await edit(page, 20);
-    await expect.poll(async () => (await rows(page, uid))[0]?.valor).toBe(20);
+    await expect.poll(async () => (await rows(page, uid))[0]?.valor).toBe(10);
     await expect(page.locator('#estado-sincronizacao')).toHaveAttribute('data-state', 'error');
     expect((await remote(request, uid, 'records'))).toHaveLength(0);
     await page.evaluate(() => { delete window.__autoFailureCode; window.dispatchEvent(new Event('online')); });
-    await expect.poll(async () => (await rows(other, uid))[0]?.valor).toBe(20);
+    await expect.poll(async () => (await rows(other, uid))[0]?.valor).toBe(10);
     await expect(page.locator('#estado-sincronizacao')).toHaveText('Sincronizado');
     expect((await remote(request, uid, 'records'))).toHaveLength(1);
 });

@@ -42,8 +42,25 @@ export class ServicoFinanceiroAtomico {
         });
         return { estado: docs.get(stateKey), fila: docs.get(queueKey) };
     }
+    // Recovery only: never creates financial operations, including deletions.
+    async preservarEdicaoRejeitada(uid, base, proposta, reason) {
+        if (!(uid === '@local' || /^[A-Za-z0-9_-]{1,128}$/.test(uid || ''))
+            || !this.validarEstado(base) || !this.validarEstado(proposta)) throw new Error('Recuperação de edição inválida');
+        const key = `restore-recovery:${uid}:edit-${operationId(uid, reason, { base, proposta })}`;
+        const queueKey = `fila:${uid}`;
+        const docs = await this.db.alterarDocumentos([queueKey, key], docs => {
+            const queue = docs.get(queueKey);
+            if (!queue || !this.validarFila(queue)) throw new Error('Fila não inicializada');
+            if (!docs.get(key)) docs.set(key, { reason, base: copy(base), proposta: copy(proposta), state: copy(proposta) });
+            queue.recoveryKeys = [...new Set([...(queue.recoveryKeys || []), key])];
+            queue.recoveryNotices ||= [];
+            if (!queue.recoveryNotices.some(item => item.id === key)) queue.recoveryNotices.push({ id: key, code: 'rejected-edit', acknowledged: false });
+            docs.set(queueKey, queue); return docs;
+        });
+        return docs.get(queueKey);
+    }
     // Merge transacional de intenções, sem exclusões decorrentes de snapshots velhos.
-    async aplicarEdicao(uid, estadoBase, estadoEditado, criarOperacoes = () => [], editarFila = () => {}, isCurrent = () => true) {
+    async aplicarEdicao(uid, estadoBase, estadoEditado, criarOperacoes = () => [], editarFila = () => {}, isCurrent = () => true, expectedGeneration = null) {
         if (typeof uid !== 'string' || !uid.trim() || uid.includes(':') ||
             !this.validarEstado(estadoBase) || !this.validarEstado(estadoEditado)) {
             throw new Error('Edição financeira inválida');
@@ -56,6 +73,9 @@ export class ServicoFinanceiroAtomico {
                 !queue || !this.validarFila(queue) || !Array.isArray(queue.outbox)) {
                 throw new Error('Persistência não inicializada ou inválida');
             }
+            if (queue.compatibilityBlocked) throw Object.assign(new Error('Atualize o aplicativo para continuar. Os dados locais foram preservados.'), { code: 'sync/upgrade-required' });
+            if (queue.restoreJob) throw Object.assign(new Error('Restauração em preparação; alterações anteriores não serão reaplicadas.'), { code: 'sync/restore-in-progress' });
+            if (expectedGeneration !== null && expectedGeneration !== (queue.generation || 'legacy')) throw Object.assign(new Error('A geração financeira mudou.'), { code: 'sync/generation-changed' });
             const merged = combinarEdicaoFinanceira(estadoBase, estadoEditado, previous.dados);
             if (!this.validarEstado(merged.estado)) throw new Error('Resultado financeiro inválido');
             // Não gerar operações por ausência em uma cópia obsoleta.
@@ -71,6 +91,7 @@ export class ServicoFinanceiroAtomico {
                 if (newQueue.firstLinkSource === 'anonymous') newQueue.firstLinkSource = 'account';
             }
             for (const op of operations) {
+                if (queue.generation) op.generation = queue.generation;
                 const prior = op.entityKey && newQueue.outbox.filter(item => item.entityKey === op.entityKey).at(-1);
                 if (prior && !newQueue.attempted?.[prior.id]) {
                     op.baseRevision = prior.baseRevision;
@@ -115,6 +136,7 @@ export class ServicoFinanceiroAtomico {
     async concluirOperacao(uid, operation, result) {
         if (result?.acknowledged !== true) throw new Error('ACK ausente');
         return this.alterarFila(uid, fila => {
+            if ((fila.generation || 'legacy') !== (operation.generation || 'legacy')) return fila;
             if (!fila.outbox.some(op => op.id === operation.id)) return fila;
             if (result.conflict) fila.conflicts.push({ kind: 'concurrent-change', operation: copy(operation), remote: result.remote || null });
             fila.outbox = fila.outbox.filter(op => op.id !== operation.id);
@@ -129,6 +151,8 @@ export class ServicoFinanceiroAtomico {
         for (const operation of snapshot.outbox) {
             if (!isCurrent()) break;
             const latest = await this.lerFila(uid);
+            if (latest.compatibilityBlocked || latest.restoreJob || (latest.generation || 'legacy') !== (snapshot.generation || 'legacy')) break;
+            if (latest.generation && operation.generation !== latest.generation) throw Object.assign(new Error('Operação de geração anterior bloqueada.'), { code: 'sync/generation-changed' });
             if (!latest.outbox.some(op => op.id === operation.id)) continue;
             if (!canSend(operation)) continue;
             const equivalent = remote.find(item => recordEntityKey(item) === operation.entityKey && item.revision === operation.baseRevision && (item.deleted ? operation.value?.deleted : !operation.value?.deleted && recordsEquivalent(item.record, operation.value?.record)));
@@ -195,7 +219,7 @@ export class ServicoFinanceiroAtomico {
             const state = docs.get(stateKey), queue = docs.get(queueKey);
             if (!state || !this.validarEstado(state.dados) || !queue || !this.validarFila(queue)) throw new Error('Persistência inválida');
             if (isCurrent() && financialStatesEquivalent(state.dados, estadoEsperado)
-                && !queue.outbox.length && !queue.conflicts.length && !queue.restoredPending
+                && !queue.outbox.length && !queue.conflicts.length && !queue.restoredPending && !queue.restoreJob && !queue.compatibilityBlocked
                 && !queue.automaticSettingsDirty
                 && !queue.automaticHistory?.some(item => !item.uploaded)
                 && !queue.automaticResolutions?.some(item => !item.confirmed)

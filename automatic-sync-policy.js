@@ -1,10 +1,20 @@
 import { normalizarEstado, validarBackup } from './finance-core.js';
-import { registrosFinanceiros, recordEntityKey, operationId, recordsEquivalent, settingsEquivalent, functionalSettings, makeOperation, validSyncIdentity, validConflictRecord } from './sync-core.js';
+import { registrosFinanceiros, recordEntityKey, operationId, recordsEquivalent, settingsEquivalent, functionalSettings, makeOperation, validSyncIdentity, validConflictRecord, validateRemoteSettings } from './sync-core.js';
 
 export const financeSettings = state => ({ version: state.versao || 3, categories: [...(state.categorias || [])].sort(),
     theme: state.tema || 'claro', budgets: state.orcamentos || { padrao: {}, meses: {} } });
 const copy = value => structuredClone(value);
 const envelope = value => ({ month: value.month, type: value.type, id: value.id, deleted: false, record: copy(value.record) });
+export function prepareGenerationRestore(raw, currentTheme = 'claro') {
+    if (!validarBackup(raw)) throw Object.assign(new Error('Arquivo inválido.'), { code: 'sync/invalid-backup' });
+    const restored = normalizarEstado(raw);
+    restored.tema ||= currentTheme || 'claro';
+    const settings = { ...financeSettings(restored), revision: 'validation', updatedAt: { seconds: 0, nanoseconds: 0 } };
+    if (!validateRemoteSettings(settings) || registrosFinanceiros(restored).some(item => !validSyncIdentity(item.id) || !validConflictRecord(envelope(item)))) {
+        throw Object.assign(new Error('O backup contém dados incompatíveis com a sincronização. Nenhum dado foi alterado.'), { code: 'sync/invalid-backup' });
+    }
+    return restored;
+}
 export function archiveAutomatic(queue, entry) {
     const id = `auto-history-${operationId(entry.entityKey, entry.remote?.revision || null, entry)}`;
     queue.automaticHistory ||= [];
@@ -127,7 +137,7 @@ export function prepareAutomaticBackup(raw, current, queue) {
 
 export function transientSyncError(error) {
     const code = String(error?.code || '').replace(/^firestore\//, '');
-    return ['unavailable', 'aborted', 'deadline-exceeded', 'resource-exhausted', 'internal', 'auth/network-request-failed',
+    return ['sync/generation-changed', 'sync/restore-in-progress', 'unavailable', 'aborted', 'deadline-exceeded', 'resource-exhausted', 'internal', 'auth/network-request-failed',
         'network-request-failed', 'persistence/cancelled', 'sync/retry'].includes(code);
 }
 

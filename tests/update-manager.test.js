@@ -48,6 +48,13 @@ test("confirmação automática não repete aviso adiado da mesma versão e manu
     assert.equal(solicitacoes.length, 3);
 });
 
+test('mandatory compatibility update uses the existing updater without accepting voluntary deferral', async () => {
+    let updates = 0, confirmations = 0;
+    const result = await verificarComConfirmacao({ instalada: '1.1.9', publicada: '1.2.0', obrigatoria: true,
+        confirmar: () => { confirmations++; return false; }, atualizar: async () => { updates++; } });
+    assert.equal(result, 'atualizado-agora'); assert.equal(updates, 1); assert.equal(confirmations, 0);
+});
+
 test("verificador automático compartilha consulta em andamento e limita verificações bem-sucedidas", async () => {
     let agora = 1000;
     let chamadas = 0;

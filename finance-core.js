@@ -180,7 +180,10 @@ function normalizarMapaOrcamentos(mapa) {
 
 function normalizarOrcamentos(bruto) {
     const padrao = normalizarMapaOrcamentos(bruto?.padrao);
-    return { padrao, meses: {} };
+    const meses = Object.fromEntries(Object.entries(bruto?.meses || {})
+        .filter(([chave]) => mesFinanceiroValido(chave))
+        .map(([chave, mapa]) => [chave, normalizarMapaOrcamentos(mapa)]));
+    return { padrao, meses };
 }
 
 function definirLimiteOrcamento(mapa, categoria, limite) {
@@ -320,11 +323,13 @@ export function normalizarEstado(bruto, criarId = gerarId) {
 export function renomearCategoriaOrcamentos(orcamentos, antiga, nova) {
     const resultado = {
         padrao: { ...(orcamentos?.padrao || {}) },
-        meses: {}
+        meses: Object.fromEntries(Object.entries(orcamentos?.meses || {}).map(([month, map]) => [month, { ...map }]))
     };
-    if (Object.prototype.hasOwnProperty.call(resultado.padrao, antiga)) {
-        definirLimiteOrcamento(resultado.padrao, nova, resultado.padrao[antiga]);
-        delete resultado.padrao[antiga];
+    for (const mapa of [resultado.padrao, ...Object.values(resultado.meses)]) {
+        if (Object.prototype.hasOwnProperty.call(mapa, antiga)) {
+            definirLimiteOrcamento(mapa, nova, mapa[antiga]);
+            delete mapa[antiga];
+        }
     }
     return resultado;
 }
@@ -332,9 +337,10 @@ export function renomearCategoriaOrcamentos(orcamentos, antiga, nova) {
 export function removerCategoriaOrcamentos(orcamentos, categoria) {
     const resultado = {
         padrao: { ...(orcamentos?.padrao || {}) },
-        meses: {}
+        meses: Object.fromEntries(Object.entries(orcamentos?.meses || {}).map(([month, map]) => [month, { ...map }]))
     };
     delete resultado.padrao[categoria];
+    for (const mapa of Object.values(resultado.meses)) delete mapa[categoria];
     return resultado;
 }
 
