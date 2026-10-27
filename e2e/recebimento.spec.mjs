@@ -150,6 +150,69 @@ test('income boxes use the expense grid and keep salary aligned at mobile and de
     }
 });
 
+test('entry and expense action colors and interaction states match across themes and viewports', async ({ context, page }) => {
+    await prepare(context, page);
+    await create(page, 'Synthetic action receipt', 100, false, true);
+    await page.locator('#adicionar-despesa').click();
+    await page.locator('#despesa-nome').fill('Synthetic action expense');
+    await page.locator('#despesa-valor').fill('10');
+    await page.locator('#form-despesa button[type="submit"]').click();
+    const toggle = page.locator('[aria-controls="conteudo-despesas"]');
+    if (await toggle.getAttribute('aria-expanded') === 'false') await toggle.click();
+    const buttons = page.locator('.receita > button, .despesa > button');
+    const edit = { background: 'rgb(237, 245, 240)', color: 'rgb(40, 124, 90)', border: 'rgb(210, 228, 217)' };
+    const remove = { background: 'rgb(251, 239, 239)', color: 'rgb(184, 74, 74)', border: 'rgb(240, 211, 211)' };
+    for (const width of [375, 1280]) {
+        await page.setViewportSize({ width, height: 896 });
+        for (const theme of ['claro', 'escuro', 'rosa', 'pangolim', 'floresta']) {
+            if (await page.locator('html').getAttribute('data-tema') !== theme) {
+                await page.locator('#abrir-ajustes').click();
+                await page.locator('#alternar-tema').click();
+                await page.keyboard.press('Escape');
+            }
+            await expect(page.locator('html')).toHaveAttribute('data-tema', theme);
+            await page.mouse.move(0, 0);
+            const styles = await buttons.evaluateAll(buttons => buttons.map(button => {
+                const s = getComputedStyle(button), r = button.getBoundingClientRect();
+                const luminance = color => color.match(/\d+/g).slice(0, 3).map(Number)
+                    .map(v => v / 255).map(v => v <= .04045 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4)
+                    .reduce((sum, v, i) => sum + v * [.2126, .7152, .0722][i], 0);
+                const a = luminance(s.backgroundColor), b = luminance(s.color);
+                return { edit: button.className.startsWith('editar'), background: s.backgroundColor, color: s.color,
+                    border: s.borderTopColor, radius: s.borderRadius, width: r.width, height: r.height,
+                    contrast: (Math.max(a, b) + .05) / (Math.min(a, b) + .05) };
+            }));
+            expect(styles).toHaveLength(4);
+            for (const { edit: editing, contrast, ...style } of styles) {
+                expect(style, `${width}px / ${theme}`).toEqual({ ...(editing ? edit : remove), radius: '12px', width: 38, height: 38 });
+                expect(contrast).toBeGreaterThanOrEqual(4.5);
+            }
+            if (theme === 'escuro') await page.screenshot({ path: `${process.env.LOCAL_TEST_OUTPUT}/acoes-${width}-escuro.png`, fullPage: true });
+        }
+        for (const button of await buttons.all()) {
+            const palette = (await button.getAttribute('class')).startsWith('editar') ? edit : remove;
+            await button.hover();
+            await expect(button).toHaveCSS('border-top-color', palette.color);
+            await page.mouse.down();
+            await expect(button).toHaveCSS('box-shadow', /inset/);
+            await page.mouse.move(0, 0);
+            await page.mouse.up();
+            await button.focus();
+            await page.keyboard.press('Tab');
+            await page.keyboard.press('Shift+Tab');
+            await expect(button).toHaveCSS('outline-style', 'solid');
+            await expect(button).toHaveCSS('outline-width', '2px');
+            await expect(button).toHaveCSS('outline-color', palette.color);
+            await button.evaluate(el => { el.disabled = true; });
+            await button.hover({ force: true });
+            await expect(button).toHaveCSS('opacity', '0.4');
+            await expect(button).toHaveCSS('cursor', 'not-allowed');
+            await expect(button).toHaveCSS('border-top-color', palette.border);
+            await button.evaluate(el => { el.disabled = false; });
+        }
+    }
+});
+
 test('receipt status synchronizes between isolated devices and another tab using the existing service', async ({ browser, context, page, request }) => {
     expect(process.env.FIRESTORE_EMULATOR_HOST).toBe('127.0.0.1:8080');
     const email = `receipt-${Date.now()}@local.test`;
