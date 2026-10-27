@@ -10,6 +10,11 @@ const LOCALES = {
 const MOEDAS = ["BRL", "USD", "EUR", "JPY"];
 
 const FRASES = [
+    ["A receber", "To receive", "Por recibir", "À recevoir", "Ausstehend", "未受領"],
+    ["Recebido", "Received", "Recibido", "Reçu", "Erhalten", "受領済み"],
+    ["Entrada recebida", "Income received", "Ingreso recibido", "Revenu reçu", "Einnahme erhalten", "収入受領済み"],
+    ["Marcar como a receber", "Mark as not received", "Marcar como pendiente", "Marquer comme non reçu", "Als ausstehend markieren", "未受領にする"],
+    ["Marcar como recebido", "Mark as received", "Marcar como recibido", "Marquer comme reçu", "Als erhalten markieren", "受領済みにする"],
     ["Há dados locais sem confirmação remota. A cópia local foi preservada.", "Some local data has no remote confirmation. The local copy was preserved.", "Hay datos locales sin confirmación remota. Se conservó la copia local.", "Certaines données locales n’ont pas de confirmation distante. La copie locale est préservée.", "Für einige lokale Daten fehlt die Serverbestätigung. Die lokale Kopie wurde erhalten.", "サーバー未確認のローカルデータがあります。ローカルコピーは保持されています。"],
     ["Alteração concorrente preservada no histórico. Sincronizando automaticamente.", "Concurrent change preserved in history. Syncing automatically.", "Cambio simultáneo conservado en el historial. Sincronizando automáticamente.", "Modification concurrente conservée dans l’historique. Synchronisation automatique.", "Gleichzeitige Änderung im Verlauf gespeichert. Automatische Synchronisierung läuft.", "同時変更を履歴に保存しました。自動同期中です。"],
     ["O backup contém limites mensais não suportados. Nenhum dado foi importado.", "The backup contains unsupported monthly limits. No data was imported.", "La copia contiene límites mensuales no compatibles. No se importó ningún dato.", "La sauvegarde contient des limites mensuelles non prises en charge. Aucune donnée importée.", "Die Sicherung enthält nicht unterstützte Monatslimits. Es wurden keine Daten importiert.", "バックアップに未対応の月別上限があります。データはインポートされていません。"],

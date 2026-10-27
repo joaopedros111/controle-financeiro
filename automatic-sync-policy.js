@@ -103,7 +103,7 @@ export function prepareAutomaticBackup(raw, current, queue) {
     if (Object.keys(raw.orcamentos?.meses || {}).length) throw Object.assign(new Error('O backup contém limites mensais não suportados. Nenhum dado foi importado.'), { code: 'sync/unsupported-backup' });
     const source = { versao: raw.versao || 2, categorias: raw.categorias || [], orcamentos: raw.orcamentos || {}, meses: {} };
     for (const [month, values] of Object.entries(raw.meses)) source.meses[month] = Object.fromEntries(['receitas','despesas'].map(type => [type,
-        (values[type] || []).map(item => Object.fromEntries(['id','nome','valor','serie','categoria','pago','fixa','parcela'].filter(key => Object.hasOwn(item, key)).map(key => [key, item[key]])))]));
+        (values[type] || []).map(item => Object.fromEntries(['id','nome','valor','serie','categoria','pago','fixa','parcela','recebido'].filter(key => Object.hasOwn(item, key)).map(key => [key, item[key]])))]));
     const fingerprint = operationId('backup', null, source); let index = 0;
     const imported = normalizarEstado(raw, () => `backup-${fingerprint}-${++index}`);
     if (registrosFinanceiros(imported).some(item => !validSyncIdentity(item.id) || !validConflictRecord(envelope(item)))) throw Object.assign(new Error('Arquivo inválido.'), { code: 'sync/invalid-backup' });

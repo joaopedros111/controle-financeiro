@@ -70,6 +70,25 @@ test('app.js bloqueia edição obsoleta sem alterar dados anteriores', async () 
     assert.match(messages.at(-1), /Outra aba alterou/);
 });
 
+test('receipt status persists in the existing atomic store across reloads and independent tab edits', async () => {
+    const db = database(), service = new ServicoFinanceiroAtomico(db, validarBackup, q => Array.isArray(q?.outbox) && Array.isArray(q?.conflicts));
+    const baseline = state(item('receipt'), item('other')), messages = [];
+    await service.inicializar('local', baseline, { outbox: [], conflicts: [], lastConfirmed: null });
+    const a = tab(service, baseline, messages), b = tab(service, baseline, messages);
+    const marked = clone(baseline); marked.meses['2026-10'].receitas[0].recebido = true;
+    await a.save(marked);
+    const edited = clone(baseline); edited.meses['2026-10'].receitas[1].nome = 'Edited in other tab';
+    await b.save(edited);
+    const reloaded = clone(db.docs.get('estado:local').dados);
+    assert.equal(reloaded.meses['2026-10'].receitas[0].recebido, true);
+    assert.equal(reloaded.meses['2026-10'].receitas[1].nome, 'Edited in other tab');
+    const c = tab(service, reloaded, messages);
+    reloaded.meses['2026-10'].receitas[0].recebido = false;
+    await c.save(reloaded);
+    assert.equal(db.docs.get('estado:local').dados.meses['2026-10'].receitas[0].recebido, false);
+    assert.equal(a.writes() + b.writes() + c.writes(), 0);
+});
+
 test('confirmation of asynchronous persistence preserves the undo notification', async()=>{
     const db=database(), service=new ServicoFinanceiroAtomico(db,validarBackup,q=>Array.isArray(q?.outbox)&&Array.isArray(q?.conflicts));
     const baseline=state(item('same')),messages=[];await service.inicializar('local',baseline,{outbox:[],conflicts:[],lastConfirmed:null});

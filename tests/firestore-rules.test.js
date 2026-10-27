@@ -110,6 +110,19 @@ test("Firestore rules restrict records by UID and require tombstones", { skip: !
         const pathAlice = doc(alice, "users/alice/records/key1");
         await assertSucceeds(setDoc(pathAlice, entry));
         await assertSucceeds(getDoc(pathAlice));
+        for (const recebido of [true, false]) {
+            const receivedPath = doc(alice, `users/alice/records/received-${recebido}`);
+            await assertSucceeds(setDoc(receivedPath, { ...entry, record: { ...entry.record, recebido }, updatedAt: serverTimestamp() }));
+            assert.equal((await getDoc(receivedPath)).data().record.recebido, recebido);
+        }
+        for (const recebido of [null, 'true', 1, {}]) {
+            await assertDenied(setDoc(doc(alice, 'users/alice/records/invalid-received'), {
+                ...entry, record: { ...entry.record, recebido }, updatedAt: clientStamp
+            }));
+        }
+        await assertDenied(setDoc(doc(alice, 'users/alice/records/expense-received'), {
+            ...entry, type: 'despesas', record: { ...entry.record, recebido: true }, updatedAt: clientStamp
+        }));
         await assertSucceeds(setDoc(doc(alice, "users/alice/records/key-zero"), {
             ...entry, record: { ...entry.record, valor: 0 }, updatedAt: serverTimestamp()
         }));

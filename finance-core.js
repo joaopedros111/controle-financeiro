@@ -89,7 +89,7 @@ function deslocarChaveMes(chave, deslocamento) {
     return `${ano}-${String((indice % 12) + 1).padStart(2, "0")}`;
 }
 
-export function criarSerieReceitas(meses, { chaveInicial, nome, valor, serie }, criarId = gerarId) {
+export function criarSerieReceitas(meses, { chaveInicial, nome, valor, serie, recebido = false }, criarId = gerarId) {
     if (!meses || typeof meses !== "object" || !serie || typeof serie !== "string"
         || typeof nome !== "string" || !nome.trim() || !valorValido(valor)) return [];
 
@@ -100,7 +100,8 @@ export function criarSerieReceitas(meses, { chaveInicial, nome, valor, serie }, 
         const mes = meses[chave] || (meses[chave] = { receitas: [], despesas: [] });
         if (!Array.isArray(mes.receitas)) mes.receitas = [];
         if (mes.receitas.some((receita) => receita.serie === serie)) continue;
-        const item = { id: criarId(), nome: nome.trim(), valor: normalizarValorMonetario(valor), serie };
+        const item = { id: criarId(), nome: nome.trim(), valor: normalizarValorMonetario(valor), serie,
+            recebido: indice === 0 && recebido === true };
         mes.receitas.push(item);
         criadas.push({ chave, item });
     }
@@ -121,6 +122,7 @@ export function editarReceita(meses, chave, id, dados) {
     if (!receita || typeof dados?.nome !== "string" || !dados.nome.trim() || !valorValido(dados.valor)) return null;
     receita.nome = dados.nome.trim();
     receita.valor = normalizarValorMonetario(dados.valor);
+    if (typeof dados.recebido === "boolean") receita.recebido = dados.recebido;
     return receita;
 }
 
@@ -222,6 +224,7 @@ export function validarBackup(bruto, { permitirTextoNumerico = false } = {}) {
                     || !idValido(item)) return false;
                 if (campo === "despesas" && item.categoria !== undefined && typeof item.categoria !== "string") return false;
                 if (item.serie !== undefined && item.serie !== null && typeof item.serie !== "string") return false;
+                if (campo === "receitas" && item.recebido !== undefined && typeof item.recebido !== "boolean") return false;
                 if (campo === "despesas" && item.pago !== undefined && typeof item.pago !== "boolean") return false;
                 if (campo === "despesas" && item.fixa !== undefined && typeof item.fixa !== "boolean") return false;
                 if (campo === "despesas" && item.parcela !== undefined && item.parcela !== null) {
@@ -277,6 +280,8 @@ export function normalizarEstado(bruto, criarId = gerarId) {
         ids.add(id);
         const nome = typeof item.nome === "string" ? item.nome.trim() : "";
         const registro = { id, nome, valor: normalizarValorMonetario(item.valor) };
+        // Preserve legacy records without rewriting them merely to add a default.
+        if (tipo === "receita" && Object.hasOwn(item, "recebido")) registro.recebido = item.recebido === true;
         if (tipo === "receita" && typeof item.serie === "string" && item.serie) registro.serie = item.serie;
         if (tipo === "despesa") {
             const atual = Number(item.parcela?.atual);

@@ -1,0 +1,152 @@
+import { test, expect } from '@playwright/test';
+
+async function prepare(context, page, path = '/local-only.html') {
+    await context.route('**/*', route => ['127.0.0.1', 'localhost'].includes(new URL(route.request().url()).hostname)
+        ? route.continue() : route.abort('blockedbyclient'));
+    await page.goto(path);
+    await expect(page.locator('html')).not.toHaveClass(/app-inicializando/);
+}
+async function expand(page) {
+    const toggle = page.locator('[aria-controls="conteudo-receitas"]');
+    if (await toggle.getAttribute('aria-expanded') === 'false') await toggle.click();
+}
+async function create(page, name, value, received = false) {
+    await page.locator('#adicionar-receita').click();
+    await page.locator('#receita-nome').fill(name);
+    await page.locator('#receita-valor').fill(String(value));
+    await page.locator('#receita-recebido').setChecked(received);
+    await page.locator('#form-receita button[type="submit"]').click();
+    await expand(page);
+    const row = page.locator('.receita').filter({ has: page.locator('.nome-receita', { hasText: name }) });
+    await expect(row).toHaveCount(1);
+    return row;
+}
+async function totals(page) {
+    return page.locator('#total-receitas, #total-despesas, #saldo-valor, #valor-pendente, #taxa-economia, #variacao-despesas').allTextContents();
+}
+
+test('received and pending entries retain status across editing, reload, deletion and undo without changing totals', async ({ context, page }) => {
+    await prepare(context, page);
+    const received = await create(page, 'Synthetic received', 100, true);
+    const pending = await create(page, 'Synthetic pending', 50);
+    await expect(received.locator('.recebido-receita')).toBeChecked();
+    await expect(received.locator('.situacao')).toHaveText('Recebido');
+    await expect(pending.locator('.situacao')).toHaveText('A receber');
+    await expect(page.locator('#total-receitas')).toContainText('150,00');
+    await expect(page.locator('#saldo-valor')).toContainText('150,00');
+    const before = await totals(page);
+    await pending.locator('.recebido-receita').check();
+    await expect(pending.locator('.situacao')).toHaveText('Recebido');
+    expect(await totals(page)).toEqual(before);
+    await pending.locator('.recebido-receita').uncheck();
+    await expect(pending.locator('.situacao')).toHaveText('A receber');
+    expect(await totals(page)).toEqual(before);
+    await received.locator('.editar-receita').click();
+    await expect(page.locator('#receita-recebido')).toBeChecked();
+    await page.locator('#receita-nome').fill('Synthetic received edited');
+    await page.locator('#form-receita button[type="submit"]').click();
+    const edited = page.locator('.receita').filter({ hasText: 'Synthetic received edited' });
+    await expect(edited.locator('.recebido-receita')).toBeChecked();
+    // Wait for the existing atomic persistence confirmation before reloading.
+    await expect.poll(() => page.evaluate(async () => {
+        const db = await new Promise((resolve, reject) => {
+            const r = indexedDB.open('controleFinanceiro:integridade:v1', 1);
+            r.onsuccess = () => resolve(r.result); r.onerror = () => reject(r.error);
+        });
+        try {
+            return await new Promise((resolve, reject) => {
+                const tx = db.transaction('documents', 'readonly');
+                const r = tx.objectStore('documents').get('estado:@local');
+                r.onsuccess = () => resolve(Object.values(r.result?.dados?.meses || {}).some(month =>
+                    month.receitas.some(row => row.nome === 'Synthetic received edited' && row.recebido === true)));
+                r.onerror = () => reject(r.error);
+            });
+        } finally { db.close(); }
+    })).toBe(true);
+    await page.reload(); await expand(page);
+    await expect(edited.locator('.recebido-receita')).toBeChecked();
+    await expect(pending.locator('.recebido-receita')).not.toBeChecked();
+    expect(await totals(page)).toEqual(before);
+    await edited.locator('.remover-receita').click();
+    await expect(edited).toHaveCount(0);
+    await page.locator('#aviso .aviso-acao').click();
+    await expect(edited.locator('.recebido-receita')).toBeChecked();
+});
+
+test('income rows preserve order and match expense actions at 320, 375, 390, 414 and desktop widths', async ({ context, page }) => {
+    await prepare(context, page);
+    await create(page, 'Synthetic income with an intentionally long name for the row', 999999999.99);
+    await page.locator('#adicionar-despesa').click();
+    await page.locator('#despesa-nome').fill('Synthetic expense');
+    await page.locator('#despesa-valor').fill('10');
+    await page.locator('#form-despesa button[type="submit"]').click();
+    const expenses = page.locator('[aria-controls="conteudo-despesas"]');
+    if (await expenses.getAttribute('aria-expanded') === 'false') await expenses.click();
+    for (const width of [320, 375, 390, 414, 1280]) {
+        await page.setViewportSize({ width, height: 896 });
+        for (const language of ['pt-BR', 'en', 'es', 'fr', 'de', 'ja']) {
+            await page.locator('#abrir-ajustes').click();
+            await page.locator('#idioma-interface').selectOption(language);
+            await page.keyboard.press('Escape');
+            const layout = await page.evaluate(() => {
+                const row = document.querySelector('.receita');
+                const parts = [...row.children];
+                const boxes = parts.map(el => el.getBoundingClientRect());
+                const incomeButton = row.querySelector('button').getBoundingClientRect();
+                const expenseButton = document.querySelector('.despesa button').getBoundingClientRect();
+                return {
+                    order: parts.map(el => el.className),
+                    overlap: boxes.some((box, index) => index > 0 && box.left < boxes[index - 1].right - 1),
+                    rows: new Set(parts.map(el => getComputedStyle(el).gridRowStart)).size,
+                    overflow: document.documentElement.scrollWidth > innerWidth,
+                    matchingButtons: incomeButton.width === expenseButton.width && incomeButton.height === expenseButton.height
+                };
+            });
+            expect(layout, `${width}px / ${language}`).toEqual({
+                order: ['recebido-receita', 'receita-identificacao', 'situacao situacao-pendente', 'valor-receita', 'editar-receita', 'remover-receita'],
+                overlap: false, rows: 1, overflow: false, matchingButtons: true
+            });
+        }
+    }
+});
+
+test('receipt status synchronizes between isolated devices and another tab using the existing service', async ({ browser, context, page, request }) => {
+    expect(process.env.FIRESTORE_EMULATOR_HOST).toBe('127.0.0.1:8080');
+    const email = `receipt-${Date.now()}@local.test`;
+    const signup = await request.post('http://127.0.0.1:9099/identitytoolkit.googleapis.com/v1/accounts:signUp?key=demo-only', {
+        data: { email, password: 'synthetic-password-only', returnSecureToken: true }
+    });
+    expect(signup.ok()).toBeTruthy();
+    const otherContext = await browser.newContext();
+    try {
+        const other = await otherContext.newPage();
+        for (const [ctx, target] of [[context, page], [otherContext, other]]) {
+            await target.addInitScript(value => { window.__testEmail = value; }, email);
+            await prepare(ctx, target, new URL('/', process.env.LOCAL_TEST_BASE_URL).href);
+            await target.locator('#abrir-ajustes').click();
+            await target.locator('#entrar-google').click();
+            await expect(target.locator('#estado-sincronizacao')).toHaveText('Sincronizado');
+            await target.locator('#fechar-ajustes').click();
+        }
+        const local = await create(page, 'Synthetic synchronized receipt', 200);
+        await expect(other.locator('.receita')).toHaveCount(1); await expand(other);
+        await local.locator('.recebido-receita').check();
+        await expect(other.locator('.recebido-receita')).toBeChecked();
+        await other.locator('.editar-receita').click();
+        await expect(other.locator('#receita-recebido')).toBeChecked();
+        await other.locator('#receita-valor').fill('210');
+        await other.locator('#form-receita button[type="submit"]').click();
+        await expect(local.locator('.valor-receita')).toContainText('210');
+        await expect(local.locator('.recebido-receita')).toBeChecked();
+        await other.locator('.recebido-receita').uncheck();
+        await expect(local.locator('.recebido-receita')).not.toBeChecked();
+        const tab = await context.newPage();
+        await tab.goto('/'); await expand(tab);
+        await expect(tab.locator('.recebido-receita')).not.toBeChecked();
+        await tab.locator('.recebido-receita').check();
+        await expect(local.locator('.recebido-receita')).toBeChecked();
+        await expect(other.locator('.recebido-receita')).toBeChecked();
+        await other.reload(); await expand(other);
+        await expect(other.locator('.recebido-receita')).toBeChecked();
+    } finally { await otherContext.close(); }
+});

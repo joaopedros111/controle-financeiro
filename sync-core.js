@@ -29,7 +29,8 @@ export function validConflictRecord(item, { remote = false } = {}) {
     if (remote && (typeof item.revision !== "string" || !item.revision || item.revision.length > 128 || !validTimestamp(item.updatedAt))) return false;
     if (item.deleted) return !Object.hasOwn(item, "record");
     if (!item.record || typeof item.record !== "object" || Array.isArray(item.record) || item.record.id !== item.id) return false;
-    if (Object.keys(item.record).some((key) => !["id", "nome", "valor", "serie", "categoria", "pago", "fixa", "parcela"].includes(key))) return false;
+    if (Object.keys(item.record).some((key) => !["id", "nome", "valor", "serie", "categoria", "pago", "fixa", "parcela", "recebido"].includes(key))) return false;
+    if (item.record.recebido !== undefined && (item.type !== "receitas" || typeof item.record.recebido !== "boolean")) return false;
     if (item.record.serie != null && (typeof item.record.serie !== "string" || item.record.serie.length > 128)
         || item.record.categoria !== undefined && (typeof item.record.categoria !== "string" || item.record.categoria.length > 40)) return false;
     return validarBackup({ versao: 3, meses: { [item.month]: {
@@ -232,7 +233,7 @@ export function signature(record) {
     const r = record.record;
     const amount = Math.round(Number(r.valor) * 100);
     const relevant = record.type === "receitas"
-        ? [record.month, record.type, r.nome?.trim().toLocaleLowerCase(), amount, r.serie || null]
+        ? [record.month, record.type, r.nome?.trim().toLocaleLowerCase(), amount, r.serie || null, Boolean(r.recebido)]
         : [record.month, record.type, r.nome?.trim().toLocaleLowerCase(), amount, r.categoria || "Outros", Boolean(r.pago), Boolean(r.fixa), r.parcela || null, r.serie || null];
     return JSON.stringify(relevant);
 }

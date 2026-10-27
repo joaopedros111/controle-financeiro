@@ -133,6 +133,7 @@ const ui = {
     receitaNome: $("receita-nome"),
 
     receitaValor: $("receita-valor"),
+    receitaRecebido: $("receita-recebido"),
 
     receitaRepetir: $("receita-repetir"),
 
@@ -907,7 +908,17 @@ function criarLinhaReceita(receita) {
 
     linha.append(
 
+        criarEl("input", {
+            type: "checkbox", class: "recebido-receita", checked: receita.recebido === true,
+            title: receita.recebido ? "Marcar como a receber" : "Marcar como recebido",
+            "aria-label": textoTraduzido("Entrada recebida") + ": " + nome,
+            "data-i18n-preserve-aria": ""
+        }),
         identificacao,
+        criarEl("span", {
+            class: receita.recebido ? "situacao situacao-paga" : "situacao situacao-pendente",
+            text: receita.recebido ? "Recebido" : "A receber"
+        }),
 
         criarEl("span", {
 
@@ -1547,6 +1558,7 @@ function abrirDialogoReceita(id) {
     ui.receitaNome.value = receita ? receita.nome : "";
 
     ui.receitaValor.value = receita && receita.valor ? String(receita.valor) : "";
+    ui.receitaRecebido.checked = receita?.recebido === true;
     ui.campoRepetirReceita.hidden = Boolean(receita);
     ui.receitaRepetir.checked = false;
 
@@ -1586,7 +1598,7 @@ function salvarReceita() {
         return;
     }
 
-    const dados = { nome, valor };
+    const dados = { nome, valor, recebido: ui.receitaRecebido.checked };
 
     if (receitaEmEdicao) {
 
@@ -1679,6 +1691,18 @@ ui.dialogoReceita.addEventListener("click", (evento) => {
 });
 
 
+
+ui.listaReceitas.addEventListener("change", (evento) => {
+    const alvo = evento.target;
+    if (!alvo.classList.contains("recebido-receita")) return;
+    const linha = alvo.closest(".receita");
+    const receita = obterMes().receitas.find((item) => item.id === linha?.dataset.id);
+    if (!receita) return;
+    receita.recebido = alvo.checked;
+    renderReceitas();
+    atualizarResumo();
+    ui.listaReceitas.querySelector('.receita[data-id="' + receita.id + '"] .recebido-receita')?.focus();
+});
 
 ui.listaReceitas.addEventListener("click", (evento) => {
 
