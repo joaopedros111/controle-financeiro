@@ -570,7 +570,7 @@ test("despesas renderizam por categoria mantendo linhas e eventos delegados", as
     for (const seletor of [".pago-despesa", ".editar-despesa", ".remover-despesa"]) {
         assert.ok(eventos.includes(seletor), `${seletor} deixou de funcionar por delegação`);
     }
-    assert.match(css, /#lista-despesas \{/);
+    assert.match(css, /#lista-despesas, #lista-receitas \{/);
     assert.match(css, /@media \(max-width: 600px\)[\s\S]*?\.despesa \{/);
 });
 

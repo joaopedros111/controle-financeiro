@@ -10,11 +10,12 @@ async function expand(page) {
     const toggle = page.locator('[aria-controls="conteudo-receitas"]');
     if (await toggle.getAttribute('aria-expanded') === 'false') await toggle.click();
 }
-async function create(page, name, value, received = false) {
+async function create(page, name, value, received = false, recurring = false) {
     await page.locator('#adicionar-receita').click();
     await page.locator('#receita-nome').fill(name);
     await page.locator('#receita-valor').fill(String(value));
     await page.locator('#receita-recebido').setChecked(received);
+    await page.locator('#receita-repetir').setChecked(recurring);
     await page.locator('#form-receita button[type="submit"]').click();
     await expand(page);
     const row = page.locator('.receita').filter({ has: page.locator('.nome-receita', { hasText: name }) });
@@ -73,9 +74,10 @@ test('received and pending entries retain status across editing, reload, deletio
     await expect(edited.locator('.recebido-receita')).toBeChecked();
 });
 
-test('income rows preserve order and match expense actions at 320, 375, 390, 414 and desktop widths', async ({ context, page }) => {
+test('income boxes keep recurrence beside the name and match expense actions on mobile and desktop', async ({ context, page }) => {
     await prepare(context, page);
     await create(page, 'Synthetic income with an intentionally long name for the row', 999999999.99);
+    await create(page, 'Synthetic recurring income with an intentionally long name for the row', 999999999.99, false, true);
     await page.locator('#adicionar-despesa').click();
     await page.locator('#despesa-nome').fill('Synthetic expense');
     await page.locator('#despesa-valor').fill('10');
@@ -89,22 +91,30 @@ test('income rows preserve order and match expense actions at 320, 375, 390, 414
             await page.locator('#idioma-interface').selectOption(language);
             await page.keyboard.press('Escape');
             const layout = await page.evaluate(() => {
-                const row = document.querySelector('.receita');
+                const row = document.querySelector('.receita:has(.marca-recorrente)');
                 const parts = [...row.children];
                 const boxes = parts.map(el => el.getBoundingClientRect());
                 const incomeButton = row.querySelector('button').getBoundingClientRect();
                 const expenseButton = document.querySelector('.despesa button').getBoundingClientRect();
+                const name = row.querySelector('.nome-receita').getBoundingClientRect();
+                const badge = row.querySelector('.marca-recorrente').getBoundingClientRect();
+                const box = getComputedStyle(row);
+                const expenseBox = getComputedStyle(document.querySelector('.despesa-grupo'));
                 return {
                     order: parts.map(el => el.className),
-                    overlap: boxes.some((box, index) => index > 0 && box.left < boxes[index - 1].right - 1),
-                    rows: new Set(parts.map(el => getComputedStyle(el).gridRowStart)).size,
+                    overlap: boxes.some((box, index) => boxes.slice(index + 1).some(other =>
+                        Math.min(box.right, other.right) - Math.max(box.left, other.left) > 1
+                        && Math.min(box.bottom, other.bottom) - Math.max(box.top, other.top) > 1)),
+                    inlineRecurrence: name.width > 0 && badge.left >= name.right && Math.abs((name.top + name.bottom) - (badge.top + badge.bottom)) < 2,
+                    individualBox: box.borderTopWidth === '1px' && box.borderBottomWidth === '1px'
+                        && box.borderRadius === expenseBox.borderRadius && box.backgroundColor === expenseBox.backgroundColor,
                     overflow: document.documentElement.scrollWidth > innerWidth,
                     matchingButtons: incomeButton.width === expenseButton.width && incomeButton.height === expenseButton.height
                 };
             });
             expect(layout, `${width}px / ${language}`).toEqual({
                 order: ['recebido-receita', 'receita-identificacao', 'situacao situacao-pendente', 'valor-receita', 'editar-receita', 'remover-receita'],
-                overlap: false, rows: 1, overflow: false, matchingButtons: true
+                overlap: false, inlineRecurrence: true, individualBox: true, overflow: false, matchingButtons: true
             });
         }
     }
