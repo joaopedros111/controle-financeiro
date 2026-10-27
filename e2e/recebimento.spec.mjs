@@ -98,6 +98,8 @@ test('income boxes keep recurrence beside the name and match expense actions on 
                 const expenseButton = document.querySelector('.despesa button').getBoundingClientRect();
                 const name = row.querySelector('.nome-receita').getBoundingClientRect();
                 const badge = row.querySelector('.marca-recorrente').getBoundingClientRect();
+                const status = row.querySelector('.situacao').getBoundingClientRect();
+                const amount = row.querySelector('.valor-receita').getBoundingClientRect();
                 const box = getComputedStyle(row);
                 const expenseBox = getComputedStyle(document.querySelector('.despesa-grupo'));
                 return {
@@ -106,6 +108,8 @@ test('income boxes keep recurrence beside the name and match expense actions on 
                         Math.min(box.right, other.right) - Math.max(box.left, other.left) > 1
                         && Math.min(box.bottom, other.bottom) - Math.max(box.top, other.top) > 1)),
                     inlineRecurrence: name.width > 0 && badge.left >= name.right && Math.abs((name.top + name.bottom) - (badge.top + badge.bottom)) < 2,
+                    statusBesideAmount: Math.abs((status.top + status.bottom) - (amount.top + amount.bottom)) < 2
+                        && Math.abs(amount.left - status.right - parseFloat(getComputedStyle(row).columnGap)) < 2,
                     individualBox: box.borderTopWidth === '1px' && box.borderBottomWidth === '1px'
                         && box.borderRadius === expenseBox.borderRadius && box.backgroundColor === expenseBox.backgroundColor,
                     overflow: document.documentElement.scrollWidth > innerWidth,
@@ -114,7 +118,7 @@ test('income boxes keep recurrence beside the name and match expense actions on 
             });
             expect(layout, `${width}px / ${language}`).toEqual({
                 order: ['recebido-receita', 'receita-identificacao', 'situacao situacao-pendente', 'valor-receita', 'editar-receita', 'remover-receita'],
-                overlap: false, inlineRecurrence: true, individualBox: true, overflow: false, matchingButtons: true
+                overlap: false, inlineRecurrence: true, statusBesideAmount: true, individualBox: true, overflow: false, matchingButtons: true
             });
         }
     }
