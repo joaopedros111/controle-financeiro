@@ -44,16 +44,16 @@ test('Panorama rates handle savings, deficits, zero bases and year rollover with
     ]) {
         c.estado.meses['2025-12'] = { despesas: [{ valor: previous }] };
         const before = JSON.stringify(c.estado);
-        c.renderIndicadoresPanorama(income, expense);
+        const comparison = c.renderIndicadoresPanorama(income, expense);
         assert.equal(c.$('taxa-economia').textContent, savings);
-        assert.equal(c.$('variacao-despesas').textContent, change);
-        assert.match(c.$('variacao-periodo').textContent, /2025/);
+        assert.equal(comparison.variacao, change);
+        assert.match(comparison.periodo, /2025/);
         assert.equal(JSON.stringify(c.estado), before);
     }
     c.valoresOcultos = true;
-    c.renderIndicadoresPanorama(10000, 5000);
+    const comparison = c.renderIndicadoresPanorama(10000, 5000);
     assert.equal(c.$('taxa-economia').textContent, '••••');
-    assert.equal(c.$('variacao-despesas').textContent, '••••');
+    assert.equal(comparison.variacao, '••••');
 });
 
 test('category bars use descending totals and show amount and percentage; empty state works', () => {
@@ -75,7 +75,7 @@ test('category bars use descending totals and show amount and percentage; empty 
 
 test('new Panorama text is translated in all six languages', () => {
     const phrases = ['Saldo do mês', 'Pendente no mês', 'Taxa de economia', 'Variação das despesas',
-        'Comparação com', 'Não calculável: sem entradas', 'Não calculável: mês anterior sem despesas'];
+        'Comparação com', 'Total de despesas do mês', 'Não calculável: sem entradas', 'Não calculável: mês anterior sem despesas'];
     for (const language of IDIOMAS.filter(value => value !== 'pt-BR')) {
         for (const phrase of phrases) assert.notEqual(textoTraduzido(phrase, language), phrase);
     }

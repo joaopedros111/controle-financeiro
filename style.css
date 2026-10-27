@@ -2039,22 +2039,23 @@ dialog#dialogo-conflitos-sincronizacao[open] { width: min(560px, calc(100vw - 32
     .barra { height: 12px; }
     .barra.estourou { outline: 2px solid var(--vermelho); outline-offset: 2px; }
     .barra-pendente { background: repeating-linear-gradient(135deg, var(--ambar) 0 5px, color-mix(in srgb, var(--ambar), var(--superficie) 35%) 5px 8px); }
-    .panorama-indicadores { grid-template-columns: repeat(2, minmax(0, 1fr)); margin-bottom: 20px; gap: 12px; }
+    .panorama-indicadores { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); margin: 0 0 12px; padding: 0 0 12px; gap: 12px; border-bottom: 1px solid var(--borda); }
     .panorama-indicadores > div { min-width: 0; }
+    .panorama-indicadores > div:last-child { text-align: right; }
+    .panorama-indicadores dt { margin: 0 0 4px; font-size: .76rem; color: var(--texto-secundario); }
+    .panorama-indicadores dd { margin: 0; font-weight: 800; font-variant-numeric: tabular-nums; }
     .panorama-indicadores dt, .panorama-indicadores dd, .panorama-indicadores small { white-space: normal; overflow-wrap: anywhere; }
     .panorama-indicadores dd { font-size: 1rem; overflow-wrap: anywhere; }
     .panorama-indicadores small { color: var(--texto-secundario); }
-    .categoria-total { margin: 0; font-size: .8rem; width: 100%; }
     .panorama-graficos .legenda-grafico-categorias { max-height: none; overflow: visible; }
     .panorama-graficos .grafico-categoria-item { grid-template-columns: minmax(0, 1fr) auto; gap: 6px; }
     .grafico-categoria-percentual { grid-column: 2; padding: 0; text-align: right; }
-    .categoria-trilho { grid-column: 1 / -1; display: block; height: 9px; background: var(--borda); border-radius: 4px; overflow: hidden; }
+    .categoria-trilho { grid-column: 1 / -1; display: block; height: 14px; background: var(--borda); border-radius: 4px; overflow: hidden; }
     .categoria-barra { display: block; height: 100%; border-radius: inherit; }
     @media (max-width: 600px) {
         .panorama-graficos { grid-template-columns: minmax(0, 1fr); }
 
         .panorama-indicadores { gap: 8px; }
-        .panorama-indicadores > div { padding: 10px 8px; }
         .panorama-indicadores dt { font-size: .72rem; }
         .panorama-indicadores dd { font-size: .86rem; line-height: 1.35; }
         .panorama-indicadores small { font-size: .68rem; line-height: 1.4; }
@@ -2069,8 +2070,10 @@ body.valores-ocultos .categoria-barra { visibility: hidden; }
     grid-template-rows: auto auto;
     align-items: center;
     column-gap: 8px;
-    row-gap: 5px;
+    row-gap: 7px;
 }
+
+.panorama-graficos .legenda-grafico-categorias { gap: 10px; }
 
 .panorama-graficos .grafico-categoria-nome {
     grid-column: 1;
@@ -2101,7 +2104,7 @@ body.valores-ocultos .categoria-barra { visibility: hidden; }
 @media (max-width: 414px) {
     .panorama-graficos .grafico-categoria-item {
         column-gap: 5px;
-        row-gap: 4px;
+        row-gap: 7px;
     }
 
     .panorama-graficos .grafico-categoria-valor {

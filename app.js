@@ -1377,10 +1377,10 @@ function renderIndicadoresPanorama(receita, despesa) {
     const apresentar = (valor, motivo) => valoresOcultos ? "••••" : valor === null
         ? textoTraduzido(motivo) : (valor > 0 ? "+" : "") + formatarPercentual(valor);
     $("taxa-economia").textContent = apresentar(economia, "Não calculável: sem entradas");
-    $("variacao-despesas").textContent = apresentar(variacao, "Não calculável: mês anterior sem despesas");
-    $("variacao-periodo").textContent = new Intl.DateTimeFormat(LOCALES[idiomaAtual] || "pt-BR", {
+    const comparacaoPeriodo = new Intl.DateTimeFormat(LOCALES[idiomaAtual] || "pt-BR", {
         month: "long", year: "numeric"
     }).format(anterior);
+    return { variacao: apresentar(variacao, "Não calculável: mês anterior sem despesas"), periodo: comparacaoPeriodo };
 }
 
 function renderGraficoCategorias() {

@@ -315,6 +315,7 @@ const FRASES = [
     ["Visão geral", "Overview", "Vista general", "Vue d’ensemble", "Übersicht", "概要"],
     ["Gastos do mês", "Monthly spending", "Gastos del mes", "Dépenses du mois", "Monatsausgaben", "今月の支出"],
     ["Total no mês", "Monthly total", "Total del mes", "Total du mois", "Monatssumme", "月間合計"],
+    ["Total de despesas do mês", "Total monthly expenses", "Total de gastos del mes", "Total des dépenses du mois", "Gesamtausgaben im Monat", "今月の支出合計"],
     ["Divisão das despesas por categoria neste mês", "Expense breakdown by category this month", "Desglose de gastos por categoría este mes", "Répartition des dépenses par catégorie ce mois-ci", "Ausgaben nach Kategorie in diesem Monat", "今月のカテゴリ別支出"],
     ["Categorias e valores das despesas", "Expense categories and amounts", "Categorías e importes de gastos", "Catégories et montants des dépenses", "Ausgabenkategorien und Beträge", "支出カテゴリと金額"],
     ["Adicione despesas neste mês para ver a divisão por categoria.", "Add expenses this month to see the category breakdown.", "Añade gastos este mes para ver el desglose por categoría.", "Ajoutez des dépenses ce mois-ci pour voir la répartition par catégorie.", "Füge diesen Monat Ausgaben hinzu, um die Aufteilung nach Kategorie zu sehen.", "今月の支出を追加すると、カテゴリ別の内訳が表示されます。"],
