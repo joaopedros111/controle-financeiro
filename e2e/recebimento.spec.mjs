@@ -74,10 +74,11 @@ test('received and pending entries retain status across editing, reload, deletio
     await expect(edited.locator('.recebido-receita')).toBeChecked();
 });
 
-test('income boxes keep recurrence beside the name and match expense actions on mobile and desktop', async ({ context, page }) => {
+test('income boxes use the expense grid and keep salary aligned at mobile and desktop widths', async ({ context, page }) => {
     await prepare(context, page);
     await create(page, 'Synthetic income with an intentionally long name for the row', 999999999.99);
     await create(page, 'Synthetic recurring income with an intentionally long name for the row', 999999999.99, false, true);
+    const salary = await create(page, 'Salário', 2000, true, true);
     await page.locator('#adicionar-despesa').click();
     await page.locator('#despesa-nome').fill('Synthetic expense');
     await page.locator('#despesa-valor').fill('10');
@@ -90,8 +91,11 @@ test('income boxes keep recurrence beside the name and match expense actions on 
             await page.locator('#abrir-ajustes').click();
             await page.locator('#idioma-interface').selectOption(language);
             await page.keyboard.press('Escape');
+            const received = ['pt-BR', 'es', 'de'].includes(language);
+            await salary.locator('.recebido-receita').setChecked(received);
             const layout = await page.evaluate(() => {
-                const row = document.querySelector('.receita:has(.marca-recorrente)');
+                const rows = [...document.querySelectorAll('.receita')];
+                const row = rows.find(row => row.querySelector('.nome-receita').textContent === 'Salário');
                 const parts = [...row.children];
                 const boxes = parts.map(el => el.getBoundingClientRect());
                 const incomeButton = row.querySelector('button').getBoundingClientRect();
@@ -102,12 +106,30 @@ test('income boxes keep recurrence beside the name and match expense actions on 
                 const amount = row.querySelector('.valor-receita').getBoundingClientRect();
                 const box = getComputedStyle(row);
                 const expenseBox = getComputedStyle(document.querySelector('.despesa-grupo'));
+                const reference = document.querySelector('.despesa');
+                const selectors = ['input', '.despesa-nome', '.situacao', '.valor-despesa', '.editar-despesa', '.remover-despesa'];
                 return {
                     order: parts.map(el => el.className),
-                    overlap: boxes.some((box, index) => boxes.slice(index + 1).some(other =>
-                        Math.min(box.right, other.right) - Math.max(box.left, other.left) > 1
-                        && Math.min(box.bottom, other.bottom) - Math.max(box.top, other.top) > 1)),
-                    inlineRecurrence: name.width > 0 && badge.left >= name.right && Math.abs((name.top + name.bottom) - (badge.top + badge.bottom)) < 2,
+                    overlap: rows.some(row => {
+                        const boxes = [...row.children].map(el => el.getBoundingClientRect());
+                        return boxes.some((box, index) => boxes.slice(index + 1).some(other =>
+                            Math.min(box.right, other.right) - Math.max(box.left, other.left) > 1
+                            && Math.min(box.bottom, other.bottom) - Math.max(box.top, other.top) > 1));
+                    }),
+                    sameGridPositions: rows.every(row => [...row.children].every((part, index) => {
+                        const actual = getComputedStyle(part), expected = getComputedStyle(reference.querySelector(selectors[index]));
+                        return actual.gridColumn === expected.gridColumn && actual.gridRow === expected.gridRow;
+                    })),
+                    aligned: boxes.every(part => Math.abs((part.top + part.bottom) - (boxes[0].top + boxes[0].bottom)) < 2),
+                    visibleNames: rows.every(row => row.querySelector('.nome-receita').getBoundingClientRect().width > 0),
+                    labelsContained: rows.every(row => {
+                        const label = row.querySelector('.marca-recorrente');
+                        return !label || label.getBoundingClientRect().right <= label.parentElement.getBoundingClientRect().right + 1;
+                    }),
+                    inlineRecurrence: name.width > 0 && (name.width + badge.width + 4 > parts[1].clientWidth
+                        || badge.left >= name.right && Math.abs((name.top + name.bottom) - (badge.top + badge.bottom)) < 2),
+                    salaryUnclipped: innerWidth !== 375 || document.documentElement.lang !== 'pt-BR'
+                        || row.querySelector('.nome-receita').scrollWidth <= row.querySelector('.nome-receita').clientWidth + 1,
                     statusBesideAmount: Math.abs((status.top + status.bottom) - (amount.top + amount.bottom)) < 2
                         && Math.abs(amount.left - status.right - parseFloat(getComputedStyle(row).columnGap)) < 2,
                     individualBox: box.borderTopWidth === '1px' && box.borderBottomWidth === '1px'
@@ -117,9 +139,13 @@ test('income boxes keep recurrence beside the name and match expense actions on 
                 };
             });
             expect(layout, `${width}px / ${language}`).toEqual({
-                order: ['recebido-receita', 'receita-identificacao', 'situacao situacao-pendente', 'valor-receita', 'editar-receita', 'remover-receita'],
-                overlap: false, inlineRecurrence: true, statusBesideAmount: true, individualBox: true, overflow: false, matchingButtons: true
+                order: ['recebido-receita', 'receita-identificacao', received ? 'situacao situacao-paga' : 'situacao situacao-pendente', 'valor-receita', 'editar-receita', 'remover-receita'],
+                overlap: false, sameGridPositions: true, aligned: true, visibleNames: true, labelsContained: true, inlineRecurrence: true,
+                salaryUnclipped: true, statusBesideAmount: true, individualBox: true, overflow: false, matchingButtons: true
             });
+            if (width === 375 && language === 'pt-BR') {
+                await page.screenshot({ path: `${process.env.LOCAL_TEST_OUTPUT}/entradas-375.png`, fullPage: true });
+            }
         }
     }
 });
