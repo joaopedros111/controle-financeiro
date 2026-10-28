@@ -1387,7 +1387,8 @@ function renderGraficoCategorias() {
     const legenda = $("legenda-grafico-categorias");
     if (!legenda) return;
 
-    const itens = agruparDespesasPorCategoria(obterMes().despesas).sort((a, b) => b[1] - a[1]);
+    const itens = agruparDespesasPorCategoria(obterMes().despesas)
+        .sort((a, b) => a[0].localeCompare(b[0], LOCALES[idiomaAtual] || "pt-BR"));
     const total = somarCentavos(itens.map(([, valor]) => valor)) / 100;
     const rotuloMes = new Intl.DateTimeFormat(LOCALES[idiomaAtual] || "pt-BR", {
         month: "long",
@@ -1406,10 +1407,11 @@ function renderGraficoCategorias() {
         barra.style.background = corDaCategoria(nome);
         trilho.append(barra);
         return criarEl("li", { class: "grafico-categoria-item" }, [
-            criarEl("span", { class: "grafico-categoria-nome" }, [cor, criarEl("span", { text: nome })]),
-            criarEl("strong", { class: "grafico-categoria-valor", text: formatarMoeda(valor) }),
-            criarEl("small", { class: "grafico-categoria-percentual", text: valoresOcultos ? "••••" : formatarPercentual(percentual) }),
-            trilho
+            criarEl("span", { class: "grafico-categoria-nome" }, [cor, criarEl("span", { text: nome, title: nome })]),
+            criarEl("span", { class: "grafico-categoria-medida" }, [
+                trilho, criarEl("strong", { class: "grafico-categoria-valor", text: formatarMoeda(valor) })
+            ]),
+            criarEl("small", { class: "grafico-categoria-percentual", text: valoresOcultos ? "••••" : formatarPercentual(percentual) })
         ]);
     }));
 

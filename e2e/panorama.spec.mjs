@@ -1,15 +1,16 @@
 import { test, expect } from '@playwright/test';
 
-test('Panorama keeps savings in the summary and readable category bars on mobile and desktop', async ({ context, page }) => {
+test('Panorama keeps savings in the summary and readable category bars on mobile and desktop', async ({ context, page }, testInfo) => {
     await context.route('**/*', route => ['127.0.0.1', 'localhost'].includes(new URL(route.request().url()).hostname)
         ? route.continue() : route.abort('blockedbyclient'));
     await page.addInitScript(() => {
         const now = new Date();
         const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-        localStorage.setItem('controleFinanceiro:v3', JSON.stringify({ versao: 3, categorias: ['Moradia', 'Outros'],
+        localStorage.setItem('controleFinanceiro:v3', JSON.stringify({ versao: 3, categorias: ['Moradia', 'Outros', 'Alimentacao e compras para casa e lazer'],
             meses: { [month]: { receitas: [], despesas: [
                 { id: 'visual-a', nome: 'Synthetic A', categoria: 'Moradia', valor: 30 },
-                { id: 'visual-b', nome: 'Synthetic B', categoria: 'Outros', valor: 10 }
+                { id: 'visual-b', nome: 'Synthetic B', categoria: 'Outros', valor: 10 },
+                { id: 'visual-c', nome: 'Synthetic C', categoria: 'Alimentacao e compras para casa e lazer', valor: 2 }
             ] } }, orcamentos: { padrao: {}, meses: {} } }));
     });
     await page.goto('/local-only.html');
@@ -37,6 +38,20 @@ test('Panorama keeps savings in the summary and readable category bars on mobile
                 const categories = document.querySelector('.grafico-categorias').getBoundingClientRect();
                 const container = document.querySelector('.panorama-graficos').getBoundingClientRect();
                 return {
+                    sharedTracks: [...document.querySelectorAll('.categoria-trilho')].every(el => {
+                        const first = document.querySelector('.categoria-trilho').getBoundingClientRect();
+                        const track = el.getBoundingClientRect();
+                        return Math.abs(first.left - track.left) < 1 && Math.abs(first.width - track.width) < 1;
+                    }),
+                    compactRows: [...document.querySelectorAll('.grafico-categoria-item')].every(row => {
+                        const name = row.querySelector('.grafico-categoria-nome').getBoundingClientRect();
+                        const measure = row.querySelector('.grafico-categoria-medida').getBoundingClientRect();
+                        const percent = row.querySelector('.grafico-categoria-percentual').getBoundingClientRect();
+                        const bar = row.querySelector('.categoria-trilho').getBoundingClientRect();
+                        return row.getBoundingClientRect().height < 30 && bar.width >= 32
+                            && name.right <= measure.left && measure.right <= percent.left
+                            && Math.abs((name.top + name.bottom) / 2 - (bar.top + bar.bottom) / 2) < 1;
+                    }),
                     aligned: !legendFits || legend.every(el => Math.abs((el.top + el.bottom) / 2 - (legend[0].top + legend[0].bottom) / 2) < 1),
                     overlap: legend.some((a, i) => legend.slice(i + 1).some(b => a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top)),
                     samePadding: padding('.resumo') === padding('.grafico-bloco'),
@@ -47,8 +62,13 @@ test('Panorama keeps savings in the summary and readable category bars on mobile
                 };
             });
             expect(layout, width + 'px / ' + language).toEqual({
-                aligned: true, overlap: false, samePadding: true, fullWidth: true, overflow: false, clipped: false
+                sharedTracks: true, compactRows: true, aligned: true, overlap: false, samePadding: true, fullWidth: true, overflow: false, clipped: false
             });
+            const names = await page.locator('.grafico-categoria-nome > span:last-child').allTextContents();
+            expect(names).toEqual(await page.locator('.despesa-grupo-categoria').allTextContents());
+            if (language === 'pt-BR' && [320, 1280].includes(width)) {
+                await page.locator('.grafico-bloco').screenshot({ path: testInfo.outputPath('panorama-' + width + '.png') });
+            }
         }
     }
     await page.locator('#alternar-visibilidade-resumo').click();

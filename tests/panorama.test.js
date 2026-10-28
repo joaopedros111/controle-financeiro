@@ -56,17 +56,17 @@ test('Panorama rates handle savings, deficits, zero bases and year rollover with
     assert.equal(comparison.variacao, '••••');
 });
 
-test('category bars use descending totals and show amount and percentage; empty state works', () => {
+test('category bars use alphabetical order and show amount and percentage; empty state works', () => {
     const c = setup();
     c.estado.meses['2026-01'] = { despesas: [
         { categoria: 'A', valor: 10 }, { categoria: 'B', valor: 30 }
     ] };
     c.renderGraficoCategorias();
     const rows = c.$('legenda-grafico-categorias').children;
-    assert.equal(rows[0].children[0].children[1].text, 'B');
-    assert.equal(rows[0].children[1].text, '30');
-    assert.equal(rows[0].children[2].text, '75%');
-    assert.equal(rows[0].children[3].children[0].style.width, '75%');
+    assert.equal(rows[0].children[0].children[1].text, 'A');
+    assert.equal(rows[0].children[1].children[1].text, '10');
+    assert.equal(rows[0].children[2].text, '25%');
+    assert.equal(rows[0].children[1].children[0].children[0].style.width, '25%');
     c.estado.meses = {};
     c.renderGraficoCategorias();
     assert.equal(c.$('vazio-grafico-categorias').hidden, false);
