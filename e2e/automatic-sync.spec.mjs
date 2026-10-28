@@ -188,9 +188,50 @@ test('automatic UI: a permanent restore error preserves the job and blocks edits
     await expect.poll(async () => (await rows(page, uid))[0]?.valor).toBe(10);
     await expect(page.locator('#estado-sincronizacao')).toHaveAttribute('data-state', 'error');
     expect((await remote(request, uid, 'records'))).toHaveLength(0);
+    await expect.poll(async () => (await read(page, q(uid))).recoveryNotices?.some(item => item.code === 'rejected-edit')).toBe(true);
+    const blocked = await read(page, q(uid));
+    expect(blocked.restoreJob).toBeTruthy();
+    expect(blocked.outbox).toEqual([]);
+    const notice = blocked.recoveryNotices.find(item => item.code === 'rejected-edit');
+    expect(notice).toMatchObject({ acknowledged: false });
+    expect(blocked.recoveryKeys).toContain(notice.id);
+    const rejected = await read(page, notice.id);
+    expect(rejected).toMatchObject({ reason: 'sync/restore-in-progress',
+        proposta: { meses: { '2026-10': { receitas: [{ id: 'salary', valor: 20 }] } } } });
     await page.evaluate(() => { delete window.__autoFailureCode; window.dispatchEvent(new Event('online')); });
     await expect.poll(async () => (await rows(other, uid))[0]?.valor).toBe(10);
-    await expect(page.locator('#estado-sincronizacao')).toHaveText('Sincronizado');
+    const status = page.locator('#estado-sincronizacao');
+    await expect(status).toHaveAttribute('data-state', 'recovery');
+    await expect(status).toHaveText('Dados ativos sincronizados; há alterações somente no histórico de recuperação.');
+    const published = await read(page, q(uid));
+    expect(published.restoreJob).toBeNull();
+    expect(published.outbox).toEqual([]); expect(published.conflicts).toEqual([]);
+    expect(published.lastConfirmed).toBeTruthy();
+    expect(published.recoveryNotices).toContainEqual(notice);
+    const records = await remote(request, uid, 'records');
+    expect(records).toHaveLength(1);
+    expect(Number(records[0].fields.record.mapValue.fields.valor.integerValue
+        || records[0].fields.record.mapValue.fields.valor.doubleValue)).toBe(10);
+
+    // The warning and rejected intention survive reload until explicitly exported.
+    await page.reload();
+    await expect(status).toHaveAttribute('data-state', 'recovery');
+    expect((await read(page, q(uid))).recoveryNotices).toContainEqual(notice);
+    expect(await read(page, notice.id)).toEqual(rejected);
+    const downloading = page.waitForEvent('download');
+    await page.locator('#baixar-recuperacao-financeira').click();
+    const download = await downloading, chunks = [];
+    for await (const chunk of await download.createReadStream()) chunks.push(chunk);
+    const history = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+    expect(history.type).toBe('financial-recovery-history'); expect(history.uid).toBe(uid);
+    expect(history.restorations).toContainEqual(rejected);
+    await expect.poll(async () => (await read(page, q(uid))).recoveryNotices.every(item => item.acknowledged)).toBe(true);
+    await expect(status).toHaveAttribute('data-state', 'synced');
+    await expect(status).toHaveText('Sincronizado');
+    await expect(page.locator('#aviso-recuperacao-financeira')).toBeHidden();
+    expect((await rows(page, uid))[0].valor).toBe(10);
+    expect((await rows(other, uid))[0].valor).toBe(10);
+    expect((await read(page, q(uid))).outbox).toEqual([]);
     expect((await remote(request, uid, 'records'))).toHaveLength(1);
 });
 

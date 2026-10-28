@@ -41,13 +41,20 @@ async function login(page, account) {
     await expect(page.locator("#estado-sincronizacao")).toHaveText("Sincronizado");
     await page.locator("#fechar-ajustes").click();
 }
-async function addIncome(page, name, amount) {
+async function addIncome(page, name, amount, uid = null) {
     await page.locator("#adicionar-receita").click();
     await page.locator("#receita-nome").fill(name);
     await page.locator("#receita-valor").fill(String(amount));
     await page.locator('#form-receita button[type="submit"]').click();
     await expect(page.locator("#dialogo-receita")).not.toBeVisible();
-    await expect(page.locator("#aviso")).toContainText("confirmadas no armazenamento");
+    // Read the committed owner document; a toast is not proof of persistence.
+    const key = uid ? stateKey(uid) : 'controleFinanceiro:v3';
+    await expect.poll(async () => {
+        const state = await stored(page, key);
+        return Object.values(state?.meses || {}).flatMap(month => month.receitas || [])
+            .filter(item => item.nome === name).map(item => ({ nome: item.nome, valor: item.valor }));
+    }).toEqual([{ nome: name, valor: amount }]);
+    await expect(page.locator('#aviso')).not.toContainText('confirmadas no armazenamento');
 }
 async function editIncome(page, amount) {
     if (!await page.locator("#conteudo-receitas").isVisible()) await page.locator('[aria-controls="conteudo-receitas"]').click();
@@ -83,7 +90,7 @@ test("A: criação offline, recarga do PWA e reconexão sem duplicação", async
     await prepare(context, page, account.email); await login(page, account);
     await page.evaluate(() => navigator.serviceWorker.ready);
     await page.waitForFunction(() => !!navigator.serviceWorker.controller);
-    await context.setOffline(true); await addIncome(page, "Sintético offline", 0.29);
+    await context.setOffline(true); await addIncome(page, "Sintético offline", 0.29, account.localId);
     await expect.poll(async () => (await stored(page, metaKey(account.localId)))?.outbox?.length).toBe(1);
     await page.reload({ waitUntil: "domcontentloaded" });
     await expect(page.locator("#adicionar-receita")).toBeVisible();
@@ -97,7 +104,7 @@ test("A: criação offline, recarga do PWA e reconexão sem duplicação", async
 
 test("B: duas sessões preservam revisão concorrente e permitem resolução", async ({ browser, context, page, request }) => {
     const account = await createAccount(request, "concurrent@local.test");
-    await prepare(context, page, account.email); await login(page, account); await addIncome(page, "Sintético concorrente", 10);
+    await prepare(context, page, account.email); await login(page, account); await addIncome(page, "Sintético concorrente", 10, account.localId);
     await expect.poll(async () => (await remoteRecords(request, account)).length).toBe(1);
     const second = await browser.newContext(), other = await second.newPage();
     try {
@@ -121,9 +128,9 @@ test("B: duas sessões preservam revisão concorrente e permitem resolução", a
 
 test("C: logout e troca de conta não apresentam dados ou fila de outro UID", async ({ context, page, request }) => {
     const alice = await createAccount(request, "alice@local.test"), bob = await createAccount(request, "bob@local.test");
-    await prepare(context, page, alice.email); await login(page, alice); await addIncome(page, "Somente Alice", 123);
+    await prepare(context, page, alice.email); await login(page, alice); await addIncome(page, "Somente Alice", 123, alice.localId);
     await expect.poll(async () => (await stored(page, metaKey(alice.localId)))?.outbox?.length).toBe(0);
-    await addIncome(page, "Remover somente Alice", 5);
+    await addIncome(page, "Remover somente Alice", 5, alice.localId);
     await expect.poll(async () => (await stored(page, metaKey(alice.localId)))?.outbox?.length).toBe(0);
     if (!await page.locator("#conteudo-receitas").isVisible()) await page.locator('[aria-controls="conteudo-receitas"]').click();
     await page.getByRole("button", { name: "Remover entrada Remover somente Alice", exact: true }).click();
@@ -150,7 +157,7 @@ test("D: falha de gravação da fila preserva lançamento para recuperação ap�
             return original.call(this, value, key);
         };
     });
-    await addIncome(page, "Sintético preservado", 1.01);
+    await addIncome(page, "Sintético preservado", 1.01, account.localId);
     expect((await incomes(page, account.localId))[0].valor).toBe(1.01);
     expect(await remoteRecords(request, account)).toHaveLength(0);
     await page.reload(); // removes the injected fault; the financial state was durable
@@ -175,7 +182,7 @@ async function sharedTabs(context, page, request, email, initial = false) {
     const account = await createAccount(request, email);
     await prepare(context, page, account.email); await login(page, account);
     if (initial) {
-        await addIncome(page, "Base compartilhada", 10);
+        await addIncome(page, "Base compartilhada", 10, account.localId);
         await expect.poll(async () => (await stored(page, metaKey(account.localId)))?.outbox?.length).toBe(0);
         await expect(page.locator("#estado-sincronizacao")).toHaveText("Sincronizado");
     }
@@ -191,7 +198,7 @@ async function sharedTabs(context, page, request, email, initial = false) {
 
 test("F: duas abas do mesmo contexto preservam criações sem exclusão implícita", async ({ context, page, request }) => {
     const { account, other } = await sharedTabs(context, page, request, "shared-create@local.test");
-    await Promise.all([addIncome(page, "Criada na aba A", 20), addIncome(other, "Criada na aba B", 30)]);
+    await Promise.all([addIncome(page, "Criada na aba A", 20, account.localId), addIncome(other, "Criada na aba B", 30, account.localId)]);
     const saved = await incomes(other, account.localId), meta = await stored(other, metaKey(account.localId));
     expect.soft(saved.map((item) => item.nome).sort()).toEqual(["Criada na aba A", "Criada na aba B"]);
     expect.soft(meta.outbox.filter((op) => op.value.deleted)).toHaveLength(0);
