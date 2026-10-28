@@ -435,7 +435,7 @@ test("resumo, despesas e entradas permanecem sem uma seção separada de planeja
     assert.equal((html.match(/class="bloco-seta"/g) || []).length, 2);
 });
 
-test("resumo do mês mostra cinco indicadores e o comprometimento abaixo da grade", async () => {
+test("resumo do mês mostra quatro indicadores e taxa na legenda e o comprometimento abaixo da grade", async () => {
     const [html, app, css] = await Promise.all([
         read("index.html"), read("app.js"), read("style.css")
     ]);
@@ -450,9 +450,10 @@ test("resumo do mês mostra cinco indicadores e o comprometimento abaixo da grad
     for (const rotulo of ["Entradas", "Despesas", "Saldo do mês", "Pendente no mês"]) {
         assert.ok(resumo.includes(`<dt>${rotulo}</dt>`), `${rotulo} ausente do resumo`);
     }
-    assert.equal((resumo.match(/<dt>/g) || []).length, 5);
+    assert.equal((resumo.match(/<dt>/g) || []).length, 4);
     assert.equal((html.match(/id="taxa-economia"/g) || []).length, 1);
-    assert.ok(resumo.includes('id="taxa-economia"'));
+    assert.match(resumo, /class="grafico-legenda compromisso-legenda">[^\n]*<strong id="taxa-economia"><\/strong>/);
+    assert.doesNotMatch(resumo.slice(posicaoGrade, fimGrade), /taxa-economia/);
     assert.doesNotMatch(html, /panorama-indicadores|total-grafico-categorias/);
     assert.match(html, /id="titulo-grafico">Gastos por categoria<\/h2>/);
     assert.match(resumo, /<dt>Entradas<\/dt>[\s\S]*?<dd id="total-receitas">/);

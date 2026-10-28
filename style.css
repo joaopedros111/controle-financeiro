@@ -114,6 +114,9 @@
     .grafico-periodo { color: var(--texto-secundario); font-size: .72rem; white-space: nowrap; }
     .grafico-legenda { display: flex; gap: 16px; margin-bottom: 10px; color: var(--texto-secundario); font-size: .76rem; }
     .grafico-legenda span { display: inline-flex; align-items: center; gap: 7px; }
+    .resumo .compromisso-legenda { flex-wrap: wrap; align-items: center; row-gap: 6px; }
+    .compromisso-legenda > span:last-child { flex-wrap: wrap; min-width: 0; max-width: 100%; }
+    .compromisso-legenda #taxa-economia { min-width: 0; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
     .grafico-legenda i { width: 9px; height: 9px; border-radius: 3px; }
 
     @media (max-width: 380px) {
@@ -758,7 +761,6 @@ body #dialogo-ajustes .ajuste-controle { gap: var(--densidade-opcoes-controle-ga
     .densidade-controle output { margin-left: 6px; font-variant-numeric: tabular-nums; }
     .ajuste-controle.ajuste-alternancia { min-height: 44px; }
 
-    .indicadores > div:last-child { grid-column: 1 / -1; }
     .indicadores dt, .indicadores dd { overflow-wrap: anywhere; }
 
     .indicadores {

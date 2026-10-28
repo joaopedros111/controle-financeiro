@@ -15,10 +15,10 @@ test('Panorama keeps savings in the summary and readable category bars on mobile
     await page.goto('/local-only.html');
     await expect(page.locator('html')).not.toHaveClass(/app-inicializando/);
     await expect(page.locator('#grafico-mensal, .grafico-meses, #detalhe-grafico-mensal')).toHaveCount(0);
-    await expect(page.locator('.resumo .indicadores dt')).toHaveCount(5);
+    await expect(page.locator('.resumo .indicadores dt')).toHaveCount(4);
     await expect(page.locator('#variacao-despesas, #variacao-periodo, .categoria-total')).toHaveCount(0);
     await expect(page.locator('.grafico-bloco #taxa-economia, #total-grafico-categorias, .panorama-indicadores')).toHaveCount(0);
-    await expect(page.locator('.resumo #taxa-economia')).toHaveCount(1);
+    await expect(page.locator('.resumo .compromisso-legenda #taxa-economia')).toHaveCount(1);
     await expect(page.locator('#titulo-grafico')).toHaveText('Gastos por categoria');
     await expect(page.locator('.categoria-trilho').first()).toHaveCSS('height', '14px');
     for (const width of [320, 375, 390, 414, 1280]) {
@@ -28,20 +28,26 @@ test('Panorama keeps savings in the summary and readable category bars on mobile
             await page.locator('#idioma-interface').selectOption(language);
             await page.keyboard.press('Escape');
             const layout = await page.evaluate(() => {
-                const cards = [...document.querySelectorAll('.resumo .indicadores > div')];
+                const cards = [...document.querySelectorAll('.resumo .indicadores > div'), document.querySelector('.compromisso-legenda')];
+                const legendContainer = document.querySelector('.compromisso-legenda');
+                const legend = [...legendContainer.children].map(el => el.getBoundingClientRect());
+                const legendFits = legend.reduce((width, el) => width + el.width, 0)
+                    + parseFloat(getComputedStyle(legendContainer).columnGap) * (legend.length - 1) <= legendContainer.clientWidth + 1;
                 const padding = selector => { const s = getComputedStyle(document.querySelector(selector)); return [s.paddingTop, s.paddingRight, s.paddingBottom, s.paddingLeft].join(' '); };
                 const categories = document.querySelector('.grafico-categorias').getBoundingClientRect();
                 const container = document.querySelector('.panorama-graficos').getBoundingClientRect();
                 return {
+                    aligned: !legendFits || legend.every(el => Math.abs((el.top + el.bottom) / 2 - (legend[0].top + legend[0].bottom) / 2) < 1),
+                    overlap: legend.some((a, i) => legend.slice(i + 1).some(b => a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top)),
                     samePadding: padding('.resumo') === padding('.grafico-bloco'),
                     fullWidth: Math.abs(categories.width - container.width) < 1,
                     overflow: document.documentElement.scrollWidth > innerWidth,
-                    clipped: [...cards, ...document.querySelectorAll('.grafico-categoria-item')].some(card => [card, ...card.querySelectorAll('dt, dd, small, .grafico-categoria-nome, .grafico-categoria-valor, .grafico-categoria-percentual')]
+                    clipped: [...cards, ...document.querySelectorAll('.grafico-categoria-item')].some(card => [card, ...card.querySelectorAll('dt, dd, small, #taxa-economia, .grafico-categoria-nome, .grafico-categoria-valor, .grafico-categoria-percentual')]
                         .some(el => el.scrollWidth > el.clientWidth + 1))
                 };
             });
             expect(layout, width + 'px / ' + language).toEqual({
-                samePadding: true, fullWidth: true, overflow: false, clipped: false
+                aligned: true, overlap: false, samePadding: true, fullWidth: true, overflow: false, clipped: false
             });
         }
     }
