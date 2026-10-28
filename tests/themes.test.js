@@ -19,6 +19,32 @@ function contrast(a, b) {
     return (Math.max(x, y) + .05) / (Math.min(x, y) + .05);
 }
 
+test('light and Pangolim use the requested identity colors and keep semantic colors', () => {
+    const identities = {
+        claro: { fundo: '#f5f6f2', superficie: '#ffffff', 'superficie-suave': '#dce9df',
+            primaria: '#287c5a', texto: '#263b32' },
+        pangolim: { fundo: '#f1e4ca', superficie: '#fff8eb', primaria: '#4d301d', texto: '#4d301d',
+            acento: '#b87b25', 'primaria-suave': '#d4a24c', borda: '#d9bd8e', 'texto-secundario': '#765b3e' }
+    };
+    const semantics = {
+        claro: { verde: '#087354', 'verde-suave': '#e7f3ed', ambar: '#8c5a0b', 'ambar-suave': '#fff3d8',
+            vermelho: '#b73449', 'vermelho-suave': '#fceef1' },
+        pangolim: { verde: '#795314', 'verde-suave': '#efe4c9', ambar: '#815318', 'ambar-suave': '#f8edc9',
+            vermelho: '#ad3f31', 'vermelho-suave': '#fbeae2' }
+    };
+    for (const theme of ['claro', 'pangolim']) {
+        for (const [token, expected] of Object.entries({ ...identities[theme], ...semantics[theme] })) {
+            assert.equal(palettes[theme][token], expected, `${theme}: ${token}`);
+        }
+        for (const surface of ['superficie', 'superficie-suave']) {
+            for (const foreground of ['verde', 'ambar', 'vermelho']) {
+                assert.ok(contrast(palettes[theme][foreground], palettes[theme][surface]) >= 4.5,
+                    `${theme}: ${foreground} / ${surface}`);
+            }
+        }
+    }
+});
+
 test('all four palettes meet text and graphical contrast targets on their surfaces', () => {
     assert.deepEqual(Object.keys(palettes), themes);
     for (const [theme, p] of Object.entries(palettes)) {

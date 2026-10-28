@@ -290,16 +290,16 @@
     /* Clean */
     :root {
         color-scheme: light;
-        --fundo: #ffffff;
+        --fundo: #f5f6f2;
         --superficie: #ffffff;
-        --superficie-suave: #f3f6f4;
-        --texto: #182822;
+        --superficie-suave: #dce9df;
+        --texto: #263b32;
         --texto-secundario: #52615c;
         --borda: #d5ded9;
         --borda-controle: #6f887c;
-        --primaria: #087354;
-        --primaria-hover: #05583f;
-        --primaria-suave: #e7f3ed;
+        --primaria: #287c5a;
+        --primaria-hover: #1e6246;
+        --primaria-suave: #eef5ef;
         --texto-na-primaria: #ffffff;
         --verde: #087354;
         --verde-suave: #e7f3ed;
@@ -307,9 +307,9 @@
         --vermelho-suave: #fceef1;
         --ambar: #8c5a0b;
         --ambar-suave: #fff3d8;
-        --acento: #299c7b;
-        --sombra-cor: 24 40 34;
-        --categoria-1: #087354;
+        --acento: #287c5a;
+        --sombra-cor: 38 59 50;
+        --categoria-1: #287c5a;
         --categoria-2: #3d69a3;
         --categoria-3: #ab5834;
         --categoria-4: #7857ac;
@@ -398,16 +398,16 @@
     /* Pangolim */
     :root[data-tema="pangolim"] {
         color-scheme: light;
-        --fundo: #faf4e7;
-        --superficie: #fffdf7;
-        --superficie-suave: #f2e7d2;
-        --texto: #3e2b1b;
-        --texto-secundario: #735a3c;
-        --borda: #d5c1a0;
+        --fundo: #f1e4ca;
+        --superficie: #fff8eb;
+        --superficie-suave: #f3e1bd;
+        --texto: #4d301d;
+        --texto-secundario: #765b3e;
+        --borda: #d9bd8e;
         --borda-controle: #846337;
-        --primaria: #875111;
-        --primaria-hover: #70420d;
-        --primaria-suave: #f6e4bd;
+        --primaria: #4d301d;
+        --primaria-hover: #382114;
+        --primaria-suave: #d4a24c;
         --texto-na-primaria: #ffffff;
         --verde: #795314;
         --verde-suave: #efe4c9;
@@ -415,9 +415,9 @@
         --vermelho-suave: #fbeae2;
         --ambar: #815318;
         --ambar-suave: #f8edc9;
-        --acento: #bd8a25;
-        --sombra-cor: 62 43 27;
-        --categoria-1: #925b17;
+        --acento: #b87b25;
+        --sombra-cor: 77 48 29;
+        --categoria-1: #4d301d;
         --categoria-2: #a6492e;
         --categoria-3: #806037;
         --categoria-4: #8e586a;
