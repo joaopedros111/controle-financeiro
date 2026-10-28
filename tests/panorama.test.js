@@ -75,7 +75,7 @@ test('category bars use descending totals and show amount and percentage; empty 
 
 test('new Panorama text is translated in all six languages', () => {
     const phrases = ['Saldo do mês', 'Pendente no mês', 'Taxa de economia', 'Variação das despesas',
-        'Comparação com', 'Total de despesas do mês', 'Não calculável: sem entradas', 'Não calculável: mês anterior sem despesas'];
+        'Comparação com', 'Gastos por categoria', 'Não calculável: sem entradas', 'Não calculável: mês anterior sem despesas'];
     for (const language of IDIOMAS.filter(value => value !== 'pt-BR')) {
         for (const phrase of phrases) assert.notEqual(textoTraduzido(phrase, language), phrase);
     }

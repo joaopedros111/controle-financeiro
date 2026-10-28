@@ -312,7 +312,7 @@ const FRASES = [
     ["Já pago", "Paid", "Pagado", "Déjà payé", "Bereits bezahlt", "支払い済み"],
     ["A pagar", "Due", "Pendiente", "À payer", "Noch zu zahlen", "未払い"],
     ["PANORAMA", "OVERVIEW", "PANORAMA", "APERÇU", "ÜBERBLICK", "概要"],
-    ["Visão geral", "Overview", "Vista general", "Vue d’ensemble", "Übersicht", "概要"],
+    ["Gastos por categoria", "Spending by category", "Gastos por categoría", "Dépenses par catégorie", "Ausgaben nach Kategorie", "カテゴリー別支出"],
     ["Gastos do mês", "Monthly spending", "Gastos del mes", "Dépenses du mois", "Monatsausgaben", "今月の支出"],
     ["Total no mês", "Monthly total", "Total del mes", "Total du mois", "Monatssumme", "月間合計"],
     ["Total de despesas do mês", "Total monthly expenses", "Total de gastos del mes", "Total des dépenses du mois", "Gesamtausgaben im Monat", "今月の支出合計"],

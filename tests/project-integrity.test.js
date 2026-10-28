@@ -316,12 +316,12 @@ test("valores monetários usam formatação centralizada nas listas, resumos e g
     assert.match(app, /renderTudo\(false\)/);
     for (const seletor of [
         "saldo-valor", "total-receitas", "total-despesas", "valor-pendente",
-        "total-receitas-lista", "total-valor", "total-grafico-categorias",
+        "total-receitas-lista", "total-valor",
         "grafico-categoria-valor", "valor-receita", "valor-despesa"
     ]) {
         assert.ok(html.includes(`id="${seletor}"`) || app.includes(`class: "${seletor}"`), `${seletor} sem componente`);
     }
-    assert.match(app, /formatarMoeda\(total\)[\s\S]*formatarMoeda\(valor\)/);
+    assert.match(app, /class: "grafico-categoria-valor", text: formatarMoeda\(valor\)/);
     assert.match(app, /const pago = pagoCentavos \/ 100/);
     assert.match(app, /const pendente = \(despesaCentavos - pagoCentavos\) \/ 100/);
     assert.doesNotMatch(app, /\$\("valor-pago"\)|ui\.valorPago/);
@@ -435,7 +435,7 @@ test("resumo, despesas e entradas permanecem sem uma seção separada de planeja
     assert.equal((html.match(/class="bloco-seta"/g) || []).length, 2);
 });
 
-test("resumo do mês mostra quatro indicadores e o comprometimento abaixo da grade", async () => {
+test("resumo do mês mostra cinco indicadores e o comprometimento abaixo da grade", async () => {
     const [html, app, css] = await Promise.all([
         read("index.html"), read("app.js"), read("style.css")
     ]);
@@ -450,7 +450,11 @@ test("resumo do mês mostra quatro indicadores e o comprometimento abaixo da gra
     for (const rotulo of ["Entradas", "Despesas", "Saldo do mês", "Pendente no mês"]) {
         assert.ok(resumo.includes(`<dt>${rotulo}</dt>`), `${rotulo} ausente do resumo`);
     }
-    assert.equal((resumo.match(/<dt>/g) || []).length, 4);
+    assert.equal((resumo.match(/<dt>/g) || []).length, 5);
+    assert.equal((html.match(/id="taxa-economia"/g) || []).length, 1);
+    assert.ok(resumo.includes('id="taxa-economia"'));
+    assert.doesNotMatch(html, /panorama-indicadores|total-grafico-categorias/);
+    assert.match(html, /id="titulo-grafico">Gastos por categoria<\/h2>/);
     assert.match(resumo, /<dt>Entradas<\/dt>[\s\S]*?<dd id="total-receitas">/);
     assert.match(resumo, /<dt>Despesas<\/dt>[\s\S]*?<dd id="total-despesas">/);
     assert.match(resumo, /<dt>Saldo do mês<\/dt>[\s\S]*?<dd id="saldo-valor"/);

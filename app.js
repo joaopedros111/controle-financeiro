@@ -1394,7 +1394,6 @@ function renderGraficoCategorias() {
         year: "numeric"
     }).format(new Date(periodo.ano, periodo.mes - 1, 1));
     $("periodo-grafico-categorias").textContent = rotuloMes;
-    $("total-grafico-categorias").textContent = formatarMoeda(total);
     $("vazio-grafico-categorias").hidden = itens.length > 0;
 
     legenda.replaceChildren(...itens.map(([nome, valor]) => {
