@@ -488,7 +488,7 @@ export function gerarCsv(estado, { ano, mes, escopo = "mes" } = {}) {
     const linhas = [["Período", "Tipo", "Nome", "Categoria", "Valor", "Situação", "Observação"]];
     registros.forEach(([periodo, dados]) => {
         dados.receitas.forEach((r) => linhas.push([
-            periodo, "Entrada", r.nome, "", valorCsv(r.valor), "",
+            periodo, "Entrada", r.nome, "", valorCsv(r.valor), r.recebido === true ? "Recebido" : "Pendente",
             r.serie ? `Recorrente mensal (${r.serie})` : ""
         ]));
         dados.despesas.forEach((d) => {

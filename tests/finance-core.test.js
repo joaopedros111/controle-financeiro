@@ -414,6 +414,40 @@ test("CSV exporta o mês escolhido ou todos os meses com período, UTF-8 e prote
     assert.equal(gerarCsv({ meses: {} }, { ano: 2026, mes: 2 }), "");
 });
 
+for (const { descricao, campos, situacao } of [
+    { descricao: "recebida", campos: { recebido: true }, situacao: "Recebido" },
+    { descricao: "pendente", campos: { recebido: false }, situacao: "Pendente" },
+    { descricao: "antiga sem recebido", campos: {}, situacao: "Pendente" }
+]) {
+    test(`CSV exporta situação da entrada ${descricao} preservando colunas e formatação`, () => {
+        const estado = { meses: { "2026-10": { receitas: [
+            { id: "entrada-csv", nome: 'Salário; "bônus"', valor: 1234.56, serie: "serie-csv", ...campos }
+        ], despesas: [] } } };
+        const antes = structuredClone(estado);
+        const esperado = '\ufeff"Período";"Tipo";"Nome";"Categoria";"Valor";"Situação";"Observação"\r\n'
+            + `"2026-10";"Entrada";"Salário; ""bônus""";"";"1234,56";"${situacao}";"Recorrente mensal (serie-csv)"`;
+        for (const escopo of ["mes", "todos"]) {
+            assert.equal(gerarCsv(estado, { ano: 2026, mes: 10, escopo }), esperado);
+        }
+        assert.deepEqual(estado, antes, "Exportar não deve alterar os registros nem preencher campos antigos");
+    });
+}
+
+test("CSV preserva situações de despesas pagas, pendentes e antigas sem pago", () => {
+    const estado = { meses: { "2026-10": { receitas: [], despesas: [
+        { id: "paga", nome: "Conta paga", categoria: "Casa", valor: 50.1, pago: true, fixa: true },
+        { id: "pendente", nome: "Conta pendente", categoria: "Casa", valor: 1000, pago: false, parcela: { atual: 1, total: 2 } },
+        { id: "antiga", nome: "Conta antiga", categoria: "Casa", valor: 0.29 }
+    ] } } };
+    const esperado = '\ufeff"Período";"Tipo";"Nome";"Categoria";"Valor";"Situação";"Observação"\r\n'
+        + '"2026-10";"Despesa";"Conta paga";"Casa";"50,10";"Paga";"Fixa"\r\n'
+        + '"2026-10";"Despesa";"Conta pendente";"Casa";"1000,00";"A pagar";"Parcela 1/2"\r\n'
+        + '"2026-10";"Despesa";"Conta antiga";"Casa";"0,29";"A pagar";""';
+    for (const escopo of ["mes", "todos"]) {
+        assert.equal(gerarCsv(estado, { ano: 2026, mes: 10, escopo }), esperado);
+    }
+});
+
 test("calculadora respeita precedência, parênteses e decimal brasileiro", () => {
     assert.equal(calcularExpressao("(1,5 + 2,5) * 3"), 12);
     assert.equal(calcularExpressao("-4 + 10 / 2"), 1);
