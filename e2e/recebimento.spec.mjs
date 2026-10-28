@@ -66,6 +66,7 @@ test('received and pending entries retain status across editing, reload, deletio
             });
         } finally { db.close(); }
     })).toBe(true);
+    await expect(page.locator('#aviso')).not.toContainText('armazenamento local IndexedDB');
     await page.reload(); await expand(page);
     await expect(edited.locator('.recebido-receita')).toBeChecked();
     await expect(pending.locator('.recebido-receita')).not.toBeChecked();

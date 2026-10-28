@@ -53,13 +53,13 @@ for (const theme of official) {
         await prepare(context, page, theme);
         await expect(page.locator('html')).toHaveAttribute('data-tema', theme);
         const focusColor = await page.locator('.grafico-sobretitulo').evaluate(el => getComputedStyle(el).color);
-        for (const width of [320, 375, 768, 1280]) {
+        for (const width of [320, 375, 390, 768, 1280]) {
             await page.setViewportSize({ width, height: 896 });
             await audit(page);
-            if ([375, 1280].includes(width)) await page.screenshot({ path: testInfo.outputPath(`${theme}-${width}.png`), fullPage: true });
+            if ([375, 390, 1280].includes(width)) await page.screenshot({ path: testInfo.outputPath(`${theme}-${width}.png`), fullPage: true, animations: 'disabled' });
             await page.locator('#abrir-ajustes').click();
             await audit(page);
-            if (width === 375) await page.locator('#dialogo-ajustes').screenshot({ path: testInfo.outputPath(`${theme}-settings.png`) });
+            if (width === 375) await page.locator('#dialogo-ajustes').screenshot({ path: testInfo.outputPath(`${theme}-settings.png`), animations: 'disabled' });
             await page.locator('#abrir-categorias-orcamento').click();
             await audit(page);
             await page.locator('[data-orcamento-voltar]').click();
@@ -107,7 +107,7 @@ test('four-theme selection persists across reloads and changes chart colors with
     expect(await totals()).toEqual(before);
 });
 
-test('retired Selva preference opens as Clean and stays compatible after reload', async ({ context, page }) => {
+test('retired Selva preference opens as Aurora and stays compatible after reload', async ({ context, page }) => {
     await prepare(context, page, 'floresta');
     await expect(page.locator('html')).toHaveAttribute('data-tema', 'claro');
     expect(await page.evaluate(() => localStorage.getItem('controleFinanceiro:tema-inicial'))).toBe('claro');

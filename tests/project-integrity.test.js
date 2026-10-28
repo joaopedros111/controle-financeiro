@@ -357,11 +357,11 @@ test("os quatro temas oficiais preservam identificadores antigos e migram Selva 
         assert.match(css, new RegExp(`data-tema="${tema}"`));
         assert.match(core, new RegExp(`"${tema}"`));
     }
-    assert.match(app, /claro: "Clean", escuro: "Midnight", rosa: "Peônia", pangolim: "Pangolim"/);
+    assert.match(app, /claro: "Aurora", escuro: "Midnight", rosa: "Peônia", pangolim: "Pangolim"/);
     assert.match(app, /criarEl\("span", \{ text: nomesTema\[tema\] \}\)/);
     assert.match(app, /"claro", "escuro", "rosa", "pangolim", "floresta"/);
-    assert.match(html, /Clean, Midnight, Peônia ou Pangolim/);
-    assert.match(html, /id="alternar-tema"[\s\S]*?<span>Clean<\/span>/);
+    assert.match(html, /Aurora, Midnight, Peônia ou Pangolim/);
+    assert.match(html, /id="alternar-tema"[\s\S]*?<span>Aurora<\/span>/);
     assert.match(core, /"claro", "escuro", "rosa", "pangolim", "floresta"/);
     assert.match(app, /let tema = estado\.tema \|\| "claro"/);
     assert.match(app, /localStorage\.setItem\(CHAVE_TEMA_INICIAL, tema\)/);

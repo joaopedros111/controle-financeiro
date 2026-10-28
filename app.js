@@ -672,7 +672,6 @@ function salvar() {
             estado = normalizarEstado(result.estado.dados); idbBase = structuredClone(estadoParaSalvar()); renderTudo(false);
         }
         atualizarDiagnostico();
-        if (typeof document === "undefined" || !document.querySelector?.(".aviso-acao")) avisar("Alterações confirmadas no armazenamento local IndexedDB.");
         if (key !== CHAVE_ESTADO) window.dispatchEvent(new CustomEvent("finance-local-change", { detail: { uid, state: result.estado.dados, deletedRecords: [] } }));
     }).catch(async error => {
         if (['sync/generation-changed', 'sync/restore-in-progress', 'sync/upgrade-required'].includes(error?.code)) {
@@ -887,7 +886,7 @@ function renderTema() {
         && TEMAS_VALIDOS.includes(document.documentElement.dataset.tema)) {
         tema = document.documentElement.dataset.tema;
     }
-    const nomesTema = { claro: "Clean", escuro: "Midnight", rosa: "Peônia", pangolim: "Pangolim" };
+    const nomesTema = { claro: "Aurora", escuro: "Midnight", rosa: "Peônia", pangolim: "Pangolim" };
     // Selva is a retired visual alias. Keep stored/backup identifiers intact.
     if (!TEMAS_OFICIAIS.includes(tema)) tema = "claro";
     const ordemTemas = TEMAS_OFICIAIS;

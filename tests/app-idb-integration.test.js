@@ -55,7 +55,7 @@ test('app.js em duas abas usa serviço transacional e preserva inclusões indepe
     await Promise.all([a.save(state(item('a'))), b.save(state(item('b')))]);
     assert.deepEqual(ids(db.docs.get('estado:local').dados), ['a', 'b']);
     assert.equal(a.writes() + b.writes(), 0);
-    assert.equal(messages.filter((text) => text.includes('confirmadas no armazenamento')).length, 2);
+    assert.deepEqual(messages, [], 'Routine successful persistence must not display a toast');
 });
 
 test('app.js bloqueia edição obsoleta sem alterar dados anteriores', async () => {
@@ -120,10 +120,23 @@ test('receipt status persists in the existing atomic store across reloads and in
 
 test('confirmation of asynchronous persistence preserves the undo notification', async()=>{
     const db=database(), service=new ServicoFinanceiroAtomico(db,validarBackup,q=>Array.isArray(q?.outbox)&&Array.isArray(q?.conflicts));
-    const baseline=state(item('same')),messages=[];await service.inicializar('local',baseline,{outbox:[],conflicts:[],lastConfirmed:null});
+    const baseline=state(item('same')),messages=['Entrada removida.'];await service.inicializar('local',baseline,{outbox:[],conflicts:[],lastConfirmed:null});
     const a=tab(service,baseline,messages);a.context.document={querySelector:()=>({textContent:'Desfazer'})};
     await a.save(state());assert.equal(db.docs.get('estado:local').dados.meses['2026-10'].receitas.length,0);
-    assert.equal(messages.some(text=>text.includes('confirmadas no armazenamento')),false);
+    assert.deepEqual(messages,['Entrada removida.']);
+});
+
+test('failed persistence still reports the failure and preserves stored records', async () => {
+    const db = database(), service = new ServicoFinanceiroAtomico(db, validarBackup, q => Array.isArray(q?.outbox) && Array.isArray(q?.conflicts));
+    const baseline = state(item('preserved')), messages = [];
+    await service.inicializar('local', baseline, { outbox: [], conflicts: [] });
+    service.aplicarEdicao = async () => { throw new Error('Synthetic unavailable storage'); };
+    const a = tab(service, baseline, messages);
+    await a.save(state(item('replacement')));
+    assert.deepEqual(ids(db.docs.get('estado:local').dados), ['preserved']);
+    assert.equal(a.context.idbBloqueado, true);
+    assert.equal(messages.length, 1);
+    assert.match(messages[0], /falha na gravação/);
 });
 
 test('month navigation persists its preference without financial writes, notifications, operations or conflicts',async()=>{

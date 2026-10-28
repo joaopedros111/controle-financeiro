@@ -19,23 +19,20 @@ function contrast(a, b) {
     return (Math.max(x, y) + .05) / (Math.min(x, y) + .05);
 }
 
-test('light and Pangolim use the requested identity colors and keep semantic colors', () => {
+test('Aurora, Peônia and Pangolim use their identity colors with readable semantic states', () => {
     const identities = {
-        claro: { fundo: '#f5f6f2', superficie: '#ffffff', 'superficie-suave': '#dce9df',
-            primaria: '#287c5a', texto: '#263b32' },
-        pangolim: { fundo: '#f1e4ca', superficie: '#fff8eb', primaria: '#4d301d', texto: '#4d301d',
-            acento: '#b87b25', 'primaria-suave': '#d4a24c', borda: '#d9bd8e', 'texto-secundario': '#765b3e' }
+        claro: { fundo: '#f8fafc', superficie: '#ffffff', borda: '#dce5f0',
+            primaria: '#2563eb', texto: '#0f172a' },
+        rosa: { fundo: '#fff7f8', superficie: '#ffffff', 'superficie-suave': '#fbe4e9',
+            primaria: '#b54d72', texto: '#70445b' },
+        pangolim: { fundo: '#2d211c', superficie: '#49352a', texto: '#f5e9d8',
+            acento: '#a76a36', primaria: '#d8a35a' }
     };
-    const semantics = {
-        claro: { verde: '#087354', 'verde-suave': '#e7f3ed', ambar: '#8c5a0b', 'ambar-suave': '#fff3d8',
-            vermelho: '#b73449', 'vermelho-suave': '#fceef1' },
-        pangolim: { verde: '#795314', 'verde-suave': '#efe4c9', ambar: '#815318', 'ambar-suave': '#f8edc9',
-            vermelho: '#ad3f31', 'vermelho-suave': '#fbeae2' }
-    };
-    for (const theme of ['claro', 'pangolim']) {
-        for (const [token, expected] of Object.entries({ ...identities[theme], ...semantics[theme] })) {
+    for (const theme of ['claro', 'rosa', 'pangolim']) {
+        for (const [token, expected] of Object.entries(identities[theme])) {
             assert.equal(palettes[theme][token], expected, `${theme}: ${token}`);
         }
+        assert.equal(new Set(['verde', 'ambar', 'vermelho'].map(token => palettes[theme][token])).size, 3);
         for (const surface of ['superficie', 'superficie-suave']) {
             for (const foreground of ['verde', 'ambar', 'vermelho']) {
                 assert.ok(contrast(palettes[theme][foreground], palettes[theme][surface]) >= 4.5,
@@ -67,8 +64,8 @@ function extract(name) {
 }
 
 test('theme presentation preserves legacy state, caches the visual alias and tolerates unavailable storage', () => {
-    for (const [saved, visual, name] of [['claro', 'claro', 'Clean'], ['escuro', 'escuro', 'Midnight'],
-        ['rosa', 'rosa', 'Peônia'], ['pangolim', 'pangolim', 'Pangolim'], ['floresta', 'claro', 'Clean'], [null, 'claro', 'Clean']]) {
+    for (const [saved, visual, name] of [['claro', 'claro', 'Aurora'], ['escuro', 'escuro', 'Midnight'],
+        ['rosa', 'rosa', 'Peônia'], ['pangolim', 'pangolim', 'Pangolim'], ['floresta', 'claro', 'Aurora'], [null, 'claro', 'Aurora']]) {
         const root = { dataset: {}, classList: { contains: () => false } };
         const button = { replaceChildren(...children) { this.children = children; }, setAttribute() {} };
         const state = { tema: saved, meses: { '2026-10': { despesas: [{ valor: 42 }] } } };
