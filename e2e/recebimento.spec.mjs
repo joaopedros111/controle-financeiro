@@ -28,7 +28,9 @@ async function totals(page) {
 
 test('received and pending entries retain status across editing, reload, deletion and undo without changing totals', async ({ context, page }) => {
     await prepare(context, page);
+    await expect(page.locator('#lista-receitas')).toHaveCSS('border-top-width', '0px');
     const received = await create(page, 'Synthetic received', 100, true);
+    await expect(received).toHaveCSS('border-bottom-width', '0px');
     const pending = await create(page, 'Synthetic pending', 50);
     await expect(received.locator('.recebido-receita')).toBeChecked();
     await expect(received.locator('.situacao')).toHaveText('Recebido');
@@ -72,9 +74,18 @@ test('received and pending entries retain status across editing, reload, deletio
     await expect(edited).toHaveCount(0);
     await page.locator('#aviso .aviso-acao').click();
     await expect(edited.locator('.recebido-receita')).toBeChecked();
+    await edited.locator('.remover-receita').click();
+    await expect(edited).toHaveCount(0);
+    await pending.locator('.remover-receita').click();
+    await expect(page.locator('.receita')).toHaveCount(0);
+    await expect(page.locator('#lista-receitas')).toHaveCSS('border-top-width', '0px');
+    await expect(page.locator('#vazio-receitas')).toBeVisible();
+    await expect(page.locator('#total-receitas-lista')).toContainText('0,00');
+    await expect(page.locator('#titulo-receitas')).toBeVisible();
+    await expect(page.locator('#adicionar-receita')).toBeVisible();
 });
 
-test('income boxes use the expense grid and keep salary aligned at mobile and desktop widths', async ({ context, page }) => {
+test('income rows share one expense-style box and keep salary aligned at mobile and desktop widths', async ({ context, page }) => {
     await prepare(context, page);
     await create(page, 'Synthetic income with an intentionally long name for the row', 999999999.99);
     await create(page, 'Synthetic recurring income with an intentionally long name for the row', 999999999.99, false, true);
@@ -104,8 +115,10 @@ test('income boxes use the expense grid and keep salary aligned at mobile and de
                 const badge = row.querySelector('.marca-recorrente').getBoundingClientRect();
                 const status = row.querySelector('.situacao').getBoundingClientRect();
                 const amount = row.querySelector('.valor-receita').getBoundingClientRect();
-                const box = getComputedStyle(row);
+                const group = document.querySelector('#lista-receitas');
+                const box = getComputedStyle(group);
                 const expenseBox = getComputedStyle(document.querySelector('.despesa-grupo'));
+                const expenseItems = getComputedStyle(document.querySelector('.despesa-grupo-itens'));
                 const reference = document.querySelector('.despesa');
                 const selectors = ['input', '.despesa-nome', '.situacao', '.valor-despesa', '.editar-despesa', '.remover-despesa'];
                 return {
@@ -132,8 +145,19 @@ test('income boxes use the expense grid and keep salary aligned at mobile and de
                         || row.querySelector('.nome-receita').scrollWidth <= row.querySelector('.nome-receita').clientWidth + 1,
                     statusBesideAmount: Math.abs((status.top + status.bottom) - (amount.top + amount.bottom)) < 2
                         && Math.abs(amount.left - status.right - parseFloat(getComputedStyle(row).columnGap)) < 2,
-                    individualBox: box.borderTopWidth === '1px' && box.borderBottomWidth === '1px'
+                    singleBox: box.borderTopWidth === '1px' && box.borderBottomWidth === '1px'
                         && box.borderRadius === expenseBox.borderRadius && box.backgroundColor === expenseBox.backgroundColor,
+                    plainRows: rows.every(row => {
+                        const style = getComputedStyle(row);
+                        return row.parentElement === group && style.borderTopWidth === '0px'
+                            && style.borderLeftWidth === '0px' && style.borderRightWidth === '0px'
+                            && style.borderRadius === '0px' && style.backgroundColor === 'rgba(0, 0, 0, 0)';
+                    }),
+                    dividers: rows.every((row, index) => getComputedStyle(row).borderBottomWidth
+                        === (index === rows.length - 1 ? '0px' : '1px')),
+                    contiguous: box.rowGap === '0px' && rows.every((row, index) => !index
+                        || Math.abs(row.getBoundingClientRect().top - rows[index - 1].getBoundingClientRect().bottom) < 1),
+                    sameInset: box.paddingLeft === expenseItems.paddingLeft && box.paddingRight === expenseItems.paddingRight,
                     overflow: document.documentElement.scrollWidth > innerWidth,
                     matchingButtons: incomeButton.width === expenseButton.width && incomeButton.height === expenseButton.height
                 };
@@ -141,7 +165,8 @@ test('income boxes use the expense grid and keep salary aligned at mobile and de
             expect(layout, `${width}px / ${language}`).toEqual({
                 order: ['recebido-receita', 'receita-identificacao', received ? 'situacao situacao-paga' : 'situacao situacao-pendente', 'valor-receita', 'editar-receita', 'remover-receita'],
                 overlap: false, sameGridPositions: true, aligned: true, visibleNames: true, labelsContained: true, inlineRecurrence: true,
-                salaryUnclipped: true, statusBesideAmount: true, individualBox: true, overflow: false, matchingButtons: true
+                salaryUnclipped: true, statusBesideAmount: true, singleBox: true, plainRows: true,
+                dividers: true, contiguous: true, sameInset: true, overflow: false, matchingButtons: true
             });
             if (width === 375 && language === 'pt-BR') {
                 await page.screenshot({ path: `${process.env.LOCAL_TEST_OUTPUT}/entradas-375.png`, fullPage: true });

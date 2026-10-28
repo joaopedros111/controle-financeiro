@@ -767,14 +767,15 @@ body .bloco-topo { gap: var(--densidade-cabecalho-gap, 12px); }
 body .bloco > .bloco-topo:not(.grafico-topo) {
     margin-bottom: var(--densidade-cabecalho-margem, 14px);
 }
-#lista-despesas, #lista-receitas { gap: var(--densidade-lista-gap, 12px); }
+#lista-despesas { gap: var(--densidade-lista-gap, 12px); }
+#lista-receitas:not(:empty) { gap: 0; }
 body .receita,
 body .despesa {
     gap: var(--densidade-lancamento-gap, 10px);
     padding-top: var(--densidade-lancamento-vertical, 20px);
     padding-bottom: var(--densidade-lancamento-vertical, 20px);
 }
-.despesa-grupo-itens {
+.despesa-grupo-itens, #lista-receitas:not(:empty) {
     padding-right: var(--densidade-itens-despesa-horizontal, 12px);
     padding-left: var(--densidade-itens-despesa-horizontal, 12px);
 }
@@ -906,7 +907,7 @@ body #dialogo-ajustes .ajuste-controle { gap: var(--densidade-opcoes-controle-ga
         gap: 12px;
     }
 
-    .despesa-grupo, .receita {
+    .despesa-grupo, #lista-receitas:not(:empty) {
         min-width: 0;
         overflow: hidden;
         border: 1px solid var(--borda);
@@ -960,7 +961,7 @@ body #dialogo-ajustes .ajuste-controle { gap: var(--densidade-opcoes-controle-ga
         font-weight: 700;
     }
 
-    .despesa-grupo-itens {
+    .despesa-grupo-itens, #lista-receitas:not(:empty) {
         padding: 0 12px;
     }
 
@@ -971,7 +972,7 @@ body #dialogo-ajustes .ajuste-controle { gap: var(--densidade-opcoes-controle-ga
         padding: 12px 0;
         border-bottom: 1px solid var(--borda);
 
-        &.despesa:last-child {
+        &:last-child {
             border-bottom: 0;
         }
     }
@@ -2103,10 +2104,11 @@ body .panorama-graficos .grafico-categoria-item {
     }
 }
 
-/* Entradas: preservar caixas e controles existentes. */
+/* Entradas: linhas no mesmo grupo, preservando a grade e os controles. */
 .receita {
     --nome-lancamento-minimo: 3.5rem;
-    padding-inline: 12px;
+    min-width: 0;
+    padding-inline: 0;
 }
 .receita > .recebido-receita {
     width: 22px;
@@ -2118,9 +2120,6 @@ body .panorama-graficos .grafico-categoria-item {
     max-width: 100%;
 }
 @media (max-width: 600px) {
-    .receita {
-        padding-inline: 8px;
-    }
     .receita > .recebido-receita { width: 20px; height: 20px; }
     .despesa > .valor-despesa,
     .receita > .valor-receita {
