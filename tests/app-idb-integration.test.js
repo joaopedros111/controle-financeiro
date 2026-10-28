@@ -7,7 +7,7 @@ import { validarBackup, validarTotaisMonetarios } from '../finance-core.js';
 
 const app = await readFile(new URL('../app.js', import.meta.url), 'utf8');
 const save = app.slice(app.indexOf('function salvar()'), app.indexOf('// O modo experimental'));
-assert.match(save, /idbServico\.aplicarEdicao/, 'Testar a função real de gravação');
+assert.match(save, /service\.aplicarEdicao/, 'Testar a função real de gravação com o serviço capturado');
 const clone = (x) => structuredClone(x);
 const state = (...rs) => ({ versao: 3, tema: null, categorias: ['Outros'], orcamentos: { padrao: {}, meses: {} }, meses: { '2026-10': { receitas: rs, despesas: [] } } });
 const item = (id, valor = 10) => ({ id, nome: `Synthetic ${id}`, valor });
@@ -34,7 +34,8 @@ function tab(service, initial, messages) {
     let writes = 0;
     const context = vm.createContext({
         estado: clone(initial), idbBase: clone(initial), idbPendente: Promise.resolve(),
-        idbServico: service, idbBloqueado: false, IDB_HOMOLOGACAO: true,
+        idbServico: service, idbBanco: service.db, automaticController: null,
+        capturarSessaoPersistencia: () => () => true, idbBloqueado: false, IDB_HOMOLOGACAO: true,
         recuperacaoFinanceira: { protegido: false },
         chaveEstadoAtual: 'controleFinanceiro:v3', CHAVE_ESTADO: 'controleFinanceiro:v3',
         validarTotaisMonetarios, structuredClone, JSON, console,

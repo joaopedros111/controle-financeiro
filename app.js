@@ -613,7 +613,12 @@ let atualizacaoObrigatoria = false;
 let idbPendente = Promise.resolve();
 // The local-only application has no Firebase session. When synchronization is
 // available its closure also guards same-UID session changes during persistence.
-let capturarSessaoPersistencia = () => () => true;
+let capturarSessaoPersistencia = () => {
+    const controller = automaticController, session = controller?.session ?? null;
+    const context = controller?.sessionContext;
+    return () => automaticController === controller && (controller?.session ?? null) === session
+        && controller?.sessionContext === context;
+};
 
 
 
@@ -651,10 +656,15 @@ function salvar() {
     const expectedGeneration = typeof idbGeneration === 'undefined' ? null : idbGeneration;
     if (!validarTotaisMonetarios(proposta)) { avisar("Os totais mensais excedem o limite monetário seguro."); return; }
     const key = chaveEstadoAtual, uid = key === CHAVE_ESTADO ? (IDB_HOMOLOGACAO ? "local" : "@local") : key.split(":").at(-1);
+    const controller = automaticController, session = controller?.session ?? null;
+    const sessionCurrent = capturarSessaoPersistencia();
+    const current = () => sessionCurrent() && key === chaveEstadoAtual;
+    const service = idbServico, db = idbBanco;
     idbBase = structuredClone(proposta);
     idbPendente = idbPendente.then(async () => {
-        if (idbBloqueado) throw new Error("Persistencia bloqueada");
-        const result = await idbServico.aplicarEdicao(uid, base, proposta, (changes, queue) =>
+        // Account transitions block the new UI, not the old owner's durable save.
+        if (current() && idbBloqueado) throw new Error("Persistencia bloqueada");
+        const result = await service.aplicarEdicao(uid, base, proposta, (changes, queue) =>
             key === CHAVE_ESTADO ? [] : changes.map(value => {
                 if (!validSyncIdentity(value.id)) throw new Error("IDs locais incompat?veis");
                 const entityKey = recordEntityKey(value);
@@ -668,7 +678,8 @@ function salvar() {
                     queue.automaticSettingsValue = financeSettings(proposta);
                 }
             }, () => true, expectedGeneration);
-        if (key === chaveEstadoAtual && JSON.stringify(estadoParaSalvar()) === JSON.stringify(proposta)) {
+        if (!current()) return;
+        if (JSON.stringify(estadoParaSalvar()) === JSON.stringify(proposta)) {
             estado = normalizarEstado(result.estado.dados); idbBase = structuredClone(estadoParaSalvar()); renderTudo(false);
         }
         atualizarDiagnostico();
@@ -676,28 +687,31 @@ function salvar() {
     }).catch(async error => {
         if (['sync/generation-changed', 'sync/restore-in-progress', 'sync/upgrade-required'].includes(error?.code)) {
             try {
-                const queue = await idbServico.preservarEdicaoRejeitada(uid, base, proposta, error.code);
-                const durable = await idbBanco.ler(`estado:${uid}`);
-                if (key === chaveEstadoAtual) {
+                const queue = await service.preservarEdicaoRejeitada(uid, base, proposta, error.code);
+                const durable = await db.ler(`estado:${uid}`);
+                if (current()) {
                     estado = normalizarEstado(durable.dados); idbBase = structuredClone(estadoParaSalvar()); idbGeneration = queue.generation || 'legacy';
                     renderAvisosFinanceiros({ recoveryNotices: queue.recoveryNotices, compatibilityBlocked: queue.compatibilityBlocked });
                     renderTudo(false);
                     avisar('A edição não foi aplicada porque ocorreu uma restauração ou incompatibilidade. A cópia está disponível em Baixar histórico.');
+                    controller?.localChanged();
                 }
-                automaticController?.localChanged(); return;
+                return;
             } catch (recoveryError) { error = recoveryError; }
         }
-        if (error?.name === 'ConflitoEdicao' && typeof automaticController !== 'undefined' && automaticController?.session?.uid === uid) {
+        if (error?.name === 'ConflitoEdicao' && session?.uid === uid) {
             try {
-                await idbServico.alterarFila(uid, queue => captureRejectedLocalEdit(queue, base, proposta));
-                const durable = await idbBanco.ler(`estado:${uid}`);
-                if (key === chaveEstadoAtual) { estado = normalizarEstado(durable.dados); idbBase = structuredClone(estadoParaSalvar()); renderTudo(false); }
+                await service.alterarFila(uid, queue => captureRejectedLocalEdit(queue, base, proposta));
+                const durable = await db.ler(`estado:${uid}`);
+                if (!current()) return;
+                estado = normalizarEstado(durable.dados); idbBase = structuredClone(estadoParaSalvar()); renderTudo(false);
                 avisar('Alteração concorrente preservada no histórico. Sincronizando automaticamente.');
-                automaticController.localChanged(); return;
+                controller.localChanged(); return;
             } catch { /* Keep the original persistence failure visible below. */ }
         }
+        if (!current()) return;
         idbBloqueado = true;
-        if (typeof automaticController !== 'undefined') automaticController?.report(error);
+        controller?.report(error, session);
         console.warn("Persistencia transacional interrompida.", error?.name);
         avisar("Outra aba alterou os mesmos dados ou houve falha na gravação. Nenhuma sobrescrita foi aplicada. Recarregue para revisar.");
     });
@@ -4863,11 +4877,12 @@ if (!IDB_HOMOLOGACAO && $("entrar-google") && $("sair-google") && firebaseConfig
                     $("ultima-sincronizacao").textContent = ''; delete $("ultima-sincronizacao").dataset.i18nDate;
                 },
                 onAccount: async user => {
+                    const sessionCurrent = capturarSessaoPersistencia();
                     idbBloqueado = false;
                     if (!user) {
                         idbGeneration = 'legacy';
                         const local = await idbBanco.ler('estado:@local');
-                        if (automaticController.session) return;
+                        if (!sessionCurrent()) return;
                         estado = normalizarEstado(local?.dados); idbBase = structuredClone(estadoParaSalvar()); renderTudo(false);
                         showStatus('Somente neste dispositivo.');
                         concluirCarregamentoConta();
@@ -4881,7 +4896,6 @@ if (!IDB_HOMOLOGACAO && $("entrar-google") && $("sair-google") && firebaseConfig
                 },
                 onStatus: showStatus
             });
-            capturarSessaoPersistencia = () => { const current = automaticController.session; return () => automaticController.session === current; };
             await automaticController.start();
             concluirCarregamentoConta();
         })().catch(error => {

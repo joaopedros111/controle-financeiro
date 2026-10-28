@@ -26,7 +26,8 @@ export class AutomaticFinanceSync {
     constructor({ client, db, service, readLegacy, onAccount, onState, onStatus, onTransition = () => {}, waitLocal = async () => {}, storageBlocked = () => false,
         connectivity = globalThis, delayMs = 200, maxDelayMs = 30000, requiredProtocol = 1 }) {
         Object.assign(this, { client, db, service, readLegacy, onAccount, onState, onStatus, onTransition, waitLocal, storageBlocked, connectivity, delayMs, maxDelayMs, requiredProtocol });
-        this.session = null; this.online = connectivity.navigator?.onLine !== false;
+        // A distinct context also fences anonymous -> login -> anonymous transitions.
+        this.session = null; this.sessionContext = {}; this.online = connectivity.navigator?.onLine !== false;
     }
     async start() {
         let settleInitial;
@@ -51,13 +52,18 @@ export class AutomaticFinanceSync {
         this.closeSession(); this.unAuth?.();
         this.connectivity.removeEventListener?.('online', this.reconnect); this.connectivity.removeEventListener?.('offline', this.offline);
     }
-    closeSession() { const s = this.session; this.session = null; if (s) { clearTimeout(s.timer); s.stops.forEach(stop => stop()); } }
+    closeSession() {
+        const s = this.session;
+        this.session = null; this.sessionContext = {};
+        if (s) { clearTimeout(s.timer); s.stops.forEach(stop => stop()); }
+    }
     current(s) { return this.session === s; }
     status(message, failed = false, confirmedAt = null) { this.onStatus(message, failed, confirmedAt); }
     async useAccount(user) {
         this.closeSession();
+        const context = this.sessionContext;
         this.onTransition(user);
-        if (!user) { await this.waitLocal(); if (!this.session) await this.onAccount(null); return; }
+        if (!user) { await this.waitLocal(); if (this.sessionContext === context) await this.onAccount(null); return; }
         const s = { uid: user.uid, user, stops: [], attempt: 0, ready: false, permanent: false };
         this.session = s; this.status('Sincronizando');
         await this.waitLocal(); if (!this.current(s)) return;
@@ -65,6 +71,7 @@ export class AutomaticFinanceSync {
         if (!['valido', 'ausente'].includes(saved.estado)) throw error('sync/invalid-local', 'Dados locais precisam de recuperação.');
         const legacyQueue = readSyncMetadata(globalThis.localStorage, s.uid);
         const existing = await this.db.ler(`estado:${s.uid}`);
+        if (!this.current(s)) return;
         const initialized = await this.service.inicializar(s.uid, normalizarEstado(saved.estado === 'valido' ? saved.valor : null),
             { outbox: [], conflicts: [], lastConfirmed: null, settingsPristine: saved.estado === 'ausente', ...legacyQueue });
         if (!this.current(s)) return;
@@ -72,6 +79,7 @@ export class AutomaticFinanceSync {
         await this.service.alterarFila(s.uid, q => { if (!this.current(s)) throw error('persistence/cancelled', 'Sessão alterada.');
             q.automaticHasLocalSettings ??= saved.estado === 'valido' || !!existing;
             return q; });
+        if (!this.current(s)) return;
         s.generation = initialized.fila.generation || 'legacy';
         this.emitState(s, initialized.estado, initialized.fila);
         if (this.requiredProtocol > 1 && (!this.client.generationSnapshot || !this.client.generationMarker || this.client.protocolVersion < this.requiredProtocol || !this.client.protocolVersion)) {
@@ -125,8 +133,11 @@ export class AutomaticFinanceSync {
         finally { s.running = false; if (this.current(s) && s.again && !s.permanent) this.request(); }
     }
     async snapshot(s) {
+        if (!this.current(s)) throw error('persistence/cancelled', 'Sessão alterada.');
         if (!this.client.generationSnapshot && this.client.generationMarker && await this.client.generationMarker(s.uid)) throw error('sync/upgrade-required', upgradeMessage);
+        if (!this.current(s)) throw error('persistence/cancelled', 'Sessão alterada.');
         const data = this.client.generationSnapshot ? await this.client.generationSnapshot(s.uid) : null;
+        if (!this.current(s)) throw error('persistence/cancelled', 'Sessão alterada.');
         if (data?.protocol > (this.client.protocolVersion || 2)) throw error('sync/upgrade-required', upgradeMessage);
         const [records, settings, conflicts] = data ? [data.records, data.settings, data.conflicts]
             : await Promise.all([this.client.list(s.uid), this.client.getSettings(s.uid), this.client.listConflicts(s.uid)]);
@@ -136,9 +147,12 @@ export class AutomaticFinanceSync {
         return { records, settings, conflicts, generation: data?.generation || 'legacy' };
     }
     async reconcile(s, snapshot) {
+        if (!this.current(s)) return;
         const known = await this.service.lerFila(s.uid);
+        if (!this.current(s)) return;
         if (this.client.generationMarker) {
             const marker = await this.client.generationMarker(s.uid);
+            if (!this.current(s)) return;
             if ((marker?.activeGeneration || 'legacy') !== snapshot.generation) throw error('aborted', 'Snapshot de geração anterior descartado.');
         }
         const recoveryKey = known.compatibilityBlocked
@@ -184,7 +198,9 @@ export class AutomaticFinanceSync {
         return changed.get(`fila:${s.uid}`);
     }
     async cycle(s) {
+        if (!this.current(s)) return;
         const initialQueue = await this.service.lerFila(s.uid);
+        if (!this.current(s)) return;
         if (initialQueue.compatibilityBlocked) {
             // Only a successful, supported server read can release the durable gate.
             const compatible = await this.snapshot(s);
@@ -192,15 +208,18 @@ export class AutomaticFinanceSync {
             if (!initialQueue.restoreJob) await this.reconcile(s, compatible);
             else await this.service.alterarFila(s.uid, queue => { if (!this.current(s)) throw error('persistence/cancelled', 'Sessão alterada.'); delete queue.compatibilityBlocked; return queue; });
         }
+        if (!this.current(s)) return;
         if (initialQueue.restoreJob) await this.resumeRestore(s, initialQueue.restoreJob);
         if (!this.current(s)) return;
         const localVersion = s.localVersion || 0;
         let snapshot = await this.snapshot(s);
+        if (!this.current(s)) return;
         await this.reconcile(s, snapshot); if (!this.current(s)) return;
         await this.service.enviarFila(s.uid, (uid, op) => this.current(s) ? this.client.commit(uid, op) : Promise.reject(error('persistence/cancelled', 'Sessão alterada.')),
             () => this.current(s), () => this.current(s), snapshot.records);
         if (!this.current(s)) return;
         snapshot = await this.snapshot(s);
+        if (!this.current(s)) return;
         let queue = await this.reconcile(s, snapshot); if (!this.current(s)) return;
         const stored = await this.db.ler(`estado:${s.uid}`); if (!this.current(s)) return;
         const settings = financeSettings(stored.dados);
@@ -214,25 +233,32 @@ export class AutomaticFinanceSync {
                 // A new local settings edit must survive this old ACK.
                 if (settingsEquivalent(q.automaticSettingsValue || settings, settings)) q.automaticSettingsDirty = false;
                 q.settingsBaseline = functionalSettings(settings); q.settingsRevision = result.revision; return q; });
-            snapshot = await this.snapshot(s); queue = await this.reconcile(s, snapshot);
+            snapshot = await this.snapshot(s); if (!this.current(s)) return;
+            queue = await this.reconcile(s, snapshot); if (!this.current(s)) return;
         }
         for (const item of queue.automaticHistory || []) if (!item.uploaded) {
             if (!this.current(s)) return;
             await this.client.saveAutomaticHistory(s.uid, item, snapshot.generation);
+            if (!this.current(s)) return;
             await this.service.alterarFila(s.uid, q => { if (!this.current(s)) throw error('persistence/cancelled', 'Sessão alterada.');
                 const target = q.automaticHistory?.find(row => row.id === item.id); if (target) target.uploaded = true; return q; });
         }
         queue = await this.service.lerFila(s.uid);
+        if (!this.current(s)) return;
         if (queue.outbox.length) { s.again = true; return; }
         for (const resolution of queue.automaticResolutions || []) if (!resolution.confirmed) {
             if (!this.current(s)) return;
             if (!await this.client.resolveConflict(s.uid, resolution.id, resolution.choice, snapshot.generation)) throw error('sync/invalid-ack', 'Histórico sem confirmação remota.');
+            if (!this.current(s)) return;
             await this.service.alterarFila(s.uid, q => { if (!this.current(s)) throw error('persistence/cancelled', 'Sessão alterada.');
                 const item = q.automaticResolutions?.find(row => row.id === resolution.id); if (item) item.confirmed = true; return q; });
         }
         if (!this.current(s)) return;
         const final = await this.db.ler(`estado:${s.uid}`);
-        if (pending(await this.service.lerFila(s.uid))) { s.again = true; return; }
+        if (!this.current(s)) return;
+        const finalQueue = await this.service.lerFila(s.uid);
+        if (!this.current(s)) return;
+        if (pending(finalQueue)) { s.again = true; return; }
         if (!snapshot.settings || !settingsEquivalent(financeSettings(final.dados), snapshot.settings)) { s.again = true; return; }
         const local = new Map(registrosFinanceiros(final.dados).map(item => [recordEntityKey(item), item]));
         const remoteKeys = new Set(snapshot.records.map(recordEntityKey));
@@ -251,6 +277,7 @@ export class AutomaticFinanceSync {
         if (!this.online) { this.status('Offline'); return; }
         if (!s.ready) this.listen(s);
         const notices = (await this.service.lerFila(s.uid)).recoveryNotices || [];
+        if (!this.current(s)) return;
         this.status(notices.some(item => !item.acknowledged) ? recoveryStatus : 'Sincronizado', false, confirmation.fila.lastConfirmed);
     }
     listen(s) {

@@ -29,7 +29,8 @@ function setup(initial=state()) {
     const ready=service.inicializar('alice',initial,{outbox:[],conflicts:[],lastConfirmed:null});
     function tab() {
         const events=[];
-        const c=vm.createContext({estado:clone(initial),idbBase:clone(initial),idbPendente:Promise.resolve(), idbServico:service,idbBloqueado:false,
+        const c=vm.createContext({estado:clone(initial),idbBase:clone(initial),idbPendente:Promise.resolve(), idbServico:service,idbBanco:db,idbBloqueado:false,
+            automaticController:null,capturarSessaoPersistencia:()=>()=>true,
             recuperacaoFinanceira:{protegido:false}, chaveEstadoAtual:'controleFinanceiro:v3:uid:alice',CHAVE_ESTADO:'controleFinanceiro:v3',
             validarTotaisMonetarios, recordEntityKey,operationId,validSyncIdentity,structuredClone,console,
             normalizarEstado:clone,renderTudo(){},atualizarDiagnostico(){},avisar(){},
