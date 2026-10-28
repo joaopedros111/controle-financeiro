@@ -736,7 +736,9 @@ async function persistirEstadoFinanceiro(key, next, localEdit = false, restored 
     const base = structuredClone(idbBase);
     const expectedGeneration = typeof idbGeneration === 'undefined' ? null : idbGeneration;
     const sessionCurrent = capturarSessaoPersistencia();
-    const canPersist = () => sessionCurrent() && key === chaveEstadoAtual && !idbBloqueado;
+    const localRestoreState = restored && key === CHAVE_ESTADO ? estado : null;
+    const canPersist = () => sessionCurrent() && key === chaveEstadoAtual && !idbBloqueado
+        && (!localRestoreState || estado === localRestoreState);
     try {
         await idbPendente;
         if (!canPersist()) return false;
@@ -751,6 +753,7 @@ async function persistirEstadoFinanceiro(key, next, localEdit = false, restored 
                 docs.set(queueKey, { outbox: [], conflicts: [], remoteRevisions: {}, recoveryKeys: [...(queue.recoveryKeys || []), recoveryKey] });
                 return docs;
             });
+            if (!canPersist()) return false;
             idbBase = structuredClone(restoredDocs.get(stateKey).dados); idbGeneration = 'legacy';
             return true;
         }
@@ -3176,11 +3179,31 @@ function importarBackup(arquivo) {
 
 
 
+    const sessaoBackup = automaticController?.session ?? null;
+    const controladorBackup = automaticController;
+    const chaveBackup = chaveEstadoAtual;
+    const estadoLocalBackup = sessaoBackup ? null : estado;
+    let sessaoBackupEsperada = sessaoBackup;
+    const sessaoBackupValida = () =>
+        automaticController === controladorBackup &&
+        chaveEstadoAtual === chaveBackup &&
+        (!estadoLocalBackup || estado === estadoLocalBackup) &&
+        (controladorBackup?.session ?? null) === sessaoBackupEsperada;
+    const confirmarBackup = () => {
+        if (!sessaoBackupValida()) return false;
+        const confirmado = confirm(textoTraduzido("Restaurar o backup? Todos os dados atuais serão substituídos."));
+        return confirmado && sessaoBackupValida();
+    };
+
     const leitor = new FileReader();
 
 
 
     leitor.onload = async () => {
+        if (!sessaoBackupValida()) {
+            avisar("A conta mudou durante a leitura do backup. Importe novamente.");
+            return;
+        }
 
 
 
@@ -3202,23 +3225,40 @@ function importarBackup(arquivo) {
 
 
 
-        if (automaticController?.session) {
+        if (!sessaoBackupValida()) {
+            avisar("A conta mudou durante a importação. Operação cancelada.");
+            return;
+        }
+        if (sessaoBackup) {
             try {
-                const imported = await automaticController.importBackup(bruto, () => confirm(textoTraduzido("Restaurar o backup? Todos os dados atuais serão substituídos.")));
+                const imported = await controladorBackup.importBackup(bruto, confirmarBackup, ({ controller, previousSession, session }) => {
+                    if (automaticController !== controladorBackup || controller !== controladorBackup ||
+                        previousSession !== sessaoBackup || sessaoBackupEsperada !== sessaoBackup ||
+                        !session || session === sessaoBackup || controller.session !== session || chaveEstadoAtual !== chaveBackup) {
+                        throw Object.assign(new Error("Sessão alterada durante a restauração."), { code: 'persistence/cancelled' });
+                    }
+                    sessaoBackupEsperada = session;
+                });
+                if (!sessaoBackupValida()) return;
                 if (!imported) return;
                 estado = normalizarEstado(imported); idbBase = structuredClone(estadoParaSalvar());
                 ultimaRemocao = null; renderTudo(false);
                 registrarOperacaoDados("Backup restaurado em " + new Date().toLocaleString("pt-BR") + ".");
                 avisar("Backup salvo localmente. Sincronizando automaticamente.");
-            } catch (error) { avisar(error.message || "Falha ao persistir; dados anteriores preservados."); }
+            } catch (error) {
+                if (sessaoBackupValida()) avisar(error.message || "Falha ao persistir; dados anteriores preservados.");
+                else if (error.code === 'persistence/cancelled') avisar("Sessão alterada durante a restauração.");
+            }
             return;
         }
         const resultado = await recuperacaoFinanceira.restaurar({
-            chave: chaveEstadoAtual, backup: bruto, validar: validarBackup,
+            chave: chaveBackup, backup: bruto, validar: validarBackup,
             normalizar: backup => { const novo = normalizarEstado(backup); novo.tema ||= estado.tema; return novo; },
-            confirmar: () => confirm(textoTraduzido("Restaurar o backup? Todos os dados atuais serão substituídos.")),
-            persistir: (key, next) => persistirEstadoFinanceiro(key, next, false, true)
+            confirmar: confirmarBackup,
+            persistir: (key, next) => sessaoBackupValida() && key === chaveBackup
+                ? persistirEstadoFinanceiro(key, next, false, true) : false
         });
+        if (!sessaoBackupValida()) return;
         if (resultado.estado === "invalido") { avisar("Arquivo inválido."); return; }
         if (resultado.estado === "cancelado") return;
         if (!resultado.persistido) { avisar("Falha ao persistir; dados anteriores preservados."); return; }
@@ -3239,7 +3279,7 @@ function importarBackup(arquivo) {
 
 
 
-    leitor.onerror = () => avisar("Não foi possível ler o arquivo.");
+    leitor.onerror = () => { if (sessaoBackupValida()) avisar("Não foi possível ler o arquivo."); };
 
 
 

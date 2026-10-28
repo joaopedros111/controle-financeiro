@@ -286,31 +286,48 @@ export class AutomaticFinanceSync {
         });
         this.emitState(s, result.get(`estado:${s.uid}`), result.get(`fila:${s.uid}`));
     }
-    async importBackup(raw, confirm = () => false) {
+    async importBackup(raw, confirm = () => false, onSessionRenewed = () => {}) {
         let s = this.session;
         if (!s) throw error('sync/sign-in-required', 'Entre com Google antes de importar para a conta.');
-        if ((await this.service.lerFila(s.uid)).compatibilityBlocked) throw error('sync/upgrade-required', upgradeMessage);
+        const previousSession = s;
+        const assertCurrent = () => {
+            if (!this.current(s)) throw error('persistence/cancelled', 'Sessão alterada durante a restauração.');
+        };
+        assertCurrent();
+        const initialQueue = await this.service.lerFila(s.uid);
+        assertCurrent();
+        if (initialQueue.compatibilityBlocked) throw error('sync/upgrade-required', upgradeMessage);
         if (!this.client.publishRestore) throw error('sync/upgrade-required', 'Atualize o cliente antes de restaurar.');
-        if ((await this.service.lerFila(s.uid)).compatibilityBlocked) throw error('sync/upgrade-required', upgradeMessage);
+        const queueBeforeRead = await this.service.lerFila(s.uid);
+        assertCurrent();
+        if (queueBeforeRead.compatibilityBlocked) throw error('sync/upgrade-required', upgradeMessage);
         const previous = await this.db.ler(`estado:${s.uid}`);
+        assertCurrent();
         const restored = prepareGenerationRestore(raw, previous?.dados?.tema);
         if (!validarTotaisMonetarios(restored)) throw error('sync/invalid-backup', 'Backup excede os limites financeiros.');
-        if (!confirm()) return null;
-        await this.waitLocal(); if (!this.current(s)) throw error('persistence/cancelled', 'Sessão alterada.');
+        assertCurrent();
+        const confirmed = confirm();
+        assertCurrent();
+        if (!confirmed) return null;
+        await this.waitLocal();
+        assertCurrent();
         let observedGeneration = null;
         if (this.online && this.client.generationMarker) {
             try { observedGeneration = (await this.client.generationMarker(s.uid))?.activeGeneration || 'legacy'; }
-            catch (cause) { if (!transientSyncError(cause)) throw cause; }
+            catch (cause) { assertCurrent(); if (!transientSyncError(cause)) throw cause; }
         }
-        if (!this.current(s)) throw error('persistence/cancelled', 'Sessão alterada.');
+        assertCurrent();
         // Invalidate old in-flight callbacks without changing Auth or the account.
         this.closeSession();
         s = { uid: s.uid, user: s.user, stops: [], attempt: 0, ready: false, permanent: false };
         this.session = s;
+        // Synchronous handoff of this operation's exact objects, never a UID-based permission.
+        onSessionRenewed(Object.freeze({ controller: this, previousSession, session: s }));
+        assertCurrent();
         const generation = globalThis.crypto.randomUUID();
         const recoveryKey = `restore-recovery:${s.uid}:${generation}`;
         const result = await this.db.alterarDocumentos([`estado:${s.uid}`, `fila:${s.uid}`, recoveryKey], docs => {
-            if (!this.current(s)) throw error('persistence/cancelled', 'Sessão alterada.');
+            assertCurrent();
             const stored = docs.get(`estado:${s.uid}`), queue = docs.get(`fila:${s.uid}`), before = stored.dados;
             if (queue.compatibilityBlocked) throw error('sync/upgrade-required', upgradeMessage);
             docs.set(recoveryKey, { state: structuredClone(before), queue: structuredClone(queue), reason: 'explicit-restore' });
@@ -322,7 +339,11 @@ export class AutomaticFinanceSync {
             stored.dados = restored; stored.revisao++;
             docs.set(`estado:${s.uid}`, stored); docs.set(`fila:${s.uid}`, nextQueue); return docs;
         }).catch(cause => { if (this.current(s)) this.localChanged(); throw cause; });
-        if (this.current(s)) { this.emitState(s, result.get(`estado:${s.uid}`), result.get(`fila:${s.uid}`)); this.localChanged(); }
+        assertCurrent();
+        this.emitState(s, result.get(`estado:${s.uid}`), result.get(`fila:${s.uid}`));
+        assertCurrent();
+        this.localChanged();
+        assertCurrent();
         return result.get(`estado:${s.uid}`).dados;
     }
 }
