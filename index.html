@@ -8,7 +8,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 
     <meta name="color-scheme" content="light dark">
-    <meta name="theme-color" content="#2563eb">
+    <meta name="theme-color" content="#ffffff">
     <meta name="description" content="Controle suas entradas e despesas por mês, categorias, pagamentos e parcelas.">
     <title>Controle Financeiro</title>
 
@@ -28,7 +28,7 @@
         try {
             const temaInicial = localStorage.getItem("controleFinanceiro:tema-inicial");
             if (["claro", "escuro", "rosa", "pangolim", "floresta"].includes(temaInicial)) {
-                document.documentElement.dataset.tema = temaInicial;
+                document.documentElement.dataset.tema = temaInicial === "floresta" ? "claro" : temaInicial;
             }
         } catch { /* O bootstrap assíncrono continua mesmo sem localStorage. */ }
     </script>
@@ -231,8 +231,8 @@
         <section class="ajustes-secao" aria-labelledby="titulo-aparencia">
             <h3 id="titulo-aparencia">Aparência e visualização</h3>
             <div class="ajuste-linha">
-                <div><strong>Tema</strong><span>Claro, Escuro, Rosa, Pangolin ou Selva</span></div>
-                <button id="alternar-tema" class="btn btn-secundario tema-botao" type="button" aria-label="Tema atual: Claro. Mudar para Escuro." title="Tema atual: Claro. Mudar para Escuro.">☀️ <span>Claro</span></button>
+                <div><strong>Tema</strong><span>Clean, Midnight, Peônia ou Pangolim</span></div>
+                <button id="alternar-tema" class="btn btn-secundario tema-botao" type="button" aria-label="Tema atual: Clean. Mudar para Midnight." title="Tema atual: Clean. Mudar para Midnight.">☀️ <span>Clean</span></button>
             </div>
             <label class="ajuste-linha ajuste-controle densidade-controle" for="densidade-interface">
                 <span>Densidade da interface <output id="valor-densidade-interface" for="densidade-interface" aria-live="polite">50%</output></span>

@@ -4,7 +4,7 @@ const project = 'demo-controle-financeiro';
 const firestore = 'http://127.0.0.1:8080';
 const auth = 'http://127.0.0.1:9099';
 
-async function idbState(page, uid) {
+async function idbState(page, uid, prefix = 'estado') {
     return page.evaluate(async key => {
         const db = await new Promise((resolve, reject) => {
             const request = indexedDB.open('controleFinanceiro:integridade:v1', 1);
@@ -19,7 +19,7 @@ async function idbState(page, uid) {
                 request.onerror = () => reject(request.error);
             });
         } finally { db.close(); }
-    }, `estado:${uid}`);
+    }, `${prefix}:${uid}`);
 }
 
 test.beforeEach(async ({ context, page, request }) => {
@@ -47,6 +47,10 @@ test('restored mobile session reveals the account cache before remote synchroniz
             '2026-10': { receitas: [{ id: 'startup-income', nome: 'Persistida', valor: 321 }], despesas: [] }
         } }))
     });
+    // Wait for the restored generation before editing its visual preference.
+    await expect.poll(async () => (await idbState(page, uid))?.dados?.meses?.['2026-10']?.receitas?.[0]?.id).toBe('startup-income');
+    await expect.poll(async () => (await idbState(page, uid, 'fila'))?.restoreJob, { timeout: 45000 }).toBeNull();
+    await expect(page.locator('#estado-sincronizacao')).toHaveText('Sincronizado');
     await page.locator('#alternar-tema').click();
     await expect(page.locator('html')).toHaveAttribute('data-tema', 'escuro');
     await expect(page.locator('#estado-sincronizacao')).toHaveText('Sincronizado');

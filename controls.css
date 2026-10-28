@@ -11,7 +11,7 @@
         height: var(--menu-tamanho, 58px);
         border: 0;
         border-radius: 50%;
-        color: #fff;
+        color: var(--texto);
         background: color-mix(in srgb, var(--primaria) var(--menu-transparencia, 55%), transparent);
         box-shadow: 0 8px 24px color-mix(in srgb, var(--primaria) 40%, transparent);
         opacity: 1;
@@ -30,7 +30,7 @@
     .ajustes-secao { display: grid; gap: 10px; }
     .ajustes-secao + .ajustes-secao { margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--borda); }
     .ajustes-secao h3 { margin: 0 0 2px; color: var(--texto-secundario); font-size: .72rem; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
-    .ajuste-linha { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-width: 0; padding: 12px; border: 1px solid var(--borda); border-radius: 15px; background: var(--superficie-suave); }
+    .ajuste-linha { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-width: 0; padding: 12px; border: 1px solid var(--borda); border-radius: var(--raio-menor); background: var(--superficie-suave); }
     .ajuste-linha > div { display: grid; gap: 2px; }
     .ajuste-linha strong { font-size: .9rem; }
     .ajuste-linha span { color: var(--texto-secundario); font-size: .78rem; }
@@ -38,9 +38,9 @@
     .ajuste-linha .tema-botao span { color: inherit; font-size: inherit; }
     .ajustes-secao .acoes { margin-top: 0; }
     .ajustes-secao .nota { margin: 0; }
-    .ajuste-controle { display: grid; grid-template-columns: 1fr; align-items: stretch; gap: 8px; }
+    .ajuste-controle { display: grid; grid-template-columns: 1fr; align-items: stretch; gap: var(--espaco-2); }
     .ajuste-controle > span { min-width: 0; line-height: 1.4; }
-    .ajuste-controle select { width: 100%; min-width: 0; min-height: 40px; border: 1px solid var(--borda); border-radius: 10px; padding: 0 10px; color: var(--texto); background: var(--superficie); }
+    .ajuste-controle select { width: 100%; min-width: 0; min-height: 40px; border: 1px solid var(--borda-controle); border-radius: var(--raio-menor); padding: 0 10px; color: var(--texto); background: var(--superficie); }
     .ajuste-controle.ajuste-alternancia { display: flex; align-items: center; }
     .ajuste-controle.ajuste-alternancia input[type="checkbox"] { flex: 0 0 auto; width: 20px; height: 20px; accent-color: var(--primaria); }
     .ajuste-controle input[type="range"] { width: 100%; accent-color: var(--primaria); }
@@ -59,10 +59,10 @@
     .orcamento-voltar { min-height: 38px; padding: 7px 12px; font-size: .8rem; }
     .painel-orcamento .lista-categorias { max-height: 32dvh; overflow: auto; }
     .painel-orcamento .nova-categoria { padding-top: 12px; }
-    .orcamento-edicao { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 14px; min-width: 0; padding: 12px; border: 1px solid var(--borda); border-radius: 14px; }
+    .orcamento-edicao { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 14px; min-width: 0; padding: 12px; border: 1px solid var(--borda); border-radius: var(--raio-menor); }
     .orcamento-edicao legend { padding: 0 6px; font-weight: 750; }
     .orcamento-campo { display: grid; gap: 5px; min-width: 0; color: var(--texto-secundario); font-size: .77rem; }
-    .orcamento-campo input { width: 100%; min-width: 0; min-height: 40px; padding: 8px 10px; border: 1px solid var(--borda); border-radius: 10px; color: var(--texto); background: var(--superficie-suave); font: inherit; font-size: 1rem; }
+    .orcamento-campo input { width: 100%; min-width: 0; min-height: 40px; padding: 8px 10px; border: 1px solid var(--borda); border-radius: var(--raio-menor); color: var(--texto); background: var(--superficie-suave); font: inherit; font-size: 1rem; }
     .orcamento-acoes { display: flex; flex-wrap: wrap; align-items: end; gap: 6px; }
     .orcamento-acoes .btn { flex: 1 1 auto; min-height: 38px; padding: 6px 9px; font-size: .74rem; white-space: normal; }
     .orcamento-acoes .btn:disabled { opacity: .5; cursor: not-allowed; }
@@ -94,11 +94,11 @@
     .resumo-calendario { width: 34px; min-width: 34px; height: 34px; min-height: 34px; padding: 6px; }
     .resumo-calendario svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
     .dialogo-calculadora .calculadora-corpo { height: auto; min-height: 0; }
-    .visor-calculadora { width: 100%; min-height: 52px; margin-bottom: 12px; padding: 8px 12px; border: 1px solid var(--borda); border-radius: 12px; color: var(--texto); background: var(--superficie-suave); text-align: right; font-size: 1.35rem; }
+    .visor-calculadora { width: 100%; min-height: 52px; margin-bottom: 12px; padding: 8px 12px; border: 1px solid var(--borda); border-radius: var(--raio-menor); color: var(--texto); background: var(--superficie-suave); text-align: right; font-size: 1.35rem; }
     .teclas-calculadora { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
-    .teclas-calculadora button { min-height: 46px; border: 1px solid var(--borda); border-radius: 12px; color: var(--texto); background: var(--superficie-suave); font-size: 1rem; font-weight: 700; cursor: pointer; }
-    .teclas-calculadora .tecla-resultado { grid-column: 1 / -1; color: #fff; border-color: var(--primaria); background: var(--primaria); }
-    .teclas-calculadora button:focus-visible { outline: 3px solid color-mix(in srgb, var(--primaria) 45%, transparent); outline-offset: 2px; }
+    .teclas-calculadora button { min-height: 46px; border: 1px solid var(--borda); border-radius: var(--raio-menor); color: var(--texto); background: var(--superficie-suave); font-size: 1rem; font-weight: 700; cursor: pointer; }
+    .teclas-calculadora .tecla-resultado { grid-column: 1 / -1; color: var(--texto-na-primaria); border-color: var(--primaria); background: var(--primaria); }
+    .teclas-calculadora button:focus-visible { outline: 3px solid var(--primaria); outline-offset: 2px; }
 
     @media (max-width: 600px) {
         dialog#dialogo-despesa.teclado-virtual-ativo,
@@ -144,7 +144,7 @@
 }
 
 #dialogo-orcamentos .orcamento-acoes [data-orcamento-acao="salvar-padrao"] {
-    color: #fff;
+    color: var(--texto-na-primaria);
     border-color: var(--primaria);
     background: var(--primaria);
 }

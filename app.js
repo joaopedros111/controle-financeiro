@@ -27,6 +27,7 @@ const IDB_HOMOLOGACAO = ["localhost", "127.0.0.1"].includes(location.hostname)
     && new URL(location.href).searchParams.get("indexeddb_homologacao") === "1";
 const CHAVE_ESTADO = "controleFinanceiro:v3";
 const CHAVE_TEMA_INICIAL = "controleFinanceiro:tema-inicial";
+const TEMAS_OFICIAIS = ["claro", "escuro", "rosa", "pangolim"];
 const TEMAS_VALIDOS = ["claro", "escuro", "rosa", "pangolim", "floresta"];
 let chaveEstadoAtual = CHAVE_ESTADO;
 const CHAVE_ATUALIZACAO_PENDENTE = "controleFinanceiro:confirmar-interface-atualizada";
@@ -883,28 +884,28 @@ function renderTema() {
         && TEMAS_VALIDOS.includes(document.documentElement.dataset.tema)) {
         tema = document.documentElement.dataset.tema;
     }
-    const nomesTema = { claro: "Claro", escuro: "Escuro", rosa: "Rosa", pangolim: "Pangolim", floresta: "Selva" };
-    const ordemTemas = ["claro", "escuro", "rosa", "pangolim", "floresta"];
+    const nomesTema = { claro: "Clean", escuro: "Midnight", rosa: "Peônia", pangolim: "Pangolim" };
+    // Selva is a retired visual alias. Keep stored/backup identifiers intact.
+    if (!TEMAS_OFICIAIS.includes(tema)) tema = "claro";
+    const ordemTemas = TEMAS_OFICIAIS;
     const proximoTema = ordemTemas[(ordemTemas.indexOf(tema) + 1) % ordemTemas.length];
 
 
 
     document.documentElement.dataset.tema = tema;
     try { localStorage.setItem(CHAVE_TEMA_INICIAL, tema); } catch { /* cache visual opcional */ }
-    const coresBarraNavegador = {
-        claro: "#f4f6fb", escuro: "#0c1020", rosa: "#fff7fb",
-        pangolim: "#fbf3df", floresta: "#edf5ed"
-    };
-    const corDaBarraDoNavegador = coresBarraNavegador[tema] || coresBarraNavegador.claro;
-    document.querySelector('meta[name="theme-color"]').content = corDaBarraDoNavegador;
+    document.querySelector('meta[name="theme-color"]').content =
+        getComputedStyle(document.documentElement).getPropertyValue("--fundo").trim();
 
     ui.tema.replaceChildren(
-        criarEl("span", { text: ({ escuro: "🌙", rosa: "🌸", pangolim: "🐾", floresta: "🌲" })[tema] || "☀️" }),
+        criarEl("span", { text: ({ escuro: "🌙", rosa: "🌸", pangolim: "🐾" })[tema] || "☀️" }),
         criarEl("span", { text: nomesTema[tema] })
     );
     ui.tema.setAttribute("data-i18n-preserve-aria", "");
-    ui.tema.setAttribute("aria-label", textoTraduzido("Tema atual:") + " " + textoTraduzido(nomesTema[tema])
-        + ". " + textoTraduzido("Mudar para") + " " + textoTraduzido(nomesTema[proximoTema]) + ".");
+    const rotuloTema = textoTraduzido("Tema atual:") + " " + textoTraduzido(nomesTema[tema])
+        + ". " + textoTraduzido("Mudar para") + " " + textoTraduzido(nomesTema[proximoTema]) + ".";
+    ui.tema.setAttribute("aria-label", rotuloTema);
+    ui.tema.setAttribute("title", rotuloTema);
 
 }
 
@@ -1177,7 +1178,7 @@ function corDaCategoria(nome) {
 
     const indice = Math.max(0, estado.categorias.indexOf(nome));
 
-    return "hsl(" + ((indice * 47 + 160) % 360) + ", 55%, 48%)";
+    return "var(--categoria-" + (indice % 12 + 1) + ")";
 
 }
 
@@ -3775,7 +3776,7 @@ ui.tema.addEventListener("click", () => {
 
 
 
-    const ordemTemas = ["claro", "escuro", "rosa", "pangolim", "floresta"];
+    const ordemTemas = TEMAS_OFICIAIS;
     estado.tema = ordemTemas[(ordemTemas.indexOf(atual) + 1) % ordemTemas.length];
 
 

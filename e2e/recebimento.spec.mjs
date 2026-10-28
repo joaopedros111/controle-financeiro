@@ -160,17 +160,27 @@ test('entry and expense action colors and interaction states match across themes
     const toggle = page.locator('[aria-controls="conteudo-despesas"]');
     if (await toggle.getAttribute('aria-expanded') === 'false') await toggle.click();
     const buttons = page.locator('.receita > button, .despesa > button');
-    const edit = { background: 'rgb(237, 245, 240)', color: 'rgb(40, 124, 90)', border: 'rgb(210, 228, 217)' };
-    const remove = { background: 'rgb(251, 239, 239)', color: 'rgb(184, 74, 74)', border: 'rgb(240, 211, 211)' };
+    let edit, remove;
     for (const width of [375, 1280]) {
         await page.setViewportSize({ width, height: 896 });
-        for (const theme of ['claro', 'escuro', 'rosa', 'pangolim', 'floresta']) {
+        for (const theme of ['claro', 'escuro', 'rosa', 'pangolim']) {
             if (await page.locator('html').getAttribute('data-tema') !== theme) {
                 await page.locator('#abrir-ajustes').click();
                 await page.locator('#alternar-tema').click();
                 await page.keyboard.press('Escape');
             }
             await expect(page.locator('html')).toHaveAttribute('data-tema', theme);
+            ({ edit, remove } = await page.evaluate(() => {
+                const probe = document.createElement('span');
+                document.body.append(probe);
+                const color = token => { probe.style.color = 'var(' + token + ')'; return getComputedStyle(probe).color; };
+                const palettes = {
+                    edit: { background: color('--primaria-suave'), color: color('--primaria'), border: color('--borda') },
+                    remove: { background: color('--vermelho-suave'), color: color('--vermelho'), border: color('--borda') }
+                };
+                probe.remove();
+                return palettes;
+            }));
             await page.mouse.move(0, 0);
             const styles = await buttons.evaluateAll(buttons => buttons.map(button => {
                 const s = getComputedStyle(button), r = button.getBoundingClientRect();
@@ -184,7 +194,7 @@ test('entry and expense action colors and interaction states match across themes
             }));
             expect(styles).toHaveLength(4);
             for (const { edit: editing, contrast, ...style } of styles) {
-                expect(style, `${width}px / ${theme}`).toEqual({ ...(editing ? edit : remove), radius: '12px', width: 38, height: 38 });
+                expect(style, `${width}px / ${theme}`).toEqual({ ...(editing ? edit : remove), radius: '12px', width: 44, height: 44 });
                 expect(contrast).toBeGreaterThanOrEqual(4.5);
             }
             if (theme === 'escuro') await page.screenshot({ path: `${process.env.LOCAL_TEST_OUTPUT}/acoes-${width}-escuro.png`, fullPage: true });

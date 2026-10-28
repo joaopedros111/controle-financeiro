@@ -349,19 +349,19 @@ test("preferências antigas de tela inicial continuam compatíveis sem controles
     assert.match(serviceWorker, /"\.\/app\.js"/);
 });
 
-test("os cinco temas mantêm identificadores, cores e nomes de exibição", async () => {
+test("os quatro temas oficiais preservam identificadores antigos e migram Selva visualmente", async () => {
     const [app, css, core, html] = await Promise.all([
         read("app.js"), read("style.css"), read("finance-core.js"), read("index.html")
     ]);
-    for (const tema of ["pangolim", "floresta"]) {
+    for (const tema of ["escuro", "rosa", "pangolim"]) {
         assert.match(css, new RegExp(`data-tema="${tema}"`));
         assert.match(core, new RegExp(`"${tema}"`));
     }
-    assert.match(app, /claro: "Claro", escuro: "Escuro", rosa: "Rosa", pangolim: "Pangolim", floresta: "Selva"/);
+    assert.match(app, /claro: "Clean", escuro: "Midnight", rosa: "Peônia", pangolim: "Pangolim"/);
     assert.match(app, /criarEl\("span", \{ text: nomesTema\[tema\] \}\)/);
     assert.match(app, /"claro", "escuro", "rosa", "pangolim", "floresta"/);
-    assert.match(html, /Claro, Escuro, Rosa, Pangolin ou Selva/);
-    assert.match(html, /id="alternar-tema"[\s\S]*?<span>Claro<\/span>/);
+    assert.match(html, /Clean, Midnight, Peônia ou Pangolim/);
+    assert.match(html, /id="alternar-tema"[\s\S]*?<span>Clean<\/span>/);
     assert.match(core, /"claro", "escuro", "rosa", "pangolim", "floresta"/);
     assert.match(app, /let tema = estado\.tema \|\| "claro"/);
     assert.match(app, /localStorage\.setItem\(CHAVE_TEMA_INICIAL, tema\)/);
