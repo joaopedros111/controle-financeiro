@@ -6,7 +6,7 @@ import path from 'node:path';
 import assert from 'node:assert/strict';
 import { chromium } from '@playwright/test';
 
-const paths = ['finance-vault-crypto.js', 'finance-vault-store.js', 'finance-vault-backend.js',
+const paths = ['finance-vault-limits.js', 'finance-vault-crypto.js', 'finance-vault-store.js', 'finance-vault-backend.js',
     'tests/fixtures/vault-backend-scenarios.mjs', 'tests/fixtures/vault-browser-store.mjs', 'tests/fixtures/vault-contract.mjs'];
 const files = new Map(await Promise.all(paths.map(async file => [`/${file}`, await readFile(new URL(`../${file}`, import.meta.url))])));
 const server = createServer((request, response) => {
@@ -124,7 +124,7 @@ try {
             const pending = previous.documents['fila:synthetic-A'].outbox.map(op => op.id);
             const token = await backend.prepare({ expectedRevision: 1, generation: 'generation-a', updates: { 'estado:synthetic-A': { resumed: true } } });
             await backend.commit(token); const next = await backend.read(); await backend.close();
-            const db = await new Promise((resolve, reject) => { const request = indexedDB.open(seed.name, 1); request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error); });
+            const db = await new Promise((resolve, reject) => { const request = indexedDB.open(seed.name); request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error); });
             const nonces = await new Promise((resolve, reject) => { const tx = db.transaction('nonces', 'readonly'), r = tx.objectStore('nonces').getAll(); tx.oncomplete = () => resolve(r.result); tx.onabort = () => reject(tx.error); }); db.close();
             return { before: previous.revision, after: next.revision, pending, nonceCount: nonces.length, unique: new Set(nonces.map(n => `${n.keyFingerprint}:${n.iv}`)).size };
         }, seed);

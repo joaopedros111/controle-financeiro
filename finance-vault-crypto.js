@@ -90,6 +90,11 @@ function validateKey(value, slot) {
     if (kdf.hash !== 'SHA-256') fail('invalid-envelope');
     decode(kdf.salt, 16); decode(value.wrappedKey, 48);
 }
+// Structural/context validation only. Authentication still requires unwrapping.
+export function checkKeyEnvelopeFormat(envelope, expected, slot) {
+    validateKey(envelope, slot); keyContext(expected);
+    compare(envelope, expected, ['keyId', 'vaultId', 'wrapRevision']); return true;
+}
 const documentAAD = v => encoder.encode(JSON.stringify([v.format, v.version, v.algorithm, v.keyId, v.owner.projectId, v.owner.uid, v.vaultId, v.documentId, v.schemaVersion, v.revision, v.generation]));
 const keyAAD = v => encoder.encode(JSON.stringify([v.format, v.version, v.slot, v.algorithm, v.keyId, v.owner.projectId, v.owner.uid, v.vaultId, v.wrapRevision, v.kdf.name, v.kdf.hash, v.kdf.iterations ?? null, v.kdf.salt, v.kdf.info ?? null]));
 const algorithm = (v, aad) => ({ name: 'AES-GCM', iv: decode(v.iv, 12), additionalData: aad(v), tagLength: 128 });

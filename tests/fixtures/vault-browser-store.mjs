@@ -14,7 +14,7 @@ export function browserStoreFactory() {
         const store = await reopen();
         function raw(mode, stores, action) {
             return new Promise((resolve, reject) => {
-                const request = indexedDB.open(name, 1);
+                const request = indexedDB.open(name);
                 request.onerror = () => reject(request.error);
                 request.onsuccess = () => {
                     const db = request.result, tx = db.transaction(stores, mode, { durability: 'strict' });
@@ -29,14 +29,18 @@ export function browserStoreFactory() {
         }
         return {
             store, reopen, setFaults(value) { faults = value; },
-            inspect: () => raw('readonly', ['snapshots', 'heads', 'nonces', 'nonceKeys'], (tx, done) => {
+            inspect: () => raw('readonly', ['snapshots', 'heads', 'nonces', 'nonceKeys', 'catalogs', 'controls'], (tx, done) => {
                 const output = {};
-                for (const name of ['snapshots', 'heads', 'nonces', 'nonceKeys']) {
+                for (const name of ['snapshots', 'heads', 'nonces', 'nonceKeys', 'catalogs', 'controls']) {
                     const store = tx.objectStore(name), values = store.getAll(), keys = store.getAllKeys();
                     let remaining = 2;
                     const ready = () => { if (!--remaining) { output[name] = keys.result.map((key, i) => [key, values.result[i]]); done(output); } };
                     values.onsuccess = ready; keys.onsuccess = ready;
                 }
+            }),
+            mutateCatalog: transform => raw('readwrite', ['catalogs'], tx => {
+                const cursor = tx.objectStore('catalogs').openCursor();
+                cursor.onsuccess = () => { if (!cursor.result) return; const value = cursor.result.value; transform(value); cursor.result.update(value); cursor.result.continue(); };
             }),
             mutate: transform => raw('readwrite', ['snapshots'], tx => {
                 const cursor = tx.objectStore('snapshots').openCursor();
