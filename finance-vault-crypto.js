@@ -215,6 +215,10 @@ export function createVaultCrypto({ crypto = globalThis.crypto, reserveIV } = {}
             try { return await importHandle(raw, copy); } finally { raw.fill(0); }
         }),
         protectWithPassword: safe((handle, password, wrapRevision = 1) => wrap(handle, password, 'password', wrapRevision)),
+        // Explicit custody continuity: wrap a NEW DEK with an independently held
+        // recovery secret. derive() still validates canonical 32-byte input, and
+        // wrap() generates a fresh salt/IV and authenticates the new key context.
+        protectWithKnownRecovery: safe((handle, secret, wrapRevision = 1) => wrap(handle, secret, 'recovery', wrapRevision)),
         protectWithRecovery: safe(async (handle, wrapRevision = 1) => {
             entry(handle);
             const bytes = random(32);

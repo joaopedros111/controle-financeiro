@@ -1,10 +1,11 @@
 import { openVaultStore, VAULT_DATABASE } from '../../finance-vault-store.js';
 
 // All mutation/inspection helpers are exclusive to fresh synthetic QA databases.
-export function browserStoreFactory() {
+export function browserStoreFactory({ prefix = '' } = {}) {
+    if (!['', 'migration-'].includes(prefix)) throw new Error('Invalid synthetic database prefix');
     const connections = [], names = [];
     async function makeStore() {
-        const name = `${VAULT_DATABASE}:synthetic-${crypto.randomUUID()}`;
+        const name = `${VAULT_DATABASE}:synthetic-${prefix}${crypto.randomUUID()}`;
         names.push(name);
         let faults = {};
         const hooks = Object.fromEntries(['beforePut', 'afterPut', 'afterRead', 'afterReserve'].map(key => [key, (...args) => faults[key]?.(...args)]));
@@ -28,7 +29,7 @@ export function browserStoreFactory() {
             });
         }
         return {
-            store, reopen, setFaults(value) { faults = value; },
+            name, store, reopen, setFaults(value) { faults = value; },
             inspect: () => raw('readonly', ['snapshots', 'heads', 'nonces', 'nonceKeys', 'catalogs', 'controls'], (tx, done) => {
                 const output = {};
                 for (const name of ['snapshots', 'heads', 'nonces', 'nonceKeys', 'catalogs', 'controls']) {

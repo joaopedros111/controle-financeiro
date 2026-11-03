@@ -188,6 +188,10 @@ export function createVaultBackend({ store, context, crypto: provider = globalTh
             const captured = unlocked();
             return crypto.protectWithRecovery(captured.key, wrapRevision).then(result => { current(captured.epoch); return result; });
         },
+        protectWithKnownRecovery(secret, wrapRevision = 1) {
+            const captured = unlocked();
+            return crypto.protectWithKnownRecovery(captured.key, secret, wrapRevision).then(result => { current(captured.epoch); return result; });
+        },
         rewrapPassword(envelope, oldPassword, newPassword, wrapRevision) {
             const captured = unlocked();
             return crypto.changePassword(envelope, oldPassword, newPassword, { ...owned, wrapRevision }).then(result => { current(captured.epoch); return result; });

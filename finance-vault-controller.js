@@ -65,7 +65,7 @@ export function createVaultController({ store, owner, vaultId, codec = createFin
             active = { backend: candidate, context, control: after.control, local: captured };
         } catch (error) { candidate.lock(); throw error; }
     }
-    async function create({ password, generation, documents, originPackageId = null }, requiredControl) {
+    async function create({ password, generation, documents, originPackageId = null }, requiredControl, custodiedRecoverySecret = null) {
         // Copy/validate before await, with the lossless codec rather than structuredClone.
         const copy = copyDocumentMap(documents, codec.encode, codec.decode);
         invalidate(); const captured = localEpoch, baseline = await entry(); local(captured);
@@ -76,7 +76,8 @@ export function createVaultController({ store, owner, vaultId, codec = createFin
         try {
             await backend.createKey(); local(captured);
             const passwordEnvelope = await backend.protectWithPassword(password); local(captured);
-            const recovery = await backend.protectWithRecovery(); local(captured);
+            const recovery = custodiedRecoverySecret === null ? await backend.protectWithRecovery()
+                : { envelope: await backend.protectWithKnownRecovery(custodiedRecoverySecret), recoverySecret: custodiedRecoverySecret }; local(captured);
             const catalog = { format: 'cf-vault-catalog', version: 2, recoveryPrevious: [], recoveryPending: null, ...context, generation,
                 revision: (baseline.control?.revision || 0) + 1, snapshotRevision: 1, codec: codec.id,
                 password: passwordEnvelope, recovery: recovery.envelope, originPackageId };
@@ -191,7 +192,8 @@ export function createVaultController({ store, owner, vaultId, codec = createFin
             const s = session(), before = await guard(s), pack = await exportRecoveryPackage(s.backend, crypto), after = await guard(s);
             if (before.control.revision !== after.control.revision) fail('stale-revision'); return pack;
         },
-        async importRecoveryPackage(bytes, { recoverySecret, newPassword, sourceVaultId = expected.vaultId }) {
+        async importRecoveryPackage(bytes, { recoverySecret, newPassword, sourceVaultId = expected.vaultId, retainCustodiedRecoverySecret = false }) {
+            if (typeof retainCustodiedRecoverySecret !== 'boolean') fail('invalid-input');
             if (typeof sourceVaultId !== 'string' || !sourceVaultId.length || sourceVaultId.length > 128 || !sourceVaultId.isWellFormed()) fail('invalid-input');
             invalidate(); const captured = localEpoch;
             const baseline = await entry(); local(captured);
@@ -205,7 +207,8 @@ export function createVaultController({ store, owner, vaultId, codec = createFin
                 if (snapshot.catalog.originPackageId !== recovered.packageId) fail('already-exists');
                 return { alreadyRestored: true, revision: snapshot.catalog.revision, recoverySecret: null, needsRecoveryRenewal: true };
             }
-            return { ...await create({ password: newPassword, generation: recovered.generation, documents: recovered.documents, originPackageId: recovered.packageId }, baseline.control), alreadyRestored: false };
+            return { ...await create({ password: newPassword, generation: recovered.generation, documents: recovered.documents, originPackageId: recovered.packageId }, baseline.control,
+                retainCustodiedRecoverySecret ? recoverySecret : null), alreadyRestored: false };
         },
         async lock() {
             invalidate(); const control = await store.bumpEpoch(logicalScope); if (closed) fail('cancelled'); announce(control.epoch);
