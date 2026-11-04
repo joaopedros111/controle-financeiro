@@ -146,3 +146,24 @@ export function criarRecuperacaoFinanceira(storage) {
 }
 
 export const storage = criarArmazenamento();
+
+// Explicit composition before importing app.js. Nothing is read from URL/storage
+// or window flags; the normal entry point supplies all its existing defaults.
+let dependenciasAplicacao = null;
+let dependenciasCapturadas = false;
+const fabricasAplicacao = ['openPersistence', 'createAtomicService', 'createAutomaticSync', 'loadFirebase', 'readLegacyMetadata'];
+export function configurarDependenciasAplicacao(dependencias) {
+    if (dependenciasCapturadas || dependenciasAplicacao !== null) throw new Error('Dependências da aplicação já definidas.');
+    if (!dependencias || typeof dependencias !== 'object' || Array.isArray(dependencias)) throw new Error('Dependências da aplicação inválidas.');
+    const copia = { ...dependencias };
+    for (const [nome, valor] of Object.entries(copia)) {
+        if (nome === 'storage') {
+            if (!valor || !['ler', 'lerJson', 'lerJsonResultado', 'escreverJson', 'proteger', 'desproteger'].every(metodo => typeof valor[metodo] === 'function')) throw new Error('Storage injetado inválido.');
+        } else if (!fabricasAplicacao.includes(nome) || typeof valor !== 'function') throw new Error('Fábrica da aplicação inválida.');
+    }
+    dependenciasAplicacao = Object.freeze(copia);
+}
+export function capturarDependenciasAplicacao(padroes) {
+    dependenciasCapturadas = true;
+    return Object.freeze({ ...padroes, ...dependenciasAplicacao });
+}

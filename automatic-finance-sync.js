@@ -24,8 +24,9 @@ function validateRecords(items) {
 
 export class AutomaticFinanceSync {
     constructor({ client, db, service, readLegacy, onAccount, onState, onStatus, onTransition = () => {}, waitLocal = async () => {}, storageBlocked = () => false,
-        connectivity = globalThis, delayMs = 200, maxDelayMs = 30000, requiredProtocol = 1 }) {
-        Object.assign(this, { client, db, service, readLegacy, onAccount, onState, onStatus, onTransition, waitLocal, storageBlocked, connectivity, delayMs, maxDelayMs, requiredProtocol });
+        connectivity = globalThis, delayMs = 200, maxDelayMs = 30000, requiredProtocol = 1,
+        readLegacyMetadata = uid => readSyncMetadata(globalThis.localStorage, uid) }) {
+        Object.assign(this, { client, db, service, readLegacy, readLegacyMetadata, onAccount, onState, onStatus, onTransition, waitLocal, storageBlocked, connectivity, delayMs, maxDelayMs, requiredProtocol });
         // A distinct context also fences anonymous -> login -> anonymous transitions.
         this.session = null; this.sessionContext = {}; this.online = connectivity.navigator?.onLine !== false;
     }
@@ -69,7 +70,8 @@ export class AutomaticFinanceSync {
         await this.waitLocal(); if (!this.current(s)) return;
         const saved = this.readLegacy(chaveLocalConta(s.uid));
         if (!['valido', 'ausente'].includes(saved.estado)) throw error('sync/invalid-local', 'Dados locais precisam de recuperação.');
-        const legacyQueue = readSyncMetadata(globalThis.localStorage, s.uid);
+        const legacyQueue = this.readLegacyMetadata(s.uid);
+        if (!legacyQueue || typeof legacyQueue !== 'object' || Array.isArray(legacyQueue) || typeof legacyQueue.then === 'function') throw error('sync/invalid-local', 'Metadados locais inválidos.');
         const existing = await this.db.ler(`estado:${s.uid}`);
         if (!this.current(s)) return;
         const initialized = await this.service.inicializar(s.uid, normalizarEstado(saved.estado === 'valido' ? saved.valor : null),

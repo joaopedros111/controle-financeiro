@@ -52,26 +52,34 @@ function verificarPersistenciaAuth() {
     }
 }
 
-export function criarFirebaseSync(config) {
-    const app = initializeApp(config);
-    verificarPersistenciaAuth();
+export function criarFirebaseSync(config, runtime = {}) {
+    // Optional SDK construction only. Data methods and transaction rules stay real.
+    const allowed = ['createApp', 'createAuth', 'createFirestore', 'checkAuthPersistence', 'getRedirectResult'];
+    if (!runtime || typeof runtime !== 'object' || Array.isArray(runtime) || Object.entries(runtime).some(([key, value]) => !allowed.includes(key) || typeof value !== 'function')) throw new TypeError('Runtime Firebase inválido.');
+    const checkAuthPersistence = runtime.checkAuthPersistence || verificarPersistenciaAuth;
+    const readRedirect = runtime.getRedirectResult;
+    const app = (runtime.createApp || initializeApp)(config);
+    checkAuthPersistence();
     // Local storage is the definitive first choice. Legacy backends remain in
     // the SDK hierarchy for session recovery, without switching persistence in ready().
     // initializeAuth reuses identical options and rejects incompatible prior initialization.
-    const auth = initializeAuth(app, {
+    const auth = (runtime.createAuth || initializeAuth)(app, {
         persistence: [browserLocalPersistence, indexedDBLocalPersistence, browserSessionPersistence],
         popupRedirectResolver: browserPopupRedirectResolver
     });
     const ensureUser = (uid) => { if (auth.currentUser?.uid !== uid) throw new Error("Conta não corresponde ao usuário autenticado."); };
     const provider = new GoogleAuthProvider();
     let db;
-    try { db = initializeFirestore(app, { localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }) }); }
-    catch { try { db = initializeFirestore(app, { localCache: memoryLocalCache() }); } catch { db = getFirestore(app); } }
+    if (runtime.createFirestore) db = runtime.createFirestore(app);
+    else {
+        try { db = initializeFirestore(app, { localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }) }); }
+        catch { try { db = initializeFirestore(app, { localCache: memoryLocalCache() }); } catch { db = getFirestore(app); } }
+    }
     const legacy = {
         async ready() {
             await auth.authStateReady();
-            verificarPersistenciaAuth();
-            try { await getRedirectResult(auth); }
+            checkAuthPersistence();
+            try { await (readRedirect || getRedirectResult)(auth); }
             catch (error) {
                 if (globalThis.navigator?.onLine !== false || error?.code !== "auth/network-request-failed") throw error;
             }
