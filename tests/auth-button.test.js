@@ -12,11 +12,9 @@ function harness(){
     const statuses=[];
     const c=vm.createContext({firebaseClient:null,syncUser:null,syncUi:{login:{disabled:false}},IDB_HOMOLOGACAO:false,
         firebaseConfigurado:()=>true,firebaseConfig:{},console,Promise,setSyncStatus:message=>statuses.push(message),
-        importFirebaseSdk:async()=>{imports++;return {criarFirebaseSync:()=>client};},onFirebaseUser:user=>{c.syncUser=user;vm.runInContext('setGoogleAuthUser(syncUser)',c);}});
+        VERSAO_BUNDLE:null,dependenciasAplicacao:{loadFirebase:async()=>{imports++;return {criarFirebaseSync:()=>client};}},onFirebaseUser:user=>{c.syncUser=user;vm.runInContext('setGoogleAuthUser(syncUser)',c);}});
     let code=source.slice(source.indexOf('let firebaseInitPromise ='),source.indexOf('async function onFirebaseUser('));
-    const importLine = code.split('\n').find(line => line.includes('const sdk = await import('));
-    assert.ok(importLine, 'only the SDK import boundary is stubbed');
-    code = code.replace(importLine, 'const sdk = await importFirebaseSdk();');
+    assert.ok(code.includes('dependenciasAplicacao.loadFirebase'), 'only the official SDK loading boundary is injected');
     vm.runInContext(source.slice(source.indexOf('function googleAuthMessage('),source.indexOf('let firebaseInitPromise ='))+code,c);
     return {c,ready,popup,client,statuses,imports:()=>imports,logins:()=>logins,emit:user=>callback(user)};
 }

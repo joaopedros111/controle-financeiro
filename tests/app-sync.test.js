@@ -43,6 +43,7 @@ function harness(items = [entry()], initial = financialState(entry())) {
         saveSettings: async () => ({ acknowledged: true, revision: "settings-b" }) }
     });
     context.estadoParaSalvar = () => structuredClone(context.estado);
+    context.dependenciasAplicacao = { readLegacyMetadata: uid => sync.readSyncMetadata(context.localStorage, uid) };
     context.persistirEstadoFinanceiro = async (key, value, localEdit, restored, firstLinkReviewed, editQueue = () => {}) => { if (!context.storage.escreverJson(key, value)) return false; const result = await context.idbServico.aplicarEdicao("alice", context.idbBase, value, () => [], editQueue); context.idbBase = structuredClone(result.estado.dados); return true; };
     let serial = Promise.resolve();
     const docs = new Map([["estado:alice",{revisao:0,dados:structuredClone(initial)}],["estado:@local",{revisao:0,dados:financialState()}]]);

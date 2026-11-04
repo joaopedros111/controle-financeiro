@@ -24,6 +24,7 @@ async function setup(){
  const h={context:c,statuses:[],commits:[]},docs=new Map();let serial=Promise.resolve();
  c.estadoParaSalvar=()=>structuredClone(c.estado);c.setSyncStatus=message=>h.statuses.push(message);
  c.firebaseClient={list:async()=>[entry()],commit:async()=>({acknowledged:true}),saveSettings:async()=>({acknowledged:true,revision:'saved'})};
+ c.dependenciasAplicacao={readLegacyMetadata:uid=>sync.readSyncMetadata(c.localStorage,uid)};
  vm.runInContext(source.slice(source.indexOf('function syncEntityKey('),source.indexOf('let firebaseInitPromise =')),c);
  vm.runInContext(source.slice(source.indexOf('let syncPublishChain ='),source.indexOf('window.addEventListener("finance-local-change"')),c);
  const db={

@@ -255,7 +255,8 @@ test('obsolete anonymous account transition cannot hydrate a newer logout contex
 
 test('anonymous UI hydration fences login/logout while IndexedDB is being read', async () => {
     const start = source.lastIndexOf('onAccount: async user => {');
-    const end = source.indexOf('\n                },', start) + '\n                }'.length;
+    const end = source.indexOf('\n            },', start) + '\n            }'.length;
+    assert.ok(start >= 0 && end > start, 'the real onAccount callback must be located');
     const handler = source.slice(start + 'onAccount: '.length, end);
     for (const changeSession of [false, true]) {
         const h = await saveHarness({ local: true, pauseAt: 'state-read' });

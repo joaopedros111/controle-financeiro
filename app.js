@@ -1,4 +1,4 @@
-import { criarRecuperacaoFinanceira, storage } from "./storage.js";
+import { criarRecuperacaoFinanceira, storage as storagePadrao, capturarDependenciasAplicacao } from "./storage.js";
 import { abrirPersistenciaFinanceira } from "./indexeddb-persistence.js";
 import { ServicoFinanceiroAtomico } from "./financial-atomic-service.js";
 import { CATEGORIAS_PADRAO, CATEGORIA_FIXA, normalizarEstado as normalizarEstadoCore, normalizarValorMonetario, mesFinanceiroValido, validarBackup, validarTotaisMonetarios, migrarDadosLegados, calcularExpressao, somarCentavos, gerarCsv, agruparDespesasPorCategoria, agruparLancamentosComOrcamento, renomearCategoriaOrcamentos, removerCategoriaOrcamentos, criarSerieReceitas, listarReceitasDaSerie, editarReceita, excluirReceita } from "./finance-core.js";
@@ -9,6 +9,20 @@ import { firebaseConfig, firebaseConfigurado } from "./firebase-config.js";
 import { AutomaticFinanceSync } from "./automatic-finance-sync.js";
 import { financeSettings, captureRejectedLocalEdit } from "./automatic-sync-policy.js";
 import { chaveLocalConta, registrosFinanceiros, combinarRegistros, migrationBackup, operationId, jsonCanonico, recordsEquivalent, coalesceOutbox, flushSyncQueue, createSyncSessionGuard, validateRemoteSettings, mergeRemoteSettings, validRemoteTombstone, reconcileRemoteConflicts, validateRemoteConflicts, snapshotConfirmed, recordEntityKey, inspectRemoteKeys, validConflictRecord, readSyncMetadata, blockedConflictKeys, validSyncIdentity, financialStatesEquivalent, functionalSettings, settingsEquivalent, equivalentConflict, pendingConflictCount } from "./sync-core.js";
+
+// Fase técnica: captura única dos adaptadores atuais, sem abrir recursos.
+function prepararDependenciasTecnicas() {
+    return capturarDependenciasAplicacao({
+        storage: storagePadrao,
+        openPersistence: () => abrirPersistenciaFinanceira(),
+        createAtomicService: (db, validarEstado, validarFila) => new ServicoFinanceiroAtomico(db, validarEstado, validarFila),
+        createAutomaticSync: options => new AutomaticFinanceSync(options),
+        loadFirebase: release => import(new URL(`./firebase-sync.bundle.js?_release=${encodeURIComponent(release || 'local')}`, import.meta.url)),
+        readLegacyMetadata: uid => readSyncMetadata(globalThis.localStorage, uid)
+    });
+}
+const dependenciasAplicacao = prepararDependenciasTecnicas();
+const { storage } = dependenciasAplicacao;
 
 
 
@@ -601,6 +615,7 @@ function carregarEstado() {
 
 
 
+// Primeira leitura financeira: permanece anterior ao IndexedDB e ao Auth.
 let estado = carregarEstado();
 let idbServico = null;
 let automaticController = null;
@@ -719,13 +734,13 @@ function salvar() {
 
 // O modo experimental funciona apenas com dados locais, sem Firebase.
 // A inicialização precede o registro dos handlers e a liberação visual do app.
-{
+async function prepararArmazenamentoInicial() {
     try {
         if (recuperacaoFinanceira.protegido) throw new Error("Origem legada protegida");
         const legacy = lerEstadoPersistido(CHAVE_ESTADO);
         if (!["ausente", "valido"].includes(legacy.estado)) throw new Error("Origem local inválida");
-        idbBanco = await abrirPersistenciaFinanceira();
-        idbServico = new ServicoFinanceiroAtomico(idbBanco,
+        idbBanco = await dependenciasAplicacao.openPersistence();
+        idbServico = dependenciasAplicacao.createAtomicService(idbBanco,
             (valor) => validarBackup(valor) && validarTotaisMonetarios(valor),
             (fila) => Boolean(fila && Array.isArray(fila.outbox) && Array.isArray(fila.conflicts)));
         const deviceUid = IDB_HOMOLOGACAO ? "local" : "@local";
@@ -733,8 +748,7 @@ function salvar() {
         if (!!previous !== !!previousQueue) throw new Error("Migracao experimental parcial");
         const result = await idbServico.inicializar(deviceUid, previous?.dados || estadoParaSalvar(),
             previousQueue || { outbox: [], conflicts: [], lastConfirmed: null, settingsPristine: legacy.estado === "ausente" && !previous && !migracaoLegadaPendente && !migracaoEstadoV2Pendente && !dadosStorageAntigoPendentes });
-        estado = normalizarEstado(result.estado.dados);
-        idbBase = structuredClone(estadoParaSalvar());
+        carregarEstadoFinanceiroPersistido(result);
         window.addEventListener("pagehide", () => idbBanco?.fechar(), { once: true });
     } catch (error) {
         idbBloqueado = true;
@@ -742,6 +756,13 @@ function salvar() {
         console.warn("Inicialização transacional bloqueada.", error?.name || "unknown");
     }
 }
+
+function carregarEstadoFinanceiroPersistido(result) {
+    estado = normalizarEstado(result.estado.dados);
+    idbBase = structuredClone(estadoParaSalvar());
+}
+
+await prepararArmazenamentoInicial();
 
 async function persistirEstadoFinanceiro(key, next, localEdit = false, restored = false, firstLinkReviewed = false, editQueue = () => {}) {
     if (!idbServico || idbBloqueado || key !== chaveEstadoAtual) return false;
@@ -3846,11 +3867,15 @@ ui.tema.addEventListener("click", () => {
 
 
 
-renderTudo(false);
-aplicarPreferenciasMenu();
-aplicarPrivacidade();
-atualizarDiagnostico();
-const telaInicialAplicada = abrirSecaoInicial();
+function prepararInterfaceInicial() {
+    renderTudo(false);
+    aplicarPreferenciasMenu();
+    aplicarPrivacidade();
+    atualizarDiagnostico();
+    return abrirSecaoInicial();
+}
+const telaInicialAplicada = prepararInterfaceInicial();
+// Fase de interface pronta: os mesmos chamadores locais/Auth liberam a tela.
 function concluirCarregamentoConta() {
     document.documentElement.classList.remove("app-inicializando", "app-carregando-conta");
     document.body.removeAttribute("aria-busy");
@@ -4086,7 +4111,7 @@ function loadFirebaseSync() {
     firebaseInitPromise = (async () => {
         try {
             setSyncStatus("Conectando ao Firebase...");
-            const sdk = await import(new URL(`./firebase-sync.bundle.js?_release=${encodeURIComponent(VERSAO_BUNDLE || "local")}`, import.meta.url));
+            const sdk = await dependenciasAplicacao.loadFirebase(VERSAO_BUNDLE);
             firebaseClient = sdk.criarFirebaseSync(firebaseConfig);
             const user = await firebaseClient.ready();
             stopFirebaseAuthObserver();
@@ -4174,7 +4199,7 @@ async function onFirebaseUser(user) {
     if (!["valido", "ausente"].includes(saved.estado)) throw new Error("Dados legados inv?lidos");
     chaveEstadoAtual = key; estado = normalizarEstado(saved.estado === "valido" ? saved.valor : null); renderTudo(false);
     if (!idbServico) throw new Error("IndexedDB indispon?vel");
-    const legacyMeta = readSyncMetadata(localStorage, user.uid);
+    const legacyMeta = dependenciasAplicacao.readLegacyMetadata(user.uid);
     const initialized = await idbServico.inicializar(user.uid, estadoParaSalvar(), { outbox: [], conflicts: [], lastConfirmed: null, ...legacyMeta, firstLinkSource: saved.estado === "valido" ? "account" : "anonymous" });
     if (!current()) return;
     idbBloqueado = false; estado = normalizarEstado(initialized.estado.dados); idbBase = structuredClone(estadoParaSalvar()); renderTudo(false);
@@ -4857,45 +4882,52 @@ if (!IDB_HOMOLOGACAO && $("entrar-google") && $("sair-google") && firebaseConfig
         for (const name of ['dialogoReceita','dialogoDespesa','dialogoSerie','dialogoOrcamentos']) ui[name]?.close();
         for (const name of ['receitaNome','receitaValor','despesaNome','despesaValor']) if (ui[name]) ui[name].value = '';
     };
+    const prepararAutenticacao = sdk => {
+        client ||= sdk.criarFirebaseSync(firebaseConfig);
+    };
+    const prepararSincronizacao = () => {
+        automaticController ||= dependenciasAplicacao.createAutomaticSync({ client, db: idbBanco, service: idbServico,
+            requiredProtocol: 2,
+            readLegacy: lerEstadoPersistido, readLegacyMetadata: dependenciasAplicacao.readLegacyMetadata,
+            waitLocal: async () => { let pending; do { pending = idbPendente; await pending; } while (pending !== idbPendente); },
+            storageBlocked: () => idbBloqueado || recuperacaoFinanceira.protegido,
+            onTransition: user => {
+                renderAvisosFinanceiros({ recoveryNotices: [], compatibilityBlocked: false });
+                resetAccountForms(); iniciarCarregamentoConta(); idbBloqueado = true;
+                chaveEstadoAtual = user ? chaveLocalConta(user.uid) : CHAVE_ESTADO;
+                estado = normalizarEstado(null); idbBase = structuredClone(estadoParaSalvar()); renderTudo(false);
+                login.hidden = !!user; logout.hidden = !user;
+                account.textContent = user?.email || user?.displayName || '';
+                $("ultima-sincronizacao").textContent = ''; delete $("ultima-sincronizacao").dataset.i18nDate;
+            },
+            onAccount: async user => {
+                const sessionCurrent = capturarSessaoPersistencia();
+                idbBloqueado = false;
+                if (!user) {
+                    idbGeneration = 'legacy';
+                    const local = await idbBanco.ler('estado:@local');
+                    if (!sessionCurrent()) return;
+                    estado = normalizarEstado(local?.dados); idbBase = structuredClone(estadoParaSalvar()); renderTudo(false);
+                    showStatus('Somente neste dispositivo.');
+                    concluirCarregamentoConta();
+                }
+            },
+            onState: (next, meta) => {
+                idbGeneration = meta?.generation || 'legacy';
+                renderAvisosFinanceiros(meta);
+                estado = normalizarEstado(next); idbBase = structuredClone(estadoParaSalvar()); renderTudo(false);
+                concluirCarregamentoConta();
+            },
+            onStatus: showStatus
+        });
+    };
     const initialize = () => {
         if (initialization) return initialization;
         login.disabled = true;
         initialization = (async () => {
-            const sdk = await import(new URL(`./firebase-sync.bundle.js?_release=${encodeURIComponent(VERSAO_BUNDLE || 'local')}`, import.meta.url));
-            client ||= sdk.criarFirebaseSync(firebaseConfig);
-            automaticController ||= new AutomaticFinanceSync({ client, db: idbBanco, service: idbServico,
-                requiredProtocol: 2,
-                readLegacy: lerEstadoPersistido, waitLocal: async () => { let pending; do { pending = idbPendente; await pending; } while (pending !== idbPendente); },
-                storageBlocked: () => idbBloqueado || recuperacaoFinanceira.protegido,
-                onTransition: user => {
-                    renderAvisosFinanceiros({ recoveryNotices: [], compatibilityBlocked: false });
-                    resetAccountForms(); iniciarCarregamentoConta(); idbBloqueado = true;
-                    chaveEstadoAtual = user ? chaveLocalConta(user.uid) : CHAVE_ESTADO;
-                    estado = normalizarEstado(null); idbBase = structuredClone(estadoParaSalvar()); renderTudo(false);
-                    login.hidden = !!user; logout.hidden = !user;
-                    account.textContent = user?.email || user?.displayName || '';
-                    $("ultima-sincronizacao").textContent = ''; delete $("ultima-sincronizacao").dataset.i18nDate;
-                },
-                onAccount: async user => {
-                    const sessionCurrent = capturarSessaoPersistencia();
-                    idbBloqueado = false;
-                    if (!user) {
-                        idbGeneration = 'legacy';
-                        const local = await idbBanco.ler('estado:@local');
-                        if (!sessionCurrent()) return;
-                        estado = normalizarEstado(local?.dados); idbBase = structuredClone(estadoParaSalvar()); renderTudo(false);
-                        showStatus('Somente neste dispositivo.');
-                        concluirCarregamentoConta();
-                    }
-                },
-                onState: (next, meta) => {
-                    idbGeneration = meta?.generation || 'legacy';
-                    renderAvisosFinanceiros(meta);
-                    estado = normalizarEstado(next); idbBase = structuredClone(estadoParaSalvar()); renderTudo(false);
-                    concluirCarregamentoConta();
-                },
-                onStatus: showStatus
-            });
+            const sdk = await dependenciasAplicacao.loadFirebase(VERSAO_BUNDLE);
+            prepararAutenticacao(sdk);
+            prepararSincronizacao();
             await automaticController.start();
             concluirCarregamentoConta();
         })().catch(error => {
