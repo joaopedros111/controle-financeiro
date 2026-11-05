@@ -27,9 +27,12 @@
     "@firebase/rules-unit-testing": "^6.0.0",
     "@playwright/test": "^1.64.1",
     "esbuild": "^0.28.2",
-    "firebase-tools": "^15.34.0"
+    "firebase-tools": "15.34.0"
   },
   "overrides": {
-    "@grpc/grpc-js": "^1.14.6"
+    "@grpc/grpc-js": "^1.14.6",
+    "body-parser@^1.0.0": "1.20.9",
+    "body-parser@^2.0.0": "2.4.0",
+    "fast-uri@^3.0.0": "3.1.9"
   }
 }

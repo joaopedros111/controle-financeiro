@@ -1,0 +1,140 @@
+﻿name: Homologacao Ubuntu Node 24 sem deploy
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: homologacao-node24-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  homologacao:
+    if: >-
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/security/cofre-local-etapa1') ||
+      (github.event_name == 'pull_request' && github.head_ref == 'security/cofre-local-etapa1' &&
+       github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      CI: 'true'
+      FIREBASE_CLI_DISABLE_UPDATE_CHECK: 'true'
+      GCE_METADATA_HOST: '127.0.0.1:9'
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout da branch selecionada
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Node 24.21.0
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24.21.0'
+          registry-url: https://registry.npmjs.org
+
+      - name: Java para Emulators do proprio job
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Preparar evidencias e registrar ambiente
+        run: |
+          mkdir -p "$RUNNER_TEMP/homologacao/logs"
+          {
+            date -u --iso-8601=seconds
+            cat /etc/os-release
+            node --version
+            npm --version
+            java -version
+            git rev-parse HEAD
+          } 2>&1 | tee "$RUNNER_TEMP/homologacao/logs/ambiente.log"
+          test "$(node --version)" = 'v24.21.0'
+
+      - name: Instalar exclusivamente pelo lockfile
+        run: |
+          set -o pipefail
+          npm ci 2>&1 | tee "$RUNNER_TEMP/homologacao/logs/npm-ci.log"
+
+      - name: Conferir versoes efetivamente instaladas
+        run: |
+          node --input-type=commonjs <<'NODE' | tee "$RUNNER_TEMP/homologacao/logs/dependencias.log"
+          const assert = require('node:assert/strict');
+          for (const [file, expected] of [
+            ['./node_modules/firebase-tools/package.json', '15.34.0'],
+            ['./node_modules/body-parser/package.json', '1.20.9'],
+            ['./node_modules/@modelcontextprotocol/sdk/node_modules/body-parser/package.json', '2.4.0'],
+            ['./node_modules/fast-uri/package.json', '3.1.9']
+          ]) {
+            const version = require(file).version;
+            console.log(file, version);
+            assert.equal(version, expected);
+          }
+          NODE
+
+      - name: Preparar Chromium exigido pela suite global
+        run: |
+          node node_modules/@playwright/test/cli.js install --with-deps chromium 2>&1 | tee "$RUNNER_TEMP/homologacao/logs/playwright-install.log"
+
+      - name: Verificacoes de sintaxe
+        run: npm run check 2>&1 | tee "$RUNNER_TEMP/homologacao/logs/check.log"
+
+      - name: Suite global sem servicos de producao
+        run: npm test 2>&1 | tee "$RUNNER_TEMP/homologacao/logs/test.log"
+
+      - name: Regras Firestore com instancias descartaveis do job
+        run: npm run test:rules 2>&1 | tee "$RUNNER_TEMP/homologacao/logs/rules.log"
+
+      - name: Integracao sintetica do cofre com Emulators do job
+        run: |
+          node scripts/run-vault-integration-emulator.mjs 2>&1 | tee "$RUNNER_TEMP/homologacao/logs/vault-integration.log"
+          node scripts/run-vault-real-emulator.mjs 2>&1 | tee "$RUNNER_TEMP/homologacao/logs/vault-real.log"
+
+      - name: Build Pages somente em diretorio temporario
+        run: |
+          node scripts/prepare-pages.mjs "$GITHUB_WORKSPACE" "$RUNNER_TEMP/homologacao/site" "$GITHUB_RUN_NUMBER" 2>&1 | tee "$RUNNER_TEMP/homologacao/logs/pages-build.log"
+
+      - name: Auditorias completas e de producao
+        if: always() && !cancelled()
+        run: |
+          set +e
+          npm audit --json > "$RUNNER_TEMP/homologacao/logs/audit.json" 2> "$RUNNER_TEMP/homologacao/logs/audit.stderr.log"
+          full_status=$?
+          npm audit --omit=dev --json > "$RUNNER_TEMP/homologacao/logs/audit-production.json" 2> "$RUNNER_TEMP/homologacao/logs/audit-production.stderr.log"
+          prod_status=$?
+          printf 'audit=%s\naudit_omit_dev=%s\n' "$full_status" "$prod_status" | tee "$RUNNER_TEMP/homologacao/logs/audit-exit-codes.log"
+          set -e
+          node --input-type=commonjs <<'NODE'
+          const fs = require('node:fs');
+          for (const name of ['audit', 'audit-production']) {
+            const report = JSON.parse(fs.readFileSync(`${process.env.RUNNER_TEMP}/homologacao/logs/${name}.json`, 'utf8'));
+            if (report.error || !report.metadata?.vulnerabilities) throw new Error(`${name}: auditoria indisponivel`);
+            const counts = report.metadata.vulnerabilities;
+            console.log(name, JSON.stringify(counts));
+            if (counts.high || counts.critical || (name === 'audit-production' && counts.total)) process.exitCode = 1;
+          }
+          NODE
+
+      - name: Registrar integridade dos logs
+        if: always()
+        run: |
+          cd "$RUNNER_TEMP/homologacao/logs"
+          find . -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 -r sha256sum > SHA256SUMS
+          printf 'Commit: %s\nNode requerido: 24.21.0\nSem deploy. Consultar logs e resultados individuais dos passos.\n' "$GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Preservar somente logs de homologacao
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: homologacao-node24-${{ github.run_id }}
+          path: ${{ runner.temp }}/homologacao/logs/
+          if-no-files-found: error
+          retention-days: 14

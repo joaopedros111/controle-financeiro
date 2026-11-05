@@ -167,8 +167,11 @@ test('initial rendering after reload is silent and preserves financial state, pe
  Object.assign(c,{renderTema(){renders++;},aplicarPrivacidade(){},aplicarPreferenciasVisuais(){},aplicarPreferenciasMenu(){},
   renderPeriodo(){},renderReceitas(){},renderDespesas(){},atualizarResumo(persistir){if(persistir)c.salvar();}});
  vm.runInContext(app.slice(app.indexOf('function renderTudo('),app.indexOf('let ultimaRemocao =')),c);
- const end=app.indexOf('const telaInicialAplicada =');
- vm.runInContext(app.slice(app.lastIndexOf('renderTudo(',end),end),c);
+ const start=app.indexOf('function prepararInterfaceInicial()'),end=app.indexOf('const telaInicialAplicada =');
+ assert.ok(start>=0&&end>start,'execute the actual extracted interface preparation phase');
+ let sections=0;c.abrirSecaoInicial=()=>{sections++;return 'resumo';};
+ vm.runInContext(app.slice(start,end),c);
+ assert.equal(c.prepararInterfaceInicial(),'resumo');assert.equal(sections,1);
  await c.idbPendente;
  assert.equal(renders,1);assert.equal(writes,0);assert.equal(JSON.stringify([...db.docs]),before);assert.deepEqual(messages,[]);
 });

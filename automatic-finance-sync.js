@@ -24,8 +24,9 @@ function validateRecords(items) {
 
 export class AutomaticFinanceSync {
     constructor({ client, db, service, readLegacy, onAccount, onState, onStatus, onTransition = () => {}, waitLocal = async () => {}, storageBlocked = () => false,
-        connectivity = globalThis, delayMs = 200, maxDelayMs = 30000, requiredProtocol = 1 }) {
-        Object.assign(this, { client, db, service, readLegacy, onAccount, onState, onStatus, onTransition, waitLocal, storageBlocked, connectivity, delayMs, maxDelayMs, requiredProtocol });
+        connectivity = globalThis, delayMs = 200, maxDelayMs = 30000, requiredProtocol = 1,
+        readLegacyMetadata = uid => readSyncMetadata(globalThis.localStorage, uid) }) {
+        Object.assign(this, { client, db, service, readLegacy, readLegacyMetadata, onAccount, onState, onStatus, onTransition, waitLocal, storageBlocked, connectivity, delayMs, maxDelayMs, requiredProtocol });
         // A distinct context also fences anonymous -> login -> anonymous transitions.
         this.session = null; this.sessionContext = {}; this.online = connectivity.navigator?.onLine !== false;
     }
@@ -69,7 +70,8 @@ export class AutomaticFinanceSync {
         await this.waitLocal(); if (!this.current(s)) return;
         const saved = this.readLegacy(chaveLocalConta(s.uid));
         if (!['valido', 'ausente'].includes(saved.estado)) throw error('sync/invalid-local', 'Dados locais precisam de recuperação.');
-        const legacyQueue = readSyncMetadata(globalThis.localStorage, s.uid);
+        const legacyQueue = this.readLegacyMetadata(s.uid);
+        if (!legacyQueue || typeof legacyQueue !== 'object' || Array.isArray(legacyQueue) || typeof legacyQueue.then === 'function') throw error('sync/invalid-local', 'Metadados locais inválidos.');
         const existing = await this.db.ler(`estado:${s.uid}`);
         if (!this.current(s)) return;
         const initialized = await this.service.inicializar(s.uid, normalizarEstado(saved.estado === 'valido' ? saved.valor : null),
@@ -262,7 +264,19 @@ export class AutomaticFinanceSync {
         if (!snapshot.settings || !settingsEquivalent(financeSettings(final.dados), snapshot.settings)) { s.again = true; return; }
         const local = new Map(registrosFinanceiros(final.dados).map(item => [recordEntityKey(item), item]));
         const remoteKeys = new Set(snapshot.records.map(recordEntityKey));
-        if ([...local.keys()].some(key => !remoteKeys.has(key))) throw error('sync/untracked-data', 'Há dados locais sem confirmação remota. A cópia local foi preservada.');
+        if ([...local.keys()].some(key => !remoteKeys.has(key))) {
+            // Another tab may have committed and ACKed after this remote snapshot.
+            // Only diagnose untracked data against a fresh snapshot and a stable
+            // durable local revision/queue; never confirm using this older snapshot.
+            const fresh = await this.snapshot(s); if (!this.current(s)) return;
+            const latest = await this.db.ler(`estado:${s.uid}`); if (!this.current(s)) return;
+            const latestQueue = await this.service.lerFila(s.uid); if (!this.current(s)) return;
+            const freshKeys = new Set(fresh.records.map(recordEntityKey));
+            if (fresh.generation !== snapshot.generation || latest.revisao !== final.revisao
+                || JSON.stringify(latestQueue) !== JSON.stringify(finalQueue)
+                || [...local.keys()].every(key => freshKeys.has(key))) { s.again = true; return; }
+            throw error('sync/untracked-data', 'Há dados locais sem confirmação remota. A cópia local foi preservada.');
+        }
         for (const remote of snapshot.records) if (remote.deleted ? local.has(recordEntityKey(remote)) : !recordsEquivalent(local.get(recordEntityKey(remote))?.record, remote.record)) { s.again = true; return; }
         const confirmation = await this.service.confirmarSincronizacao(s.uid, final.dados, new Date().toISOString(), () => this.current(s));
         if (!this.current(s)) return;
