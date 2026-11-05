@@ -36,10 +36,12 @@ export function withFinanceGenerations(legacy, db, ensureUser, sdk = { collectio
     }
     async function settings(uid, generation) {
         const pointer = await getDocFromServer(reference(uid, generation, 'settings', 'finance'));
+        if (!snapshotConfirmed(pointer.metadata)) throw fail('unavailable', 'Configurações ainda não confirmadas pelo servidor.');
         if (!pointer.exists()) throw fail('sync/invalid-data', 'Configurações da geração ausentes.');
         const value = pointer.data();
         const base = reference(uid, generation, 'settingsSnapshots', value.snapshot);
         const [manifest, pieces] = await Promise.all([getDocFromServer(base), getDocsFromServer(collection(base, 'chunks'))]);
+        if (!snapshotConfirmed(manifest.metadata) || !snapshotConfirmed(pieces.metadata)) throw fail('unavailable', 'Manifesto ou partes ainda não confirmados pelo servidor.');
         if (!manifest.exists() || manifest.data().status !== 'ready' || pieces.size !== manifest.data().count) throw fail('sync/invalid-data', 'Configurações incompletas.');
         const chunks = pieces.docs.map(item => ({ id: item.id, ...item.data() })).sort((a, b) => a.index - b.index);
         if (chunks.some((item, index) => item.index !== index || item.id !== String(index) || typeof item.text !== 'string')) throw fail('sync/invalid-data', 'Partes de configurações inválidas.');
@@ -96,6 +98,14 @@ export function withFinanceGenerations(legacy, db, ensureUser, sdk = { collectio
                 }
             }
             throw fail('aborted', 'Geração mudou durante a leitura.');
+        },
+        async localMigrationSnapshot(uid) {
+            ensureUser(uid);
+            const result = await api.generationSnapshot(uid);
+            ensureUser(uid);
+            // All marker, record, settings and conflict reads above are server-only
+            // and validate metadata before this aggregate attestation is emitted.
+            return { ...result, uid, metadata: { fromCache: false, hasPendingWrites: false } };
         },
         async publishRestore(uid, job, canWrite = () => true) {
             ensureUser(uid);
@@ -201,6 +211,8 @@ export function withFinanceGenerations(legacy, db, ensureUser, sdk = { collectio
         async listConflicts(uid, { generation = 'legacy', ...options } = {}) {
             if (generation === 'legacy') return legacy.listConflicts(uid, options);
             ensureUser(uid); const snap = await getDocsFromServer(source(uid, generation, 'conflicts'));
+            ensureUser(uid);
+            if (!snapshotConfirmed(snap.metadata)) throw fail('unavailable', 'Conflitos ainda não confirmados pelo servidor.');
             return snap.docs.map(item => ({ ...item.data(), _docId: item.id }));
         },
         listenGeneration(uid, callback, failure) { ensureUser(uid); return onSnapshot(control(uid), { includeMetadataChanges: true }, snap => callback(snap.exists() ? snap.data() : null, snap.metadata), failure); },

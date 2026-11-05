@@ -25,8 +25,8 @@ function validateRecords(items) {
 export class AutomaticFinanceSync {
     constructor({ client, db, service, readLegacy, onAccount, onState, onStatus, onTransition = () => {}, waitLocal = async () => {}, storageBlocked = () => false,
         connectivity = globalThis, delayMs = 200, maxDelayMs = 30000, requiredProtocol = 1,
-        readLegacyMetadata = uid => readSyncMetadata(globalThis.localStorage, uid) }) {
-        Object.assign(this, { client, db, service, readLegacy, readLegacyMetadata, onAccount, onState, onStatus, onTransition, waitLocal, storageBlocked, connectivity, delayMs, maxDelayMs, requiredProtocol });
+        readLegacyMetadata = uid => readSyncMetadata(globalThis.localStorage, uid), accountPolicy = null, beforeAccountSync = null, onMigrationGate = () => {} }) {
+        Object.assign(this, { client, db, service, readLegacy, readLegacyMetadata, accountPolicy, beforeAccountSync, onMigrationGate, onAccount, onState, onStatus, onTransition, waitLocal, storageBlocked, connectivity, delayMs, maxDelayMs, requiredProtocol });
         // A distinct context also fences anonymous -> login -> anonymous transitions.
         this.session = null; this.sessionContext = {}; this.online = connectivity.navigator?.onLine !== false;
     }
@@ -35,6 +35,12 @@ export class AutomaticFinanceSync {
         const initial = new Promise(resolve => { settleInitial = resolve; });
         let awaitingInitial = true;
         this.unAuth = this.client.onUser(user => {
+            if (
+    this.accountPolicy &&
+    typeof this.client.authenticatedUser === 'function' &&
+    user?.uid !== this.client.authenticatedUser()?.uid
+) return;
+            if (user && this.session?.user === user) return;
             const transition = this.useAccount(user), session = this.session;
             void transition.catch(cause => this.report(cause, session)).finally(() => {
                 if (awaitingInitial) { awaitingInitial = false; settleInitial(); }
@@ -61,13 +67,36 @@ export class AutomaticFinanceSync {
     current(s) { return this.session === s; }
     status(message, failed = false, confirmedAt = null) { this.onStatus(message, failed, confirmedAt); }
     async useAccount(user) {
+        const formerUid = this.session?.uid;
         this.closeSession();
         const context = this.sessionContext;
         this.onTransition(user);
-        if (!user) { await this.waitLocal(); if (this.sessionContext === context) await this.onAccount(null); return; }
-        const s = { uid: user.uid, user, stops: [], attempt: 0, ready: false, permanent: false };
+        if (!user) {
+            this.accountPolicy?.hide();
+            await this.waitLocal();
+            if (this.sessionContext === context) {
+                if (this.accountPolicy && !this.accountPolicy.closing) await this.accountPolicy.revoke(formerUid);
+                if (this.sessionContext === context) await this.onAccount(null);
+            }
+            return;
+        }
+        const s = { uid: user.uid, user, stops: [], attempt: 0, ready: false, permanent: false, localMigration: this.beforeAccountSync ? { pending: true, checking: true } : null };
         this.session = s; this.status('Sincronizando');
         await this.waitLocal(); if (!this.current(s)) return;
+        if (this.accountPolicy) {
+            try { await this.accountPolicy.identify(user, () => this.current(s) && (!this.client.authenticatedUser || this.client.authenticatedUser() === user)); }
+            catch (cause) {
+                if (this.current(s)) { this.accountPolicy.hide(); this.closeSession(); this.onTransition(null); await this.onAccount(null); this.status(cause.message, true); }
+                throw cause;
+            }
+            if (!this.current(s)) return;
+        }
+        if (this.beforeAccountSync) {
+            const discovery = await this.beforeAccountSync(user, () => this.current(s));
+            if (!this.current(s)) return;
+            if (!discovery || typeof discovery.required !== 'boolean') throw error('migration/discovery-unavailable', 'Não foi possível verificar as fontes locais. A sincronização foi pausada.');
+            s.localMigration = discovery.required ? { ...discovery, pending: true, checking: false } : null;
+        }
         const saved = this.readLegacy(chaveLocalConta(s.uid));
         if (!['valido', 'ausente'].includes(saved.estado)) throw error('sync/invalid-local', 'Dados locais precisam de recuperação.');
         const legacyQueue = this.readLegacyMetadata(s.uid);
@@ -83,15 +112,33 @@ export class AutomaticFinanceSync {
             return q; });
         if (!this.current(s)) return;
         s.generation = initialized.fila.generation || 'legacy';
+        this.onMigrationGate(s.localMigration);
         this.emitState(s, initialized.estado, initialized.fila);
         if (this.requiredProtocol > 1 && (!this.client.generationSnapshot || !this.client.generationMarker || this.client.protocolVersion < this.requiredProtocol || !this.client.protocolVersion)) {
             await this.report(error('sync/upgrade-required', upgradeMessage), s); return;
         }
         this.request(0);
     }
+    async resumeAfterLocalReview(expectedSession, action, journalKey = null) {
+        const s = expectedSession;
+        if (!['keep-separate', 'import-applied'].includes(action) || !this.current(s) || !s.localMigration?.pending)
+            throw error('migration/review-required', 'Revisão explícita da sessão atual obrigatória.');
+        if (this.accountPolicy && !await this.accountPolicy.isCurrent()) throw error('persistence/cancelled', 'Sessão alterada.');
+        const queue = await this.service.lerFila(s.uid);
+        if (!this.current(s) || (queue.generation || 'legacy') !== s.generation) throw error('sync/generation-changed', 'A geração local mudou; refaça a revisão.');
+        if (action === 'import-applied') {
+            if (!journalKey?.startsWith('restore-recovery:' + s.uid + ':migration-')) throw error('migration/review-required', 'Diário obrigatório.');
+            const journal = await this.db.ler(journalKey);
+            if (!this.current(s) || !journal || journal.version !== 1 || journal.kind !== 'anonymous-google-import' || journal.uid !== s.uid || journal.generation !== s.generation
+                || !['applied', 'confirmed'].includes(journal.state) || !journal.consent?.explicit || !journal.consent?.ownershipAcknowledged)
+                throw error('migration/review-required', 'Importação durável não comprovada.');
+        }
+        s.localMigration = null; this.onMigrationGate(null);
+        this.request(0);
+    }
     request(delay = this.delayMs) {
         const s = this.session;
-        if (!s || s.permanent) return;
+        if (!s || s.permanent || s.localMigration?.pending) return;
         clearTimeout(s.timer);
         if (!this.online) { this.status('Offline'); return; }
         s.timer = setTimeout(() => { void this.run(s); }, Math.max(delay, (s.retryAt || 0) - Date.now()));
@@ -122,8 +169,10 @@ export class AutomaticFinanceSync {
         else s.permanent = true;
     }
     async run(s) {
-        if (!this.current(s) || !this.online || s.permanent) return;
+        if (!this.current(s) || !this.online || s.permanent || s.localMigration?.pending) return;
         if (s.running) { s.again = true; return; }
+        let settleRun;
+        s.finished = new Promise(resolve => { settleRun = resolve; });
         s.running = true; s.again = false;
         try {
             if (this.storageBlocked()) throw error('sync/storage-blocked', 'A persistência falhou. Os dados locais foram preservados.');
@@ -132,7 +181,24 @@ export class AutomaticFinanceSync {
             await this.cycle(s);
             if (this.current(s)) { s.attempt = 0; s.retryAt = 0; }
         } catch (cause) { await this.report(cause, s); }
-        finally { s.running = false; if (this.current(s) && s.again && !s.permanent) this.request(); }
+        finally { s.running = false; settleRun(); if (this.current(s) && s.again && !s.permanent) this.request(); }
+    }
+    async flushForLogout() {
+        const s = this.session;
+        if (s?.localMigration?.pending) throw error('migration/review-required', 'Fontes locais preservadas; revise antes de sincronizar.');
+        if (!s || !this.online || this.connectivity.navigator?.onLine === false) throw error('account/offline', 'Offline: copies preserved');
+        clearTimeout(s.timer);
+        await this.waitLocal();
+        for (let attempts = 0; attempts < 8; attempts++) {
+            if (!this.current(s)) throw error('persistence/cancelled', 'Session changed');
+            if (s.running) await s.finished;
+            s.permanent = false; s.retryAt = 0;
+            await this.run(s);
+            if (!this.current(s)) throw error('persistence/cancelled', 'Session changed');
+            if (!s.again || s.permanent) return;
+            clearTimeout(s.timer);
+        }
+        throw error('account/sync-pending', 'Synchronization still pending');
     }
     async snapshot(s) {
         if (!this.current(s)) throw error('persistence/cancelled', 'Sessão alterada.');
@@ -201,6 +267,7 @@ export class AutomaticFinanceSync {
     }
     async cycle(s) {
         if (!this.current(s)) return;
+        if (s.localMigration?.pending) throw error('migration/review-required', 'Fontes locais precisam de revisão; nada foi publicado.');
         const initialQueue = await this.service.lerFila(s.uid);
         if (!this.current(s)) return;
         if (initialQueue.compatibilityBlocked) {
@@ -312,6 +379,7 @@ export class AutomaticFinanceSync {
             recoveryNotices: (queue?.recoveryNotices || []).filter(item => !item.acknowledged), compatibilityBlocked: Boolean(queue?.compatibilityBlocked) });
     }
     async resumeRestore(s, job) {
+        if (s.localMigration?.pending) throw error('migration/review-required', 'Revisão das fontes locais obrigatória antes de retomar a restauração.');
         if (!this.client.publishRestore) throw error('sync/upgrade-required', 'Atualize o cliente antes de restaurar.');
         await this.client.publishRestore(s.uid, job, () => this.current(s));
         if (!this.current(s)) return;
@@ -328,6 +396,7 @@ export class AutomaticFinanceSync {
         this.emitState(s, result.get(`estado:${s.uid}`), result.get(`fila:${s.uid}`));
     }
     async importBackup(raw, confirm = () => false, onSessionRenewed = () => {}) {
+        if (this.session?.localMigration?.pending) throw error('migration/review-required', 'Revisão das fontes locais obrigatória antes de restaurar.');
         let s = this.session;
         if (!s) throw error('sync/sign-in-required', 'Entre com Google antes de importar para a conta.');
         const previousSession = s;

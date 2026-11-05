@@ -226,6 +226,8 @@ export class ServicoFinanceiroAtomico {
                 && !queue.conflictDecisions?.some(item => item.status !== 'confirmed')) {
                 queue.lastConfirmed = !Number.isFinite(Date.parse(queue.lastConfirmed)) || quando > queue.lastConfirmed ? quando : queue.lastConfirmed;
                 queue.migrationPending = false;
+                queue.confirmedRevision = state.revisao;
+                queue.confirmedGeneration = queue.generation || 'legacy';
                 confirmed = true;
             }
             return docs;

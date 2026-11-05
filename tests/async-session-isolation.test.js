@@ -253,29 +253,23 @@ test('obsolete anonymous account transition cannot hydrate a newer logout contex
     assert.deepEqual(accounts, [null]);
 });
 
-test('anonymous UI hydration fences login/logout while IndexedDB is being read', async () => {
+test('signed-out account transition never hydrates anonymous IndexedDB data', async () => {
     const start = source.lastIndexOf('onAccount: async user => {');
     const end = source.indexOf('\n            },', start) + '\n            }'.length;
-    assert.ok(start >= 0 && end > start, 'the real onAccount callback must be located');
+    assert.ok(start >= 0 && end > start);
     const handler = source.slice(start + 'onAccount: '.length, end);
-    for (const changeSession of [false, true]) {
-        const h = await saveHarness({ local: true, pauseAt: 'state-read' });
-        h.c.showStatus = text => h.statuses.push(text);
-        h.c.concluirCarregamentoConta = () => h.frames.push('ready');
-        const hydrate = vm.runInContext(`(${handler})`, h.c);
-        const loading = hydrate(null); await h.paused.promise;
-        if (changeSession) { h.transition('A-B'); h.transition('logout'); }
-        const visible = h.c.estado, base = h.c.idbBase;
-        h.release.resolve(); await loading;
-        if (changeSession) {
-            assert.equal(h.c.estado, visible); assert.equal(h.c.idbBase, base);
-            assert.deepEqual(h.frames, []); assert.deepEqual(h.statuses, []);
-        } else {
-            assert.equal(h.c.estado.meses['2026-10'].receitas[0].valor, 10);
-            assert.deepEqual(h.statuses, ['Somente neste dispositivo.']);
-            assert.ok(h.frames.includes('ready'));
-        }
-    }
+    const h = await saveHarness({ local: true });
+    h.c.showStatus = text => h.statuses.push(text);
+    h.c.concluirCarregamentoConta = () => h.frames.push('ready');
+    h.c.atualizarPermissaoFinanceira = () => {};
+    h.c.ocultarDadosFinanceiros = () => { h.c.estado = { meses: {}, orcamentos: {} }; h.c.idbBloqueado = true; };
+    h.c.idbBanco.ler = async () => { throw new Error('Anonymous data must not be read'); };
+    const hydrate = vm.runInContext('(' + handler + ')', h.c);
+    await hydrate(null);
+    assert.equal(Object.keys(h.c.estado.meses).length, 0);
+    assert.equal(h.c.idbBloqueado, true);
+    assert.ok(h.statuses[0].includes('Google'));
+    assert.ok(h.frames.includes('ready'));
 });
 
 for (const kind of transitions.filter(kind => kind !== 'controller-replacement')) {

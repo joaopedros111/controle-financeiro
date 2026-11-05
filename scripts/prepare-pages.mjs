@@ -13,6 +13,8 @@ const STATIC_FILES = [
     "preferences.js",
     "localization.js",
     "storage.js",
+    "account-data-policy.js",
+    "account-local-migration.js",
     "sync-core.js",
     "automatic-finance-sync.js",
     "automatic-sync-policy.js",
@@ -60,7 +62,10 @@ export async function prepararArtefatoPages({ diretorioFonte, diretorioSaida, nu
     const nomeCache = `${cache[1]}v${numeroCache}`;
 
     await mkdir(saida, { recursive: true });
-    await Promise.all(STATIC_FILES.map((arquivo) =>
+    // Generated files are rendered from source and written only once. In particular,
+    // never truncate/reopen an app.js just created by copyFile on Windows.
+    const generated = arquivo => arquivo.endsWith('.js') || ['index.html', 'version.json', 'manifest.json'].includes(arquivo);
+    await Promise.all(STATIC_FILES.filter(arquivo => !generated(arquivo)).map((arquivo) =>
         copyFile(path.join(fonte, arquivo), path.join(saida, arquivo))
     ));
     await cp(path.join(fonte, "icons"), path.join(saida, "icons"), { recursive: true });
@@ -69,7 +74,7 @@ export async function prepararArtefatoPages({ diretorioFonte, diretorioSaida, nu
     metadados.version = versaoPublicada;
     const arquivoVersao = `${JSON.stringify(metadados, null, 2)}\n`;
     await writeFile(path.join(saida, "version.json"), arquivoVersao);
-    let html = await readFile(path.join(saida, "index.html"), "utf8");
+    let html = await readFile(path.join(fonte, "index.html"), "utf8");
     if (!/<meta name="app-version" content="[^"]*">/.test(html)) {
         throw new Error("index.html precisa conter o marcador meta app-version.");
     }
@@ -82,7 +87,7 @@ export async function prepararArtefatoPages({ diretorioFonte, diretorioSaida, nu
     );
     await writeFile(path.join(saida, "index.html"), html);
 
-    let app = await readFile(path.join(saida, "app.js"), "utf8");
+    let app = await readFile(path.join(fonte, "app.js"), "utf8");
     app = app.replace(
         /(from\s*["'])(\.\/[^"']+\.js)(["'])/g,
         (_match, antes, recurso, depois) => `${antes}${recurso}?_release=${versaoPublicada}${depois}`
@@ -90,14 +95,14 @@ export async function prepararArtefatoPages({ diretorioFonte, diretorioSaida, nu
     app = app.replace(/(from\s*["'])(\.\/firebase-config\.js|\.\/sync-core\.js)(["'])/g, (_match, before, resource, after) => `${before}${resource}?_release=${versaoPublicada}${after}`);
     await writeFile(path.join(saida, "app.js"), app);
     // Version transitive imports too: the SW precaches only release URLs.
-    for (const arquivo of STATIC_FILES.filter((nome) => nome.endsWith(".js") && nome !== "app.js")) {
+    for (const arquivo of STATIC_FILES.filter((nome) => nome.endsWith(".js") && nome !== "app.js" && nome !== "sw.js")) {
         const destino = path.join(saida, arquivo);
-        const modulo = await readFile(destino, "utf8");
+        const modulo = await readFile(path.join(fonte, arquivo), "utf8");
         await writeFile(destino, modulo.replace(/(from\s*["'])(\.\/[^"']+\.js)(["'])/g,
             (_match, antes, recurso, depois) => `${antes}${recurso}?_release=${versaoPublicada}${depois}`));
     }
 
-    const manifest = JSON.parse(await readFile(path.join(saida, "manifest.json"), "utf8"));
+    const manifest = JSON.parse(await readFile(path.join(fonte, "manifest.json"), "utf8"));
     manifest.start_url = `./index.html?_release=${versaoPublicada}`;
     manifest.icons = manifest.icons.map((icone) => ({
         ...icone,

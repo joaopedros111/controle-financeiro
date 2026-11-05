@@ -1,3 +1,4 @@
+import { ACCOUNT_ACCESS_KEY, assertAccountAccess, validAccountControl, confirmedForRemoval } from './account-data-policy.js';
 // Persistência transacional opt-in. Não substitui o armazenamento legado até a homologação.
 const DATABASE = 'controleFinanceiro:integridade:v1';
 const STORE = 'documents';
@@ -5,7 +6,7 @@ const STORE = 'documents';
 export function abrirPersistenciaFinanceira(factory = globalThis.indexedDB) {
     if (!factory) return Promise.reject(new Error('IndexedDB indisponível'));
     return new Promise((resolve, reject) => {
-        const request = factory.open(DATABASE, 1);
+        const request = factory.open(DATABASE, 2);
         request.onupgradeneeded = () => {
             const db = request.result;
             if (!db.objectStoreNames.contains(STORE)) db.createObjectStore(STORE);
@@ -25,51 +26,42 @@ export class PersistenciaFinanceira {
     // A callback deve ser síncrona: await dentro da transação pode encerrá-la.
     alterar(chave, transformar) {
         if (typeof chave !== 'string' || !chave) return Promise.reject(new Error('Chave inválida'));
-        return new Promise((resolve, reject) => {
-            let resultado;
-            let erroTransformacao;
-            const tx = this.db.transaction(STORE, 'readwrite');
-            const store = tx.objectStore(STORE);
-            const read = store.get(chave);
-            read.onsuccess = () => {
-                try {
-                    const atual = read.result === undefined ? null : structuredClone(read.result);
-                    const proximo = transformar(atual);
-                    if (proximo && typeof proximo.then === 'function') throw new Error('Transação assíncrona não suportada');
-                    if (proximo === undefined) throw new Error('Transação sem resultado');
-                    resultado = structuredClone(proximo);
-                    store.put(resultado, chave);
-                } catch (error) {
-                    resultado = undefined;
-                    erroTransformacao = error;
-                    tx.abort();
-                }
-            };
-            tx.oncomplete = () => resolve(resultado);
-            tx.onabort = () => reject(erroTransformacao || tx.error || new Error('Transação cancelada'));
-            tx.onerror = () => reject(tx.error || new Error('Falha na transação'));
-        });
+        return this.alterarDocumentos([chave], docs => {
+            const value = transformar(docs.get(chave));
+            if (value === undefined || value?.then) throw new Error('Invalid transaction result');
+            docs.set(chave, value); return docs;
+        }).then(docs => docs.get(chave));
     }
     // Uma única transação para estado e fila: ou ambos são gravados, ou nenhum.
     alterarDocumentos(chaves, transformar) {
+        return this.alterarComLeituras(chaves, [], transformar);
+    }
+    // Read-set participates in the same transaction but can never be written.
+    alterarComLeituras(chaves, somenteLeitura, transformar) {
         if (!Array.isArray(chaves) || !chaves.length || new Set(chaves).size !== chaves.length ||
             chaves.some((chave) => typeof chave !== 'string' || !chave)) {
             return Promise.reject(new Error('Chaves transacionais inválidas'));
         }
+        if (!Array.isArray(somenteLeitura) || somenteLeitura.some(key => typeof key !== 'string' || !key || chaves.includes(key)) || new Set(somenteLeitura).size !== somenteLeitura.length)
+            return Promise.reject(new Error('Read-set invalido'));
         return new Promise((resolve, reject) => {
             const tx = this.db.transaction(STORE, 'readwrite');
             const store = tx.objectStore(STORE);
             const valores = new Map();
+            const access = this.acessoConta;
+            const guarded = this.requerConta && chaves.some(key => /^(estado:|fila:|restore-recovery:)/.test(key));
+            const reads = [...new Set([...chaves, ...somenteLeitura, ...(guarded ? [ACCOUNT_ACCESS_KEY] : [])])];
             let erroTransformacao;
             let resultado;
             // As leituras são enfileiradas antes de qualquer escrita, na mesma transação.
-            for (const chave of chaves) {
+            for (const chave of reads) {
                 const request = store.get(chave);
                 request.onsuccess = () => {
                     valores.set(chave, request.result === undefined ? null : structuredClone(request.result));
-                    if (valores.size !== chaves.length) return;
+                    if (valores.size !== reads.length) return;
                     try {
-                        const alterados = transformar(new Map(valores));
+                        if (guarded) assertAccountAccess(valores.get(ACCOUNT_ACCESS_KEY), access, chaves);
+                        const alterados = transformar(new Map(chaves.map(key => [key, valores.get(key)])), new Map(somenteLeitura.map(key => [key, valores.get(key)])));
                         if (!(alterados instanceof Map) || alterados.size !== chaves.length ||
                             chaves.some((key) => !alterados.has(key))) throw new Error('Resultado transacional incompleto');
                         for (const key of chaves) {
@@ -87,7 +79,7 @@ export class PersistenciaFinanceira {
             }
             tx.oncomplete = () => resolve(resultado);
             tx.onabort = () => reject(erroTransformacao || tx.error || new Error('Transação cancelada'));
-            tx.onerror = () => reject(tx.error || new Error('Falha na transação'));
+            tx.onerror = () => reject(erroTransformacao || tx.error || new Error('Falha na transação'));
         });
     }
     ler(chave) {
@@ -99,6 +91,67 @@ export class PersistenciaFinanceira {
             tx.oncomplete = () => resolve(resultado);
             tx.onabort = () => reject(tx.error || new Error('Leitura cancelada'));
             request.onerror = () => reject(request.error);
+        });
+    }
+    // Read-only snapshot, including anonymous state/queue. Never writes or bypasses UID guards.
+    lerDocumentos(chaves) {
+        if (!Array.isArray(chaves) || !chaves.length || new Set(chaves).size !== chaves.length || chaves.some(k => typeof k !== 'string' || !k))
+            return Promise.reject(new Error('Chaves de leitura inválidas'));
+        return new Promise((resolve, reject) => {
+            const tx = this.db.transaction(STORE, 'readonly'), values = new Map();
+            for (const key of chaves) {
+                const request = tx.objectStore(STORE).get(key);
+                request.onsuccess = () => values.set(key, request.result === undefined ? null : structuredClone(request.result));
+            }
+            tx.oncomplete = () => resolve(values);
+            tx.onabort = () => reject(tx.error || new Error('Leitura de fontes cancelada'));
+            tx.onerror = () => reject(tx.error || new Error('Não foi possível ler as fontes'));
+        });
+    }
+    listarRecuperacoesConta(uid) {
+        return new Promise((resolve, reject) => {
+            const tx = this.db.transaction(STORE, 'readonly'), rows = [], request = tx.objectStore(STORE).openCursor();
+            request.onsuccess = () => { const row = request.result; if (!row) return;
+                if (typeof row.key === 'string' && row.key.startsWith('account-recovery:' + uid + ':')) rows.push(structuredClone(row.value));
+                row.continue();
+            };
+            tx.oncomplete = () => resolve(rows);
+            tx.onabort = () => reject(tx.error || new Error('Recovery read failed'));
+        });
+    }
+    async preservarOperacaoBloqueada(uid, base, proposta, code) {
+        const key = 'account-recovery:' + uid + ':' + crypto.randomUUID();
+        await this.alterar(key, previous => {
+            if (previous !== null) throw new Error('Recovery already exists');
+            return { uid, base: structuredClone(base), proposta: structuredClone(proposta), code };
+        });
+        return key;
+    }
+    // One transaction: proof, session fence, and deletion of ONLY confirmed pairs.
+    removerContasConfirmadas(epoch) {
+        return new Promise((resolve, reject) => {
+            const tx = this.db.transaction(STORE, 'readwrite'), store = tx.objectStore(STORE), docs = new Map();
+            let result = [], failure;
+            const cursor = store.openCursor();
+            cursor.onsuccess = () => {
+                const row = cursor.result;
+                if (row) { docs.set(row.key, row.value); row.continue(); return; }
+                try {
+                    const control = docs.get(ACCOUNT_ACCESS_KEY);
+                    if (!validAccountControl(control) || control.uid !== null || control.epoch !== epoch || control.closing)
+                        throw new Error('Session changed during cleanup; copies preserved');
+                    for (const [key, state] of docs) {
+                        if (!/^estado:[A-Za-z0-9_-]{1,128}$/.test(key)) continue;
+                        const uid = key.slice(7), queue = docs.get('fila:' + uid);
+                        if (uid === 'local') continue;
+                        if (!confirmedForRemoval(state, queue) || [...docs.keys()].some(k => k.startsWith('account-recovery:' + uid + ':'))) continue;
+                        store.delete(key); store.delete('fila:' + uid); result.push({ uid, state: structuredClone(state.dados) });
+                    }
+                } catch (error) { failure = error; tx.abort(); }
+            };
+            tx.oncomplete = () => resolve(result);
+            tx.onabort = () => reject(failure || tx.error || new Error('Cleanup aborted'));
+            tx.onerror = () => reject(tx.error || new Error('Cleanup failed'));
         });
     }
     async importarLegado(chave, lerLegado, validar) {

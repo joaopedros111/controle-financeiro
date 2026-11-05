@@ -21,7 +21,7 @@ function harness() {
         initializeApp: () => ({}), initializeAuth: (_app,options) => { context.authOptions=options; return auth; }, GoogleAuthProvider: class {},
         browserLocalPersistence: {type:'LOCAL'}, indexedDBLocalPersistence: {type:'LOCAL-IDB'}, browserSessionPersistence: {type:'SESSION'}, browserPopupRedirectResolver: {},
         localStorage: {setItem:(k,v)=>data.set(k,v),getItem:k=>data.get(k)??null,removeItem:k=>data.delete(k)},
-        initializeFirestore: () => ({}), persistentLocalCache: () => ({}), persistentMultipleTabManager: () => ({}),
+        initializeFirestore: () => ({}), memoryLocalCache: () => ({}), persistentLocalCache: () => ({}), persistentMultipleTabManager: () => ({}),
         doc: (...parts) => parts.filter((part) => typeof part === "string").join("/"),
         collection: (...parts) => parts.filter((part) => typeof part === "string").join("/"),
         getDocFromServer: async (key) => snapshot(key), getDoc: async (key) => snapshot(key),
@@ -173,7 +173,7 @@ test("cliente de produção executa transações e configurações nas regras do
         browserLocalPersistence: {},indexedDBLocalPersistence:{},browserSessionPersistence:{},browserPopupRedirectResolver:{},
         localStorage: {setItem(k,v){this[k]=v;},getItem(k){return this[k]??null;},removeItem(k){delete this[k];}},
         initializeFirestore: () => env.authenticatedContext("alice").firestore(),
-        persistentLocalCache: () => ({}), persistentMultipleTabManager: () => ({}) };
+        memoryLocalCache: () => ({}), persistentLocalCache: () => ({}), persistentMultipleTabManager: () => ({}) };
     // Same realm as the SDK so Firestore sees ordinary objects, with only auth/bootstrap replaced.
     const factory = Function(...Object.keys(dependencies), `${source}\nreturn criarFirebaseSync;`)(...Object.values(dependencies));
     try {

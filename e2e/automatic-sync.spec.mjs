@@ -5,7 +5,7 @@ let secondBrowser;
 const q = uid => `fila:${uid}`, st = uid => `estado:${uid}`;
 async function read(page, key) {
     return page.evaluate(async key => {
-        const db = await new Promise((resolve, reject) => { const r = indexedDB.open('controleFinanceiro:integridade:v1', 1); r.onsuccess = () => resolve(r.result); r.onerror = () => reject(r.error); });
+        const db = await new Promise((resolve, reject) => { const r = indexedDB.open('controleFinanceiro:integridade:v1', 2); r.onsuccess = () => resolve(r.result); r.onerror = () => reject(r.error); });
         try { return await new Promise((resolve, reject) => { const tx = db.transaction('documents', 'readonly'), r = tx.objectStore('documents').get(key); let data;
             r.onsuccess = () => { data = r.result; }; tx.oncomplete = () => resolve(data); tx.onabort = () => reject(tx.error); }); } finally { db.close(); }
     }, key);
@@ -259,7 +259,7 @@ test('automatic UI: legacy pending backup resumes settings and preserves its alt
     await expect(page.locator('#estado-sincronizacao')).toHaveText('Sincronizado');
     await context.setOffline(true);
     await page.evaluate(async uid => {
-        const db = await new Promise((resolve, reject) => { const r = indexedDB.open('controleFinanceiro:integridade:v1', 1); r.onsuccess = () => resolve(r.result); r.onerror = () => reject(r.error); });
+        const db = await new Promise((resolve, reject) => { const r = indexedDB.open('controleFinanceiro:integridade:v1', 2); r.onsuccess = () => resolve(r.result); r.onerror = () => reject(r.error); });
         await new Promise((resolve, reject) => {
             const tx = db.transaction('documents', 'readwrite'), store = tx.objectStore('documents');
             const state = store.get(`estado:${uid}`); state.onsuccess = () => {

@@ -41,18 +41,24 @@ export function createExperimentalAccount({ store, owner, vaultId = 'synthetic-i
                     } catch (error) { check(); if (error.code !== 'stale-revision' || attempt === 2) throw error; }
                 }
         }
+        const coordinationKey = `cf-vault-experimental:${owner.projectId}:${uid}:${vaultId}`;
         const db = Object.freeze({
             async ler(id) {
                 check(); if (!owned(id)) fail('context-mismatch');
-                const snapshot = await vault.read(); check(); snapshotPolicy?.validate(snapshot);
-                return Object.hasOwn(snapshot.documents, id) ? copy(snapshot.documents[id]) : null;
+                const read = async () => {
+                    check(); const snapshot = await vault.read(); check(); snapshotPolicy?.validate(snapshot);
+                    return Object.hasOwn(snapshot.documents, id) ? copy(snapshot.documents[id]) : null;
+                };
+                // Controller.read checks catalog consistency across asynchronous crypto reads.
+                // Cooperating writers must not commit between these guards.
+                return locks ? locks.request(coordinationKey, read) : read();
             },
             alterarDocumentos(keys, mutate) {
                 check();
                 if (!Array.isArray(keys)) fail('invalid-input'); const ids = [...keys];
                 // Serialize cooperating browser tabs before reading the CAS baseline.
                 // Durable revision/epoch checks still fence non-cooperating writers.
-                return locks ? locks.request(`cf-vault-experimental:${owner.projectId}:${uid}:${vaultId}`, () => mutateDocuments(ids, mutate)) : mutateDocuments(ids, mutate);
+                return locks ? locks.request(coordinationKey, () => mutateDocuments(ids, mutate)) : mutateDocuments(ids, mutate);
             },
             async alterar(id, mutate) { return (await db.alterarDocumentos([id], docs => { docs.set(id, mutate(docs.get(id))); return docs; })).get(id); }
         });

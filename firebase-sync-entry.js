@@ -71,10 +71,7 @@ export function criarFirebaseSync(config, runtime = {}) {
     const provider = new GoogleAuthProvider();
     let db;
     if (runtime.createFirestore) db = runtime.createFirestore(app);
-    else {
-        try { db = initializeFirestore(app, { localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }) }); }
-        catch { try { db = initializeFirestore(app, { localCache: memoryLocalCache() }); } catch { db = getFirestore(app); } }
-    }
+    else db = initializeFirestore(app, { localCache: memoryLocalCache() }); // Durable offline work lives only in the guarded account outbox.
     const legacy = {
         async ready() {
             await auth.authStateReady();
@@ -89,6 +86,7 @@ export function criarFirebaseSync(config, runtime = {}) {
         // Called directly from the click gesture: do not await initialization here.
         login: () => signInWithPopup(auth, provider),
         logout: () => signOut(auth),
+        authenticatedUser: () => auth.currentUser,
         async list(uid, { serverOnly = true } = {}) {
             if (auth.currentUser?.uid !== uid) throw new Error("Conta não corresponde ao usuário autenticado.");
             // Do not orderBy: it silently omits malformed documents missing `month`.

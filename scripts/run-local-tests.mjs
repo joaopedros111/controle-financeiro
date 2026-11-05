@@ -10,13 +10,17 @@ import { build } from "esbuild";
 import { prepararArtefatoPages } from "./prepare-pages.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const accountBrowser = process.argv[2] === 'google-account';
+const isolatedRules = process.argv[2] === 'rules-isolated';
+const isolated = accountBrowser || isolatedRules;
+const firestorePort = isolated ? 8180 : 8080, authPort = isolated ? 9199 : 9099;
 const realtimeBrowser = process.argv[2] === 'epoch-realtime';
 const epochBrowser = process.argv[2] === 'epoch-browser' || realtimeBrowser;
-const browser = process.argv[2] === "browser" || epochBrowser;
+const browser = process.argv[2] === "browser" || epochBrowser || accountBrowser;
 const epoch = process.argv[2] === "epoch" || epochBrowser;
-if (!["rules", "browser", "epoch", "epoch-browser", "epoch-realtime"].includes(process.argv[2])) throw new Error("Use rules, browser, epoch, epoch-browser ou epoch-realtime.");
-const project = "demo-controle-financeiro";
-for (const port of browser ? [8080, 9099, 4400, 4500, 9150] : [8080, 4400, 4500, 9150]) {
+if (!["rules", "browser", "epoch", "epoch-browser", "epoch-realtime", "google-account", "rules-isolated"].includes(process.argv[2])) throw new Error("Use rules, browser, epoch, epoch-browser ou epoch-realtime.");
+const project = accountBrowser ? "demo-controle-financeiro-google-only" : "demo-controle-financeiro";
+for (const port of isolated ? [8180, ...(browser ? [9199] : []), 4600, 4700, 9250] : browser ? [8080, 9099, 4400, 4500, 9150] : [8080, 4400, 4500, 9150]) {
     await new Promise((resolve, reject) => {
         const probe = createProbe().once("error", () => reject(new Error(`Porta local ${port} ocupada; nenhuma instância existente foi encerrada.`)));
         probe.listen(port, "127.0.0.1", () => probe.close(resolve));
@@ -27,7 +31,8 @@ console.log(`Artefatos e logs isolados: ${work}`);
 await copyFile(path.join(root, epoch ? "firestore.epoch.rules" : "firestore.rules"), path.join(work, "firestore.rules"));
 await writeFile(path.join(work, "firebase.json"), JSON.stringify({
     firestore: { rules: "firestore.rules" }, emulators: { singleProjectMode: false,
-        firestore: { host: "127.0.0.1", port: 8080 }, ...(browser ? { auth: { host: "127.0.0.1", port: 9099 } } : {}) }
+        ...(isolated ? { hub: {host:"127.0.0.1",port:4600}, logging: {host:"127.0.0.1",port:4700}, ui: {enabled:false} } : {}),
+        firestore: { host: "127.0.0.1", port: firestorePort, ...(isolated ? {websocketPort:9250} : {}) }, ...(browser ? { auth: { host: "127.0.0.1", port: authPort } } : {}) }
 }));
 const env = { ...process.env, CI: "true", FIREBASE_CLI_DISABLE_UPDATE_CHECK: "true" };
 // Never read/write the developer's Firebase CLI credentials during local QA.
@@ -36,6 +41,7 @@ delete env.FIREBASE_TOKEN;
 delete env.GOOGLE_APPLICATION_CREDENTIALS;
 delete env.DEBUG;
 for (const name of ["NO_PROXY", "no_grpc_proxy"]) env[name] = [env[name], "127.0.0.1", "localhost", "::1"].filter(Boolean).join(",");
+if (accountBrowser) env.LOCAL_TEST_GOOGLE_ACCOUNT = '1';
 let server;
 if (browser) {
     const site = path.join(work, "site");
@@ -66,7 +72,7 @@ if (browser) {
             requireDemo(config);
             if(!['idb','session'].includes(kind))throw new Error('Invalid test backend');
             const auth=initializeAuth(initializeApp(config),{persistence:kind==='idb'?indexedDBLocalPersistence:browserSessionPersistence});
-            connectAuthEmulator(auth,"http://127.0.0.1:9099",{disableWarnings:true});
+            connectAuthEmulator(auth,"http://127.0.0.1:${authPort}",{disableWarnings:true});
             await auth.authStateReady();await signInWithEmailAndPassword(auth,email,'synthetic-password-only');
         }
         export function productionClientForTest(config){requireDemo(config);return production(config);}
@@ -92,8 +98,8 @@ if (browser) {
                 if(window.__requiredProtocolForTest)throw Object.assign(new Error('Synthetic unsupported generation protocol'),{code:'sync/upgrade-required'});
                 return generationSnapshot(...args);
             };
-            connectAuthEmulator(auth,"http://127.0.0.1:9099",{disableWarnings:true});
-            connectFirestoreEmulator(getFirestore(),"127.0.0.1",8080);
+            connectAuthEmulator(auth,"http://127.0.0.1:${authPort}",{disableWarnings:true});
+            connectFirestoreEmulator(getFirestore(),"127.0.0.1",${firestorePort});
             // Synthetic-only diagnostics: never capture credentials, tokens or financial payloads.
             let authEvent=0;
             const log=(operation,uid,phase,code)=>{
@@ -114,6 +120,20 @@ if (browser) {
                 const original=client[operation].bind(client);
                 client[operation]=(uid,callback,failure,...args)=>{log(operation,uid,'start');return original(uid,callback,error=>{log(operation,uid,'error',error?.code);failure?.(error);},...args);};
             }
+            const migrationCommit=client.commit.bind(client);
+            client.commit=async(...args)=>{if(window.__holdMigrationCommit)await new Promise(resolve=>window.__releaseMigrationCommit=resolve);return migrationCommit(...args);};
+            const originalMigrationSnapshot=client.localMigrationSnapshot.bind(client);
+            client.localMigrationSnapshot=async(...args)=>{
+                const snapshot=await originalMigrationSnapshot(...args);
+                if(window.__holdMigrationSnapshot)await new Promise(resolve=>window.__releaseMigrationSnapshot=resolve);
+                return window.__migrationCachedForTest?{...snapshot,metadata:{fromCache:true,hasPendingWrites:false}}:snapshot;
+            };
+            const originalLogout=client.logout;
+            client.logout=()=>{if(window.__testSignOutFailure)throw new Error('Synthetic signOut failure');return originalLogout();};
+            const realOnUser=client.onUser, delayed=[];let bootReleased=!window.__holdAuthBootstrap, releaseBoot;
+            const bootGate=new Promise(resolve=>releaseBoot=resolve), originalReady=client.ready.bind(client);
+            if(!bootReleased){window.__releaseAuthBootstrap=()=>{bootReleased=true;releaseBoot();for(const deliver of delayed.splice(0))deliver();};client.ready=async()=>{const user=await originalReady();await bootGate;return user;};}
+            client.onUser=callback=>{window.__authSubscriptions=(window.__authSubscriptions||0)+1;let live=true;const stop=realOnUser(user=>{const deliver=()=>{if(!live)return;window.__lastAuthDelivery=()=>callback(user);return callback(user);};if(!bootReleased){delayed.push(deliver);return;}return deliver();});return()=>{live=false;window.__authSubscriptions--;return stop();};};
             client.login=()=>signInWithEmailAndPassword(auth,window.__testEmail,"synthetic-password-only");
             return client;
         }
@@ -124,10 +144,23 @@ if (browser) {
         outfile: path.join(site, "firebase-sync.bundle.js"),
         bundle: true, format: "esm", platform: "browser", target: "es2022" });
     }
+    if (accountBrowser && process.env.STABILITY_BASELINE) {
+        const filename = { published: 'published-app.js', worktree: 'worktree-before-app.js' }[process.env.STABILITY_BASELINE];
+        if (!filename) throw new Error('Unknown isolated bootstrap baseline');
+        const release = JSON.parse(await readFile(path.join(site, 'version.json'), 'utf8')).version;
+        const baseline = await readFile(path.join(root, '.validation', 'stability', filename), 'utf8');
+        await writeFile(path.join(site, 'app.js'), baseline.replace(/\?_release=[0-9.]+/g, '?_release=' + release));
+        env.STABILITY_BASELINE = process.env.STABILITY_BASELINE;
+    }
+    const blackholedPaths = [];
     const types = { ".js": "text/javascript", ".css": "text/css", ".html": "text/html", ".json": "application/json", ".webmanifest": "application/manifest+json", ".png": "image/png" };
     server = createServer(async (req, res) => {
         try {
+            // Synthetic blackhole includes requests initiated by the SW, which Playwright
+            // routing alone cannot intercept. Closing the synthetic context aborts these sockets.
+            if (accountBrowser && req.headers.cookie?.includes('cf-synthetic-blackhole=1')) { blackholedPaths.push(req.url); console.log('SYNTHETIC_SW_NETWORK_BLACKHOLE',req.url); req.socket.setTimeout(0); return; }
             const pathname = decodeURIComponent(new URL(req.url, "http://127.0.0.1").pathname);
+            if (accountBrowser && pathname === '/synthetic-network-evidence') { res.writeHead(200, {'Content-Type':'application/json'}).end(JSON.stringify(blackholedPaths)); return; }
             const file = path.resolve(site, `.${pathname === "/" ? "/index.html" : pathname}`);
             if (!file.startsWith(site + path.sep)) { res.writeHead(403).end(); return; }
             const body = await readFile(file);

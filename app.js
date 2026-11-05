@@ -1,3 +1,4 @@
+import { AccountDataPolicy, ACCOUNT_NOTICE_KEY } from './account-data-policy.js';
 import { criarRecuperacaoFinanceira, storage as storagePadrao, capturarDependenciasAplicacao } from "./storage.js";
 import { abrirPersistenciaFinanceira } from "./indexeddb-persistence.js";
 import { ServicoFinanceiroAtomico } from "./financial-atomic-service.js";
@@ -616,7 +617,11 @@ function carregarEstado() {
 
 
 // Primeira leitura financeira: permanece anterior ao IndexedDB e ao Auth.
-let estado = carregarEstado();
+const contaGoogleObrigatoria = !IDB_HOMOLOGACAO;
+let politicaDadosConta = null;
+let interfaceFinanceiraPronta = false;
+let contaFinanceiraVisivel = false;
+let estado = IDB_HOMOLOGACAO ? carregarEstado() : normalizarEstado({ tema: storage.ler(CHAVE_TEMA_INICIAL) });
 let idbServico = null;
 let automaticController = null;
 let idbBanco = null;
@@ -666,6 +671,7 @@ function estadoParaSalvar() {
 
 
 function salvar() {
+    if (typeof contaGoogleObrigatoria !== 'undefined' && contaGoogleObrigatoria && !edicaoFinanceiraPermitida()) return;
     if (recuperacaoFinanceira.protegido || idbBloqueado || !idbServico) return;
     const proposta = structuredClone(estadoParaSalvar()), base = structuredClone(idbBase);
     const expectedGeneration = typeof idbGeneration === 'undefined' ? null : idbGeneration;
@@ -678,7 +684,7 @@ function salvar() {
     idbBase = structuredClone(proposta);
     idbPendente = idbPendente.then(async () => {
         // Account transitions block the new UI, not the old owner's durable save.
-        if (current() && idbBloqueado) throw new Error("Persistencia bloqueada");
+        if (current() && idbBloqueado && !(typeof politicaDadosConta !== 'undefined' && politicaDadosConta?.closing)) throw new Error("Persistencia bloqueada");
         const result = await service.aplicarEdicao(uid, base, proposta, (changes, queue) =>
             key === CHAVE_ESTADO ? [] : changes.map(value => {
                 if (!validSyncIdentity(value.id)) throw new Error("IDs locais incompat?veis");
@@ -700,6 +706,11 @@ function salvar() {
         atualizarDiagnostico();
         if (key !== CHAVE_ESTADO) window.dispatchEvent(new CustomEvent("finance-local-change", { detail: { uid, state: result.estado.dados, deletedRecords: [] } }));
     }).catch(async error => {
+        if (error?.code === 'account/access-revoked') {
+            try { await db.preservarOperacaoBloqueada(uid, base, proposta, error.code); }
+            finally { if (current()) ocultarDadosFinanceiros(); }
+            return;
+        }
         if (['sync/generation-changed', 'sync/restore-in-progress', 'sync/upgrade-required'].includes(error?.code)) {
             try {
                 const queue = await service.preservarEdicaoRejeitada(uid, base, proposta, error.code);
@@ -736,6 +747,25 @@ function salvar() {
 // A inicialização precede o registro dos handlers e a liberação visual do app.
 async function prepararArmazenamentoInicial() {
     try {
+        if (contaGoogleObrigatoria) {
+            idbBloqueado = true;
+            idbBanco = await dependenciasAplicacao.openPersistence();
+            politicaDadosConta = new AccountDataPolicy(idbBanco, { onHide: ocultarDadosFinanceiros,
+                onNotice: result => {
+                    const text = result.preserved
+                        ? 'Sessao encerrada. Copias locais preservadas: entre novamente na mesma conta para sincronizar ou baixar o historico. Nenhum dado remoto foi excluido.'
+                        : 'Sessao encerrada. Dados confirmados removidos deste dispositivo.';
+                    const status = $('estado-sincronizacao'); if (status) status.textContent = text;
+                    avisar(text);
+                } });
+            await politicaDadosConta.initialize();
+            idbServico = dependenciasAplicacao.createAtomicService(idbBanco,
+                value => validarBackup(value) && validarTotaisMonetarios(value),
+                queue => Boolean(queue && Array.isArray(queue.outbox) && Array.isArray(queue.conflicts)));
+            window.addEventListener('pagehide', ocultarDadosFinanceiros);
+            return;
+        }
+
         if (recuperacaoFinanceira.protegido) throw new Error("Origem legada protegida");
         const legacy = lerEstadoPersistido(CHAVE_ESTADO);
         if (!["ausente", "valido"].includes(legacy.estado)) throw new Error("Origem local inválida");
@@ -762,9 +792,41 @@ function carregarEstadoFinanceiroPersistido(result) {
     idbBase = structuredClone(estadoParaSalvar());
 }
 
+function edicaoFinanceiraPermitida() {
+    return acessoFinanceiroPermitido() && !automaticController?.session?.localMigration?.pending;
+}
+function acessoFinanceiroPermitido() {
+    return !contaGoogleObrigatoria || Boolean(contaFinanceiraVisivel && politicaDadosConta?.access && !politicaDadosConta.closing && !idbBloqueado);
+}
+function ocultarDadosFinanceiros() {
+    contaFinanceiraVisivel = false; idbBloqueado = true;
+    const visual = estado?.tema;
+    estado = normalizarEstado(null); if (TEMAS_VALIDOS.includes(visual)) estado.tema = visual;
+    idbBase = structuredClone(estadoParaSalvar());
+    if (!interfaceFinanceiraPronta) return;
+    const migrationPanel = $('aviso-migracao-local'); if (migrationPanel) { migrationPanel.hidden = true; migrationPanel.querySelector('p').textContent = ''; }
+    $('fontes-migracao-local')?.replaceChildren();
+    ultimaRemocao = null; receitaEmEdicao = null; despesaEmEdicao = null; receitaSerieEmCriacao = null; despesaParaRemover = null; receitaParaRemover = null;
+    ui.listaOrcamentos?.replaceChildren(); $('lista-categorias')?.replaceChildren();
+    for (const id of ['dialogo-receita','dialogo-despesa','dialogo-serie','dialogo-orcamentos','dialogo-conflitos']) $(id)?.close();
+    for (const id of ['receita-nome','receita-valor','despesa-nome','despesa-valor','nova-categoria']) if ($(id)) $(id).value = '';
+    ui.aviso?.replaceChildren(); ui.aviso?.classList.remove('visivel','com-acao');
+    renderTudo(false); atualizarPermissaoFinanceira();
+}
+const seletorEdicaoFinanceira = '#adicionar-receita,#adicionar-despesa,#form-receita,#form-despesa,#dialogo-serie,#dialogo-orcamentos,#abrir-categorias-orcamento,#abrir-limites-orcamento,#conteudo-receitas,#conteudo-despesas,#copiar-mes-anterior,#importar-backup,#arquivo-backup,#limpar-mes,#excluir-tudo';
+function atualizarPermissaoFinanceira() {
+    for (const id of ['adicionar-receita','adicionar-despesa','abrir-categorias-orcamento','abrir-limites-orcamento','copiar-mes-anterior','importar-backup','limpar-mes','excluir-tudo']) if ($(id)) $(id).disabled = !edicaoFinanceiraPermitida();
+}
+for (const type of ['click','submit','change']) document.addEventListener(type, event => {
+    if (contaGoogleObrigatoria && !edicaoFinanceiraPermitida() && event.target?.closest?.(seletorEdicaoFinanceira)) {
+        event.preventDefault(); event.stopImmediatePropagation(); avisar('Entre com Google para editar seus dados financeiros.');
+    }
+}, true);
+
 await prepararArmazenamentoInicial();
 
 async function persistirEstadoFinanceiro(key, next, localEdit = false, restored = false, firstLinkReviewed = false, editQueue = () => {}) {
+    if (typeof contaGoogleObrigatoria !== 'undefined' && contaGoogleObrigatoria && !edicaoFinanceiraPermitida()) return false;
     if (!idbServico || idbBloqueado || key !== chaveEstadoAtual) return false;
     const uid = key === CHAVE_ESTADO ? (IDB_HOMOLOGACAO ? "local" : "@local") : key.split(":").at(-1);
     const base = structuredClone(idbBase);
@@ -1457,6 +1519,9 @@ function renderGraficoCategorias() {
 }
 
 function renderTudo(persistir = true) {
+    if (typeof contaGoogleObrigatoria !== 'undefined' && contaGoogleObrigatoria && !acessoFinanceiroPermitido()) {
+        const tema = estado?.tema; estado = normalizarEstado({ tema });
+    }
 
     renderTema();
     aplicarPrivacidade();
@@ -3402,6 +3467,9 @@ function atualizarDiagnostico() {
     ui.resultadoVerificacaoAtualizacao.textContent = preferenciasMenu.resultadoVerificacao;
     ui.diagnosticoApp.replaceChildren(
         criarEl("span", { text: estadoServiceWorker + " " }),
+        criarEl("span", { text: 'Build da interface: HTML ' + (document.querySelector('meta[name="app-version"]')?.content || 'não identificado')
+            + ' / JS ' + (VERSAO_BUNDLE || 'local') + '. Rede aparente: ' + (navigator.onLine ? 'online' : 'offline')
+            + '. Standalone: ' + (navigator.standalone === true || window.matchMedia?.('(display-mode: standalone)').matches ? 'sim' : 'não') + '. ' }),
         criarEl("span", { text: storage.persistente ? "Armazenamento: persistente disponível." : "Armazenamento: somente memória; os dados podem se perder ao recarregar ou fechar o app." })
     );
 }
@@ -3875,6 +3943,8 @@ function prepararInterfaceInicial() {
     return abrirSecaoInicial();
 }
 const telaInicialAplicada = prepararInterfaceInicial();
+interfaceFinanceiraPronta = true;
+atualizarPermissaoFinanceira();
 // Fase de interface pronta: os mesmos chamadores locais/Auth liberam a tela.
 function concluirCarregamentoConta() {
     document.documentElement.classList.remove("app-inicializando", "app-carregando-conta");
@@ -3883,12 +3953,19 @@ function concluirCarregamentoConta() {
     renderTema();
 }
 function iniciarCarregamentoConta() {
+    // Public navigation never waits for Auth/network. The caller hides account data
+    // and onState alone enables finance after current-owner hydration.
+    if (contaGoogleObrigatoria) { concluirCarregamentoConta(); return; }
     document.documentElement.classList.add("app-carregando-conta");
     document.body.setAttribute("aria-busy", "true");
     $("carregando-aplicativo")?.removeAttribute("hidden");
 }
 document.body.setAttribute("aria-busy", "true");
-if (IDB_HOMOLOGACAO || !firebaseConfigurado(firebaseConfig) || !$('entrar-google') || !$('sair-google')) {
+if (contaGoogleObrigatoria) {
+    ocultarDadosFinanceiros();
+    if ($('estado-sincronizacao')) $('estado-sincronizacao').textContent = 'Verificando sessão Google. Dados financeiros bloqueados até identificar a conta.';
+}
+if (contaGoogleObrigatoria || IDB_HOMOLOGACAO || !firebaseConfigurado(firebaseConfig) || !$('entrar-google') || !$('sair-google')) {
     concluirCarregamentoConta();
 }
 let quadroRastreamentoTela = null;
@@ -4870,6 +4947,7 @@ if (!IDB_HOMOLOGACAO && $("entrar-google") && $("sair-google") && firebaseConfig
     const showStatus = (text, failed = false, confirmedAt = null) => {
         if (text === 'Atualização obrigatória: esta versão não é compatível com a geração da conta. Os dados locais foram preservados.') renderAvisosFinanceiros({ recoveryNotices: avisosFinanceiros, compatibilityBlocked: true });
         status.textContent = textoTraduzido(text); status.dataset.state = failed ? 'error' : text === 'Sincronizado' ? 'synced' : text.startsWith('Dados ativos sincronizados;') ? 'recovery' : text === 'Offline' ? 'offline' : 'syncing';
+        if (text === 'Sincronizado') void reconciliarDiariosDaConta();
         if (confirmedAt) {
             $("ultima-sincronizacao").dataset.i18nDate = confirmedAt;
             $("ultima-sincronizacao").textContent = textoTraduzido('Última sincronização confirmada:') + ' ' + new Date(confirmedAt).toLocaleString(LOCALES[idiomaAtual]);
@@ -4885,15 +4963,121 @@ if (!IDB_HOMOLOGACAO && $("entrar-google") && $("sair-google") && firebaseConfig
     const prepararAutenticacao = sdk => {
         client ||= sdk.criarFirebaseSync(firebaseConfig);
     };
+    // Anonymous sources stay separate; no legacy coordinator or implicit import.
+    const migrationPanel = document.createElement('section');
+    migrationPanel.id = 'aviso-migracao-local'; migrationPanel.className = 'nota'; migrationPanel.hidden = true;
+    const migrationText = document.createElement('p');
+    const migrationSources = document.createElement('ul'); migrationSources.id = 'fontes-migracao-local';
+    const reviewSources = document.createElement('button'), keepSeparate = document.createElement('button'), importSources = document.createElement('button');
+    let reviewedMigration = null;
+    importSources.id = 'importar-fontes-locais'; importSources.textContent = 'Confirmar propriedade e importar'; importSources.hidden = true;
+    for (const button of [reviewSources, keepSeparate, importSources]) { button.type = 'button'; button.className = 'btn btn-secundario'; }
+    reviewSources.id = 'revisar-fontes-locais'; reviewSources.textContent = 'Revisar dados antigos';
+    keepSeparate.id = 'manter-fontes-separadas'; keepSeparate.textContent = 'Não importar; continuar só com minha conta Google';
+    migrationPanel.append(migrationText, migrationSources, reviewSources, keepSeparate, importSources);
+    (document.querySelector('main') || document.body).prepend(migrationPanel);
+    const showMigrationGate = gate => {
+        reviewedMigration = null; importSources.hidden = true;
+        migrationPanel.hidden = !gate?.pending;
+        if (gate?.pending) migrationText.textContent = 'Há fontes financeiras antigas neste dispositivo. Nenhum dado será importado, excluído ou publicado antes da sua decisão. A importação automática está bloqueada; você pode manter as fontes separadas e continuar com sua conta Google.';
+        atualizarPermissaoFinanceira();
+    };
+    reviewSources.addEventListener('click', async () => {
+        const session = automaticController?.session, access = politicaDadosConta?.access;
+        const current = () => automaticController?.session === session && politicaDadosConta?.access === access
+            && client.authenticatedUser?.()?.uid === session?.uid && !politicaDadosConta?.closing;
+        if (!session || !access || !current()) return;
+        reviewSources.disabled = true;
+        try {
+            if (!navigator.onLine) throw new Error('Conecte-se para revisar a cópia remota. As fontes permanecem preservadas.');
+            const migration = await import(new URL('./account-local-migration.js?_release=' + encodeURIComponent(VERSAO_BUNDLE || 'local'), import.meta.url));
+            const pending = await migration.consultarImportacaoPendente({ db: idbBanco, uid: session.uid, isCurrent: current });
+            const report = pending || await migration.prepararImportacaoAnonima({ db: idbBanco, storage: globalThis.localStorage,
+                uid: session.uid, isCurrent: async () => current() && await politicaDadosConta.isCurrent(),
+                online: navigator.onLine, snapshotReader: uid => client.localMigrationSnapshot(uid) });
+            if (!current()) return;
+            const conflicts = report.analyses.reduce((n, item) => n + item.conflicts, 0);
+            const duplicates = report.analyses.reduce((n, item) => n + item.duplicates, 0);
+            migrationText.textContent = 'Revisão sem alterações: ' + report.sources.filter(item => item.status !== 'ausente').length
+                + ' fontes, ' + report.quantityLocal + ' lançamentos na fonte prioritária, ' + report.quantityRemote
+                + ' lançamentos na conta Google, ' + conflicts + ' conflitos e ' + duplicates
+                + ' possíveis duplicidades. Importação bloqueada para esta combinação de fontes ou destino. Todos os originais foram preservados.';
+            const labels = { ausente: 'ausente', valido: 'válida', invalido: 'inválida: requer recuperação', inacessivel: 'inacessível: não considerada vazia', metadados: 'metadados preservados: requerem reconciliação' };
+            migrationSources.replaceChildren(...report.sources.filter(item => item.status !== 'ausente').map(item => {
+                const row = document.createElement('li');
+                row.textContent = item.backend + ' — ' + item.key + ': ' + (labels[item.status] || item.status)
+                    + (item.quantity === undefined ? '' : '; lançamentos: ' + item.quantity)
+                    + (item.inferredYear === undefined ? '' : '; ano inferido que requer revisão: ' + item.inferredYear)
+                    + (item.pending === undefined ? '' : '; operações pendentes: ' + item.pending)
+                    + (item.tombstones === undefined ? '' : '; exclusões pendentes: ' + item.tombstones);
+                return row;
+            }));
+            migrationPanel.dataset.review = report.importAllowed ? 'ready' : 'blocked';
+            reviewedMigration = (report.importAllowed || report.resumeAllowed) ? { migration, report, session, access } : null;
+            importSources.hidden = !(report.importAllowed || report.resumeAllowed);
+            if (report.resumeAllowed) { migrationPanel.dataset.review = 'resume'; importSources.textContent = 'Retomar importação já consentida'; migrationText.textContent = 'Importação durável pendente: retomar somente as operações já registradas, sem copiar a origem novamente.'; }
+            if (report.importAllowed) {
+                for (const row of report.preview.records) { const li = document.createElement('li'); li.textContent = row.month + ' · ' + row.type + ' · ' + row.record.nome + ' · ' + row.record.valor; migrationSources.append(li); }
+                const config = document.createElement('li'); config.textContent = 'Categorias, tema e orçamentos: ' + JSON.stringify(report.preview.settings); migrationSources.append(config);
+            }
+            if (report.importAllowed) migrationText.textContent = 'Revisão: ' + report.quantityLocal + ' lançamentos locais com IDs estáveis; destino vazio. A origem e o diário de recuperação serão preservados. Confirme que os dados são seus antes de importar.';
+        } catch (error) { if (current()) { migrationPanel.hidden = false; migrationText.textContent = error.message + ' Nenhuma fonte foi modificada.'; migrationPanel.dataset.review = 'error'; } }
+        finally { reviewSources.disabled = false; }
+    });
+    importSources.addEventListener('click', async () => {
+        const reviewed = reviewedMigration;
+        const current = () => !!reviewed && automaticController?.session === reviewed.session
+            && politicaDadosConta?.access === reviewed.access && !politicaDadosConta?.closing
+            && client.authenticatedUser?.()?.uid === reviewed.session.uid;
+        if (!current() || !window.confirm('Confirmo que revisei os lançamentos e que estes dados locais pertencem à minha conta Google. Importar sem apagar a origem?')) return;
+        importSources.disabled = true; keepSeparate.disabled = true;
+        try {
+            const journalKey = reviewed.report.journalKey || await reviewed.migration.registrarConsentimentoMigracao({ review: reviewed.report, consent: true, ownershipAcknowledged: true, isCurrent: current });
+            await reviewed.migration.retomarImportacaoAnonima({ db: idbBanco, uid: reviewed.session.uid, journalKey, isCurrent: current, online: navigator.onLine, snapshotReader: uid => client.localMigrationSnapshot(uid) });
+            if (!current()) return;
+            await automaticController.resumeAfterLocalReview(reviewed.session, 'import-applied', journalKey);
+            showStatus('Importação local preservada. Aguardando confirmação do Firebase.');
+        } catch (error) { if (current()) migrationText.textContent = error.message + ' Origem e diário foram preservados; não repita sem revisar.'; }
+        finally { importSources.disabled = false; keepSeparate.disabled = false; }
+    });
+    keepSeparate.addEventListener('click', async () => {
+        const session = automaticController?.session;
+        if (!session || !await politicaDadosConta.isCurrent()) return;
+        keepSeparate.disabled = true;
+        try { await automaticController.resumeAfterLocalReview(session, 'keep-separate'); atualizarPermissaoFinanceira(); }
+        catch (error) { showStatus(error.message, true); }
+        finally { keepSeparate.disabled = false; }
+    });
+    let reconciliationPending = false;
+    async function reconciliarDiariosDaConta() {
+        const session = automaticController?.session, access = politicaDadosConta?.access;
+        const current = () => !!session && automaticController?.session === session && politicaDadosConta?.access === access
+            && !politicaDadosConta?.closing && client.authenticatedUser?.()?.uid === session.uid;
+        if (reconciliationPending || !current()) return;
+        reconciliationPending = true;
+        try {
+            const queue = await idbServico.lerFila(session.uid);
+            const keys = (queue.recoveryKeys || []).filter(key => key.startsWith('restore-recovery:' + session.uid + ':migration-'));
+            if (!keys.length || !current()) return;
+            const migration = await import(new URL('./account-local-migration.js?_release=' + encodeURIComponent(VERSAO_BUNDLE || 'local'), import.meta.url));
+            for (const journalKey of keys) await migration.reconciliarImportacaoAnonima({ db: idbBanco, uid: session.uid, journalKey, isCurrent: current, snapshotReader: uid => client.localMigrationSnapshot(uid) });
+        } catch (error) {
+            if (current()) { status.textContent = 'Importação preservada: confirmação ou revisão ainda necessária. ' + error.message; status.dataset.state = 'recovery'; }
+        } finally { reconciliationPending = false; }
+    }
     const prepararSincronizacao = () => {
         automaticController ||= dependenciasAplicacao.createAutomaticSync({ client, db: idbBanco, service: idbServico,
             requiredProtocol: 2,
-            readLegacy: lerEstadoPersistido, readLegacyMetadata: dependenciasAplicacao.readLegacyMetadata,
+            readLegacy: () => ({ estado: 'ausente' }), readLegacyMetadata: () => ({}),
+            accountPolicy: politicaDadosConta,
+            beforeAccountSync: (_user, current) => politicaDadosConta.inspectLegacyPresence(current),
+            onMigrationGate: showMigrationGate,
             waitLocal: async () => { let pending; do { pending = idbPendente; await pending; } while (pending !== idbPendente); },
-            storageBlocked: () => idbBloqueado || recuperacaoFinanceira.protegido,
+            storageBlocked: () => (idbBloqueado && !politicaDadosConta?.closing) || recuperacaoFinanceira.protegido,
             onTransition: user => {
+                migrationPanel.hidden = true; migrationSources.replaceChildren(); reviewedMigration = null; importSources.hidden = true; delete migrationPanel.dataset.review;
                 renderAvisosFinanceiros({ recoveryNotices: [], compatibilityBlocked: false });
-                resetAccountForms(); iniciarCarregamentoConta(); idbBloqueado = true;
+                ocultarDadosFinanceiros(); resetAccountForms(); iniciarCarregamentoConta(); idbBloqueado = true;
                 chaveEstadoAtual = user ? chaveLocalConta(user.uid) : CHAVE_ESTADO;
                 estado = normalizarEstado(null); idbBase = structuredClone(estadoParaSalvar()); renderTudo(false);
                 login.hidden = !!user; logout.hidden = !user;
@@ -4902,21 +5086,28 @@ if (!IDB_HOMOLOGACAO && $("entrar-google") && $("sair-google") && firebaseConfig
             },
             onAccount: async user => {
                 const sessionCurrent = capturarSessaoPersistencia();
-                idbBloqueado = false;
+                idbBloqueado = !user; // Storage ownership is already validated by the coordinator.
+                contaFinanceiraVisivel = false; // Editing stays blocked until onState hydrates this owner.
+                atualizarPermissaoFinanceira();
                 if (!user) {
                     idbGeneration = 'legacy';
-                    const local = await idbBanco.ler('estado:@local');
                     if (!sessionCurrent()) return;
-                    estado = normalizarEstado(local?.dados); idbBase = structuredClone(estadoParaSalvar()); renderTudo(false);
-                    showStatus('Somente neste dispositivo.');
+                    ocultarDadosFinanceiros();
+                    showStatus('Entre com Google para acessar seus dados financeiros.');
                     concluirCarregamentoConta();
                 }
             },
-            onState: (next, meta) => {
+            onState: async (next, meta) => {
+                try {
+                const access = politicaDadosConta?.access;
+                if (!access || document.visibilityState === 'hidden' || politicaDadosConta.closing || !await politicaDadosConta.isCurrent() || politicaDadosConta.access !== access
+                    || client.authenticatedUser && client.authenticatedUser()?.uid !== access.uid) return;
+                contaFinanceiraVisivel = true; idbBloqueado = false; atualizarPermissaoFinanceira();
                 idbGeneration = meta?.generation || 'legacy';
                 renderAvisosFinanceiros(meta);
                 estado = normalizarEstado(next); idbBase = structuredClone(estadoParaSalvar()); renderTudo(false);
                 concluirCarregamentoConta();
+                } catch (error) { ocultarDadosFinanceiros(); showStatus(error.message, true); }
             },
             onStatus: showStatus
         });
@@ -4925,6 +5116,7 @@ if (!IDB_HOMOLOGACAO && $("entrar-google") && $("sair-google") && firebaseConfig
         if (initialization) return initialization;
         login.disabled = true;
         initialization = (async () => {
+            if (!idbBanco || !idbServico || !politicaDadosConta) throw new Error('Armazenamento indisponivel. Dados preservados; recarregue para recuperar.');
             const sdk = await dependenciasAplicacao.loadFirebase(VERSAO_BUNDLE);
             prepararAutenticacao(sdk);
             prepararSincronizacao();
@@ -4942,12 +5134,41 @@ if (!IDB_HOMOLOGACAO && $("entrar-google") && $("sair-google") && firebaseConfig
         return initialization;
     };
     login.addEventListener('click', () => {
+        if (politicaDadosConta?.closing) return;
         if (!client) { void initialize(); return; }
         login.disabled = true;
-        try { Promise.resolve(client.login()).catch(error => showStatus(error.message || 'Falha na sincronização.', true)).finally(() => { login.disabled = false; }); }
+        try { const ticket = politicaDadosConta.loginIntent(); Promise.resolve(client.login()).then(async result => {
+            const user = result?.user || client.authenticatedUser?.();
+            await politicaDadosConta.acceptLogin(user, ticket, () => client.authenticatedUser?.()?.uid === user?.uid);
+            await automaticController.useAccount(user);
+        }).catch(error => showStatus(error.message || 'Falha na sincronização.', true)).finally(() => { login.disabled = false; }); }
         catch (error) { login.disabled = false; showStatus(error.message, true); }
     });
-    logout.addEventListener('click', () => { void client?.logout().catch(error => showStatus(error.message, true)); });
+    logout.addEventListener('click', () => {
+        const uid = automaticController?.session?.uid || client?.authenticatedUser?.()?.uid;
+        if (!client || !politicaDadosConta) { ocultarDadosFinanceiros(); return; }
+        logout.disabled = true;
+        void politicaDadosConta.logout({ uid, drainLocal: async () => { let pending; do { pending = idbPendente; await pending; } while (pending !== idbPendente); }, flush: () => automaticController.flushForLogout(), signOut: () => client.logout() })
+            .catch(error => { ocultarDadosFinanceiros(); showStatus(error.message, true); })
+            .finally(() => { automaticController?.closeSession(); logout.disabled = false; });
+    });
+    const conferirAutoridadeConta = async () => {
+        if (!await politicaDadosConta?.isCurrent()) { ocultarDadosFinanceiros(); automaticController?.closeSession(); }
+    };
+    window.addEventListener('storage', event => { if (event.key === ACCOUNT_NOTICE_KEY) void conferirAutoridadeConta(); });
+    window.addEventListener('pageshow', async event => {
+        if (!event.persisted) return;
+        ocultarDadosFinanceiros();
+        const user = client?.authenticatedUser?.();
+        if (user) await automaticController.useAccount(user).catch(error => showStatus(error.message, true));
+    });
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'hidden') ocultarDadosFinanceiros();
+        else {
+            const user = client?.authenticatedUser?.();
+            if (user && !politicaDadosConta?.closing) void automaticController.useAccount(user).catch(error => showStatus(error.message, true));
+        }
+    });
     window.addEventListener('finance-local-change', event => {
         if (automaticController?.session?.uid === event.detail.uid) {
             if (!automaticController.session.permanent) showStatus(navigator.onLine ? 'Sincronizando' : 'Offline');
@@ -4962,12 +5183,13 @@ if (!IDB_HOMOLOGACAO && $("entrar-google") && $("sair-google") && firebaseConfig
         try {
             const local = await idbServico.lerFila(s.uid);
             const restorations = await Promise.all((local.recoveryKeys || []).map(key => idbBanco.ler(key)));
+            const blockedEdits = await idbBanco.listarRecuperacoesConta(s.uid);
             let remote = [], remoteUnavailable = false;
             try { if (navigator.onLine) remote = await client.listAutomaticHistory(s.uid); }
             catch { remoteUnavailable = true; }
-            if (automaticController.session !== s) return;
+            if (automaticController.session !== s || !await politicaDadosConta.isCurrent()) return;
             baixarArquivo(JSON.stringify({ type: 'financial-recovery-history', uid: s.uid,
-                local: local.automaticHistory || [], restorations, remote, remoteUnavailable }, null, 2), 'controle-financeiro-recuperacao.json', 'application/json');
+                local: local.automaticHistory || [], restorations, blockedEdits, remote, remoteUnavailable }, null, 2), 'controle-financeiro-recuperacao.json', 'application/json');
             const included = new Set((local.recoveryNotices || []).map(item => item.id));
             const queue = await idbServico.alterarFila(s.uid, queue => {
                 if (automaticController.session !== s) throw new Error('Sessão alterada.');

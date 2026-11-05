@@ -12,6 +12,7 @@ const ARQUIVOS = [
     "./preferences.js",
     "./localization.js",
     "./storage.js",
+    "./account-data-policy.js",
     "./sync-core.js",
     "./automatic-finance-sync.js",
     "./automatic-sync-policy.js",

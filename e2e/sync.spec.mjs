@@ -5,7 +5,7 @@ const authURL = "http://127.0.0.1:9099", firestoreURL = "http://127.0.0.1:8080";
 const stateKey = (uid) => `controleFinanceiro:v3:uid:${uid}`;
 const metaKey = (uid) => `controleFinanceiro:sync:${uid}`;
 async function stored(page, key) { return page.evaluate(async key => {
-    const db = await new Promise((resolve,reject)=>{const r=indexedDB.open('controleFinanceiro:integridade:v1',1);r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error);});
+    const db = await new Promise((resolve,reject)=>{const r=indexedDB.open('controleFinanceiro:integridade:v1',2);r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error);});
     try {
         const documentKey = key.startsWith('controleFinanceiro:sync:') ? 'fila:'+key.split(':').at(-1)
             : key.startsWith('controleFinanceiro:v3:uid:') ? 'estado:'+key.split(':').at(-1) : key === 'controleFinanceiro:v3' ? 'estado:@local' : null;

@@ -1,19 +1,21 @@
 import { defineConfig } from "@playwright/test";
 
-if (process.env.LOCAL_TEST_EMULATORS !== "1" || process.env.FIRESTORE_EMULATOR_HOST !== "127.0.0.1:8080"
+if (process.env.LOCAL_TEST_EMULATORS !== "1" || process.env.FIRESTORE_EMULATOR_HOST !== (process.env.LOCAL_TEST_GOOGLE_ACCOUNT === "1" ? "127.0.0.1:8180" : "127.0.0.1:8080")
     || !/^http:\/\/127\.0\.0\.1:\d+$/.test(process.env.LOCAL_TEST_BASE_URL || "")) {
     throw new Error("Execute npm run test:e2e: somente o ambiente demo isolado é permitido.");
 }
 export default defineConfig({
     testDir: "./e2e", workers: 1, retries: 0, maxFailures: 1, timeout: 60_000,
-    ...(process.env.LOCAL_TEST_EPOCH_REALTIME === '1'
+    ...(process.env.LOCAL_TEST_GOOGLE_ACCOUNT === "1"
+        ? { testMatch: "**/google-account-policy.spec.mjs" }
+        : process.env.LOCAL_TEST_EPOCH_REALTIME === '1'
         ? { testMatch: '**/epoch-realtime.spec.mjs' }
         : process.env.LOCAL_TEST_EPOCH_BROWSER === '1'
         ? { testMatch: '**/epoch-queue.spec.mjs' }
-        : { testIgnore: ['**/epoch-queue.spec.mjs', '**/epoch-realtime.spec.mjs'] }),
+        : { testIgnore: ['**/epoch-queue.spec.mjs', '**/epoch-realtime.spec.mjs', '**/google-account-policy.spec.mjs'] }),
     expect: { timeout: 15_000 }, reporter: "list",
     outputDir: `${process.env.LOCAL_TEST_OUTPUT}/browser-results`,
-    use: { baseURL: process.env.LOCAL_TEST_BASE_URL, trace: "retain-on-failure" },
+    use: { baseURL: process.env.LOCAL_TEST_BASE_URL, serviceWorkers: "block", trace: "retain-on-failure" },
     projects: process.platform === "win32"
         ? ["msedge", "chrome"].map((channel) => ({ name: channel, use: { channel } }))
         : [{ name: "chromium", use: { browserName: "chromium" } }]

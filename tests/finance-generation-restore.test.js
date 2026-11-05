@@ -16,14 +16,14 @@ const state = (receitas = [], despesas = [], extra = {}) => normalizarEstado({
 const backup = () => state([row('same', 10, { recebido: true }), row('deleted-before', 25)],
     [row('expense', 7, { pago: true, categoria: 'Casa' })], { orcamentos: { padrao: { Casa: 200 }, meses: { '2026-10': { Casa: 150 } } } });
 function transport() {
-    const data = new Map(); let chain = Promise.resolve(), failNext = false, loseActivation = false;
-    const snap = key => ({ exists: () => data.has(key), data: () => clone(data.get(key)), metadata: { fromCache: false, hasPendingWrites: false } });
+    const data = new Map(), metadata = new Map(); let chain = Promise.resolve(), failNext = false, loseActivation = false;
+    const snap = key => ({ exists: () => data.has(key), data: () => clone(data.get(key)), metadata: metadata.get(key) || { fromCache: false, hasPendingWrites: false } });
     const prefix = key => [...data].filter(([path]) => path.startsWith(key + '/') && !path.slice(key.length + 1).includes('/'));
     const sdk = {
         doc: (...parts) => parts.filter(part => typeof part === 'string').join('/'),
         collection: (...parts) => parts.filter(part => typeof part === 'string').join('/'),
         getDocFromServer: async key => snap(key),
-        getDocsFromServer: async key => { const docs = prefix(key).map(([path, value]) => ({ id: path.split('/').at(-1), data: () => clone(value) })); return { docs, size: docs.length, metadata: { fromCache: false, hasPendingWrites: false } }; },
+        getDocsFromServer: async key => { const docs = prefix(key).map(([path, value]) => ({ id: path.split('/').at(-1), data: () => clone(value) })); return { docs, size: docs.length, metadata: metadata.get(key) || { fromCache: false, hasPendingWrites: false } }; },
         serverTimestamp: () => stamp, Timestamp: { now: () => stamp }, onSnapshot: () => () => {},
         runTransaction(_db, callback) {
             const next = chain.then(async () => {
@@ -44,7 +44,7 @@ function transport() {
         listAutomaticHistory: async () => [], commit: async () => ({ acknowledged: true })
     };
     const client = withFinanceGenerations(legacy, {}, uid => { assert.equal(uid, 'alice'); }, sdk);
-    return { data, client, sdk, failNext: () => { failNext = true; }, loseActivation: () => { loseActivation = true; } };
+    return { data, client, sdk, metadata, failNext: () => { failNext = true; }, loseActivation: () => { loseActivation = true; } };
 }
 function localDatabase() {
     const data = new Map(); let chain = Promise.resolve();
@@ -254,4 +254,22 @@ test('an incompatibility detected by another tab during restore confirmation can
     assert.deepEqual((await c.db.ler('estado:alice')).dados, original);
     assert.equal((await c.service.lerFila('alice')).restoreJob, undefined);
     assert.equal((await c.service.lerFila('alice')).compatibilityBlocked.code, 'sync/upgrade-required');
+});
+
+
+test('migration snapshot attests only complete server-only reads', async () => {
+    const h = transport(); await h.client.publishRestore('alice', { generation: 'migration-confirmed', baseGeneration: 'legacy', state: backup() });
+    const result = await h.client.localMigrationSnapshot('alice');
+    assert.equal(result.uid, 'alice'); assert.equal(result.generation, 'migration-confirmed');
+    assert.deepEqual(result.metadata, { fromCache: false, hasPendingWrites: false });
+});
+for (const [suffix, flags] of [
+    ['control/restore', { fromCache: true, hasPendingWrites: false }],
+    ['financeGenerations/migration-negative/records', { fromCache: false, hasPendingWrites: true }],
+    ['financeGenerations/migration-negative/settings/finance', { fromCache: true, hasPendingWrites: false }],
+    ['financeGenerations/migration-negative/conflicts', { fromCache: false, hasPendingWrites: true }]
+]) test('migration snapshot rejects unconfirmed component: ' + suffix, async () => {
+    const h = transport(); await h.client.publishRestore('alice', { generation: 'migration-negative', baseGeneration: 'legacy', state: backup() });
+    h.metadata.set('users/alice/' + suffix, flags);
+    await assert.rejects(h.client.localMigrationSnapshot('alice'), { code: 'unavailable' });
 });
