@@ -40,6 +40,9 @@ jobs:
           distribution: temurin
           java-version: 21
 
+      - name: Preparar Chromium para testes
+        run: node node_modules/@playwright/test/cli.js install --with-deps chromium
+
       - name: Run tests
         run: node --test
 
