@@ -80,6 +80,10 @@ jobs:
           }
           NODE
 
+      - name: Preparar Chromium exigido pela suite global
+        run: |
+          node node_modules/@playwright/test/cli.js install --with-deps chromium 2>&1 | tee "$RUNNER_TEMP/homologacao/logs/playwright-install.log"
+
       - name: Verificacoes de sintaxe
         run: npm run check 2>&1 | tee "$RUNNER_TEMP/homologacao/logs/check.log"
 
