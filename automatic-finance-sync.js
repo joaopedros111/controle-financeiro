@@ -31,16 +31,19 @@ export class AutomaticFinanceSync {
         this.session = null; this.sessionContext = {}; this.online = connectivity.navigator?.onLine !== false;
     }
     async start() {
+        if (this.unAuth) return;
+        this.online = this.connectivity.navigator?.onLine !== false;
         let settleInitial;
         const initial = new Promise(resolve => { settleInitial = resolve; });
         let awaitingInitial = true;
         this.unAuth = this.client.onUser(user => {
+            if (this.session?.localOnly && this.accountPolicy?.access?.kind === 'local') { if (awaitingInitial) { awaitingInitial = false; settleInitial(); } return; }
             if (
     this.accountPolicy &&
     typeof this.client.authenticatedUser === 'function' &&
-    user?.uid !== this.client.authenticatedUser()?.uid
+    user !== this.client.authenticatedUser()
 ) return;
-            if (user && this.session?.user === user) return;
+            if (user && this.session?.user === user) { if (awaitingInitial) { awaitingInitial = false; settleInitial(); } return; }
             const transition = this.useAccount(user), session = this.session;
             void transition.catch(cause => this.report(cause, session)).finally(() => {
                 if (awaitingInitial) { awaitingInitial = false; settleInitial(); }
@@ -56,7 +59,7 @@ export class AutomaticFinanceSync {
         await initial;
     }
     stop() {
-        this.closeSession(); this.unAuth?.();
+        this.closeSession(); this.unAuth?.(); this.unAuth = null;
         this.connectivity.removeEventListener?.('online', this.reconnect); this.connectivity.removeEventListener?.('offline', this.offline);
     }
     closeSession() {
@@ -66,6 +69,35 @@ export class AutomaticFinanceSync {
     }
     current(s) { return this.session === s; }
     status(message, failed = false, confirmedAt = null) { this.onStatus(message, failed, confirmedAt); }
+    assertRemote(s) {
+        if (s?.localOnly || this.accountPolicy?.access?.kind === 'local') throw error('account/local-only', 'Modo local não autoriza operações remotas. Entre novamente com Google.');
+    }
+    async useLocal(unlocked) {
+        const access = unlocked?.access;
+        if (!access || access.kind !== 'local' || this.accountPolicy?.access !== access || !await this.accountPolicy.isCurrent()) throw error('account/access-revoked', 'Desbloqueio local inválido.');
+        if (this.accountPolicy.access !== access) return;
+        this.closeSession();
+        const user = { uid: access.uid, localOnly: true };
+        const s = { uid: access.uid, user, localOnly: true, stops: [], generation: access.generation, ready: false };
+        this.session = s; this.onTransition(user);
+        await this.onAccount(user);
+        if (!this.current(s) || this.accountPolicy.access !== access || !await this.accountPolicy.isCurrent()) return;
+        if (!this.current(s) || this.accountPolicy.access !== access) return;
+        this.emitState(s, unlocked.state, unlocked.queue);
+        this.status('Modo local desbloqueado — sem sessão Google e sem sincronização remota.');
+    }
+    async hydrateCurrent(s = this.session) {
+        if (!s || s.localOnly || !this.current(s)) return;
+        const access = this.accountPolicy?.access;
+        const active = () => this.current(s) && (!this.accountPolicy || this.accountPolicy.access === access);
+        if (this.accountPolicy && !await this.accountPolicy.isCurrent() || !active()) return;
+        const docs = await this.db.lerDocumentos(['estado:' + s.uid, 'fila:' + s.uid]);
+        if (!active() || this.accountPolicy && !await this.accountPolicy.isCurrent() || !active()) return;
+        const state = docs.get('estado:' + s.uid), queue = docs.get('fila:' + s.uid);
+        if (!state || !Number.isSafeInteger(state.revisao) || !validarBackup(state.dados) || !validarTotaisMonetarios(state.dados) || !Array.isArray(queue?.outbox) || !Array.isArray(queue?.conflicts)) throw error('sync/invalid-local', 'Cópia local incompleta. Recuperação necessária.');
+        if ((queue.generation || 'legacy') !== s.generation) return this.useAccount(s.user);
+        this.emitState(s, state, queue);
+    }
     async useAccount(user) {
         const formerUid = this.session?.uid;
         this.closeSession();
@@ -75,7 +107,7 @@ export class AutomaticFinanceSync {
             this.accountPolicy?.hide();
             await this.waitLocal();
             if (this.sessionContext === context) {
-                if (this.accountPolicy && !this.accountPolicy.closing) await this.accountPolicy.revoke(formerUid);
+                if (formerUid && this.accountPolicy && !this.accountPolicy.closing) await this.accountPolicy.revoke(formerUid);
                 if (this.sessionContext === context) await this.onAccount(null);
             }
             return;
@@ -90,6 +122,16 @@ export class AutomaticFinanceSync {
                 throw cause;
             }
             if (!this.current(s)) return;
+        }
+        // The authorized durable pair is rendered before discovery, SDK readiness or network.
+        const cachedPair = await this.db.ler('estado:' + s.uid);
+        if (!this.current(s)) return;
+        if (cachedPair) {
+            const q = await this.service.lerFila(s.uid);
+            if (!this.current(s)) return;
+            if (!Number.isSafeInteger(cachedPair.revisao) || cachedPair.revisao < 0 || !validarBackup(cachedPair.dados) || !validarTotaisMonetarios(cachedPair.dados) || !Array.isArray(q?.outbox) || !Array.isArray(q?.conflicts)) throw error('sync/invalid-local', 'Dados locais incompletos. Recuperação necessária.');
+            await this.onAccount(user); if (!this.current(s)) return;
+            this.emitState(s, cachedPair, q);
         }
         if (this.beforeAccountSync) {
             const discovery = await this.beforeAccountSync(user, () => this.current(s));
@@ -138,13 +180,14 @@ export class AutomaticFinanceSync {
     }
     request(delay = this.delayMs) {
         const s = this.session;
-        if (!s || s.permanent || s.localMigration?.pending) return;
+        if (!s || s.localOnly || s.permanent || s.localMigration?.pending) return;
         clearTimeout(s.timer);
         if (!this.online) { this.status('Offline'); return; }
         s.timer = setTimeout(() => { void this.run(s); }, Math.max(delay, (s.retryAt || 0) - Date.now()));
         s.timer.unref?.();
     }
     localChanged() {
+        if (this.session?.localOnly) { this.status('Modo local desbloqueado — sem sessão Google e sem sincronização remota.'); return; }
         if (this.session) this.session.localVersion = (this.session.localVersion || 0) + 1;
         this.request(0);
     }
@@ -169,7 +212,7 @@ export class AutomaticFinanceSync {
         else s.permanent = true;
     }
     async run(s) {
-        if (!this.current(s) || !this.online || s.permanent || s.localMigration?.pending) return;
+        if (!this.current(s) || s.localOnly || !this.online || s.permanent || s.localMigration?.pending) return;
         if (s.running) { s.again = true; return; }
         let settleRun;
         s.finished = new Promise(resolve => { settleRun = resolve; });
@@ -186,7 +229,7 @@ export class AutomaticFinanceSync {
     async flushForLogout() {
         const s = this.session;
         if (s?.localMigration?.pending) throw error('migration/review-required', 'Fontes locais preservadas; revise antes de sincronizar.');
-        if (!s || !this.online || this.connectivity.navigator?.onLine === false) throw error('account/offline', 'Offline: copies preserved');
+        if (!s || s.localOnly || !this.online || this.connectivity.navigator?.onLine === false) throw error('account/offline', 'Offline: copies preserved');
         clearTimeout(s.timer);
         await this.waitLocal();
         for (let attempts = 0; attempts < 8; attempts++) {
@@ -201,6 +244,7 @@ export class AutomaticFinanceSync {
         throw error('account/sync-pending', 'Synchronization still pending');
     }
     async snapshot(s) {
+        this.assertRemote(s);
         if (!this.current(s)) throw error('persistence/cancelled', 'Sessão alterada.');
         if (!this.client.generationSnapshot && this.client.generationMarker && await this.client.generationMarker(s.uid)) throw error('sync/upgrade-required', upgradeMessage);
         if (!this.current(s)) throw error('persistence/cancelled', 'Sessão alterada.');
@@ -215,6 +259,7 @@ export class AutomaticFinanceSync {
         return { records, settings, conflicts, generation: data?.generation || 'legacy' };
     }
     async reconcile(s, snapshot) {
+        this.assertRemote(s);
         if (!this.current(s)) return;
         const known = await this.service.lerFila(s.uid);
         if (!this.current(s)) return;
@@ -266,6 +311,7 @@ export class AutomaticFinanceSync {
         return changed.get(`fila:${s.uid}`);
     }
     async cycle(s) {
+        this.assertRemote(s);
         if (!this.current(s)) return;
         if (s.localMigration?.pending) throw error('migration/review-required', 'Fontes locais precisam de revisão; nada foi publicado.');
         const initialQueue = await this.service.lerFila(s.uid);
@@ -362,6 +408,7 @@ export class AutomaticFinanceSync {
         this.status(notices.some(item => !item.acknowledged) ? recoveryStatus : 'Sincronizado', false, confirmation.fila.lastConfirmed);
     }
     listen(s) {
+        this.assertRemote(s);
         s.ready = true;
         const received = (_data, meta) => { if (this.current(s) && snapshotConfirmed(meta)) this.request(); };
         const failure = cause => {
@@ -379,6 +426,7 @@ export class AutomaticFinanceSync {
             recoveryNotices: (queue?.recoveryNotices || []).filter(item => !item.acknowledged), compatibilityBlocked: Boolean(queue?.compatibilityBlocked) });
     }
     async resumeRestore(s, job) {
+        this.assertRemote(s);
         if (s.localMigration?.pending) throw error('migration/review-required', 'Revisão das fontes locais obrigatória antes de retomar a restauração.');
         if (!this.client.publishRestore) throw error('sync/upgrade-required', 'Atualize o cliente antes de restaurar.');
         await this.client.publishRestore(s.uid, job, () => this.current(s));
@@ -398,6 +446,7 @@ export class AutomaticFinanceSync {
     async importBackup(raw, confirm = () => false, onSessionRenewed = () => {}) {
         if (this.session?.localMigration?.pending) throw error('migration/review-required', 'Revisão das fontes locais obrigatória antes de restaurar.');
         let s = this.session;
+        if (s?.localOnly) throw error('account/local-only', 'Restauração remota indisponível no modo local.');
         if (!s) throw error('sync/sign-in-required', 'Entre com Google antes de importar para a conta.');
         const previousSession = s;
         const assertCurrent = () => {

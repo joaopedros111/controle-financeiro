@@ -12,7 +12,7 @@ function fixture() {
     const db = {
         ler: async key => clone(docs.get(key) ?? null),
         alterar(key, fn) { const next = serial.then(() => { const v = fn(clone(docs.get(key) ?? null)); docs.set(key, clone(v)); return clone(v); }); serial = next.catch(() => {}); return next; },
-        async removerContasConfirmadas(epoch) { calls.push('cleanup'); assert.equal(docs.get(ACCOUNT_ACCESS_KEY).epoch, epoch); return [{ uid: userA.uid, state: state().dados }]; }
+        async removerContasConfirmadas(epoch, uid) { assert.equal(uid, userA.uid); calls.push('cleanup'); assert.equal(docs.get(ACCOUNT_ACCESS_KEY).epoch, epoch); return [{ uid: userA.uid, state: state().dados }]; }
     };
     const notices = [], policy = new AccountDataPolicy(db, { storage: { setItem() {}, getItem: () => null }, onHide: () => calls.push('hide'), onNotice: x => notices.push(x) });
     return { policy, db, docs, calls, notices };

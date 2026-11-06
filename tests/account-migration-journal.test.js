@@ -1,3 +1,4 @@
+import { Timestamp } from 'firebase/firestore';
 ﻿import test from 'node:test';
 import assert from 'node:assert/strict';
 import { AutomaticFinanceSync } from '../automatic-finance-sync.js';
@@ -62,4 +63,23 @@ test('unknown anonymous queue metadata and corrupt durable plan stay blocked',as
 });
 test('untracked account settings or historical revisions cannot be replaced by anonymous data',async()=>{
     for(const type of ['settings','revisions','negative-revision']){const h=harness();if(type==='settings')h.docs.get(`estado:${uid}`).dados.orcamentos.padrao['Outros']=400;else if(type==='revisions')h.docs.get(`fila:${uid}`).remoteRevisions={deletedHistoricalId:'old-revision'};else h.docs.get(`estado:${uid}`).revisao=-1;const before=JSON.stringify([...h.docs]);const report=await prepararImportacaoAnonima(h.options);assert.equal(report.importAllowed,false);assert.ok(report.blockers.some(x=>x.code===(type==='negative-revision'?'empty-confirmed-target-required':'local-settings-or-revisions-unconfirmed')));assert.equal(JSON.stringify([...h.docs]),before);}
+});
+
+
+test('durable migration revalidates real SDK settings with read-time Timestamp changes after IndexedDB clone', async () => {
+    const h = harness(), remote = h.remote();
+    remote.settings = { ...financeSettings(normalizarEstado({})), revision: 'synthetic-stable-settings', updatedAt: new Timestamp(123, 456) };
+    let readTime = 456; h.options.snapshotReader = async () => ({ ...remote, settings: { ...remote.settings, updatedAt: new Timestamp(123, readTime++) } });
+    const review = await prepare(h), key = await consent(h, review);
+    await resume(h, key); assert.equal(h.docs.get(key).state, 'applied');
+    assert.equal(h.docs.get(key).remote.settings.updatedAt.seconds, 123);
+    assert.ok(h.docs.get(key).remote.settings.updatedAt.nanoseconds >= 456);
+});
+
+for (const change of ['revision', 'budgets']) test('review still rejects actual remote settings change: ' + change, async () => {
+    const h = harness(), remote = h.remote(); let changed = false, readTime = 100;
+    const settings = { ...financeSettings(normalizarEstado({})), revision: 'synthetic-original-settings' };
+    h.options.snapshotReader = async () => ({ ...remote, settings: { ...settings, ...(changed && change === 'revision' ? { revision: 'synthetic-new-settings' } : {}), ...(changed && change === 'budgets' ? { budgets: { padrao: { Outros: 75 }, meses: {} } } : {}), updatedAt: new Timestamp(123, readTime++) } });
+    const review = await prepare(h), key = await consent(h, review), before = structuredClone([...h.docs]); changed = true;
+    await assert.rejects(resume(h, key), { code: 'migration/remote-changed' }); assert.deepEqual([...h.docs], before);
 });

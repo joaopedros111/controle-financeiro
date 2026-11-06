@@ -14,6 +14,7 @@ const STATIC_FILES = [
     "localization.js",
     "storage.js",
     "account-data-policy.js",
+    "account-offline-access.js",
     "account-local-migration.js",
     "sync-core.js",
     "automatic-finance-sync.js",

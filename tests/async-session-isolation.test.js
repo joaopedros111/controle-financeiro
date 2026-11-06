@@ -261,6 +261,7 @@ test('signed-out account transition never hydrates anonymous IndexedDB data', as
     const h = await saveHarness({ local: true });
     h.c.showStatus = text => h.statuses.push(text);
     h.c.concluirCarregamentoConta = () => h.frames.push('ready');
+    h.c.refreshLocal = async () => {};
     h.c.atualizarPermissaoFinanceira = () => {};
     h.c.ocultarDadosFinanceiros = () => { h.c.estado = { meses: {}, orcamentos: {} }; h.c.idbBloqueado = true; };
     h.c.idbBanco.ler = async () => { throw new Error('Anonymous data must not be read'); };

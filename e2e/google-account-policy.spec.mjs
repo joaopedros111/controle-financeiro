@@ -29,7 +29,7 @@ async function signIn(page, user, { keepSeparate = false } = {}) {
     await page.bringToFront(); await page.evaluate(email => { window.__testEmail = email; }, user.email);
     await openOptions(page); await expect(page.locator('#entrar-google')).toBeEnabled(); await page.locator('#entrar-google').click();
     await expect(page.locator('#conta-sincronizacao')).toContainText(user.email);
-    if (keepSeparate) { await closeOptions(page); await expect(page.locator('#aviso-migracao-local')).toBeVisible(); await page.locator('#manter-fontes-separadas').click(); }
+    if (keepSeparate) { await openRecovery(page); await page.locator('#manter-fontes-separadas').click(); }
     await expect(page.locator('#estado-sincronizacao')).toHaveText('Sincronizado'); await closeOptions(page);
 }
 async function stored(page, key) {
@@ -53,8 +53,19 @@ async function addIncome(page, name = 'SYNTHETIC INCOME', amount = '125') {
     await expect(page.locator('#dialogo-receita')).not.toBeVisible();
 }
 async function synced(page) { await expect(page.locator('#estado-sincronizacao')).toHaveText('Sincronizado'); }
+async function chooseDelete(page) {
+    await openOptions(page); page.removeAllListeners('dialog'); page.on('dialog', d => d.accept());
+    await page.locator('#sair-google').click(); await expect(page.locator('#dialogo-sair-local')).toBeVisible();
+    await page.locator('#sair-delete-confirmed').click();
+}
+async function openRecovery(page) {
+    if (!await page.locator('#aviso-migracao-local').isVisible()) {
+        await openOptions(page); await expect(page.locator('#recuperar-fontes-antigas')).toBeVisible(); await page.locator('#recuperar-fontes-antigas').click(); await closeOptions(page);
+    }
+    await expect(page.locator('#aviso-migracao-local')).toBeVisible();
+}
 async function logout(page) {
-    await openOptions(page); await page.locator('#sair-google').click();
+    await chooseDelete(page);
     await expect(page.locator('#entrar-google')).toBeVisible();
     await expect(page.locator('#sair-google')).toBeEnabled();
 }
@@ -115,7 +126,7 @@ test('failed signOut persists local revocation across reload and rejects delayed
     const a = await account(request); await start(context, page); await signIn(page, a); await addIncome(page); await synced(page);
     const before = await stored(page, `estado:${a.uid}`);
     await page.evaluate(() => { window.__testSignOutFailure = true; window.__oldDelivery = window.__lastAuthDelivery; });
-    await openOptions(page); await page.locator('#sair-google').click();
+    await chooseDelete(page);
     await expect(page.locator('#estado-sincronizacao')).toContainText('Copias locais preservadas'); await zero(page);
     await page.evaluate(() => window.__oldDelivery()); await zero(page);
     expect((await stored(page, `estado:${a.uid}`)).dados).toEqual(before.dados);
@@ -129,7 +140,7 @@ test('shared tabs propagate logout and failed signOut revocation without restori
     await expect(other.locator('#conta-sincronizacao')).toContainText(a.email); await synced(other);
     const control = await stored(other, 'account-access:v1');
     await page.bringToFront(); await page.evaluate(() => { window.__testSignOutFailure = true; });
-    await openOptions(page); await page.locator('#sair-google').click();
+    await chooseDelete(page);
     await expect(page.locator('#estado-sincronizacao')).toContainText('Copias locais preservadas');
     await other.bringToFront(); await zero(other);
     const outcome = await other.evaluate(async ({ uid, epoch }) => {
@@ -198,7 +209,7 @@ async function seedAnonymous(context, page) {
 async function loginToReview(page, user) {
     await page.evaluate(email => { window.__testEmail = email; }, user.email); await openOptions(page);
     await page.locator('#entrar-google').click(); await expect(page.locator('#conta-sincronizacao')).toContainText(user.email); await closeOptions(page);
-    await expect(page.locator('#aviso-migracao-local')).toBeVisible(); await expect(page.locator('#adicionar-receita')).toBeDisabled();
+    await openRecovery(page); await expect(page.locator('#adicionar-receita')).toBeDisabled();
 }
 async function remoteRecordCount(request, uid) {
     const response = await request.get(`http://127.0.0.1:8180/v1/projects/${project}/databases/(default)/documents/users/${uid}/records`, { headers: { Authorization: 'Bearer owner' } });
@@ -217,7 +228,7 @@ test('migration review is read-only, preserves original queue/tombstones and req
     await addIncome(page, 'SYNTHETIC OWNED AFTER REVIEW'); await synced(page);
     expect(await remoteRecordCount(request, a.uid)).toBe(1); expect(await stored(page, 'fila:@local')).toEqual(original.queue);
     expect(JSON.stringify(await stored(page, `estado:${a.uid}`))).not.toContain('ANON PRIVATE ORIGINAL');
-    await page.reload(); await expect(page.locator('#aviso-migracao-local')).toBeVisible();
+    await page.reload(); await openRecovery(page);
     expect(await stored(page, 'fila:@local')).toEqual(original.queue);
 });
 test('cached migration snapshot is rejected with originals intact and no publication', async ({ context, page, request }) => {
@@ -262,7 +273,8 @@ test('native migration consent applies state and queue once, confirms exact ACK 
     // Dismissal is not consent and must produce no journal or operations.
     await page.locator('#importar-fontes-locais').click(); expect(await remoteRecordCount(request, a.uid)).toBe(0);
     page.removeAllListeners('dialog'); page.on('dialog', dialog => dialog.accept());
-    await page.locator('#importar-fontes-locais').click(); await synced(page);
+    await page.locator('#importar-fontes-locais').click();
+    await synced(page);
     expect(await remoteRecordCount(request, a.uid)).toBe(1);
     const journalKey = await page.evaluate(async uid => {
         const { abrirPersistenciaFinanceira } = await import('/indexeddb-persistence.js'); const db = await abrirPersistenciaFinanceira();
@@ -284,7 +296,7 @@ for (const interruption of ['prepared', 'applied']) test(`durable migration resu
     await expect.poll(()=>page.evaluate(kind=>typeof window[kind==='prepared'?'__releaseMigrationSnapshot':'__releaseMigrationCommit'],interruption)).toBe('function');
     const key=await migrationJournalKey(page,a.uid); expect((await stored(page,key)).state).toBe(interruption);
     expect(await remoteRecordCount(request,a.uid)).toBe(0);
-    await page.reload(); await expect(page.locator('#aviso-migracao-local')).toBeVisible();
+    await page.reload(); await openRecovery(page);
     await page.locator('#revisar-fontes-locais').click(); await expect(page.locator('#aviso-migracao-local')).toHaveAttribute('data-review',interruption==='prepared'?'ready':'resume');
     await page.locator('#importar-fontes-locais').click(); await synced(page);
     await expect.poll(async()=>(await stored(page,key)).state).toBe('confirmed');
@@ -306,7 +318,7 @@ test('native migration storage failure rolls back state and queue and retains pr
 
 test('two real tabs import the same reviewed source once with durable account fencing',async({context,page,request})=>{
     await seedCleanAnonymous(context,page);const a=await account(request);await loginToReview(page,a);
-    const other=await context.newPage();await start(context,other);await expect(other.locator('#aviso-migracao-local')).toBeVisible();
+    const other=await context.newPage();await start(context,other);await openRecovery(other);
     for(const p of [page,other]){await p.bringToFront();await p.locator('#revisar-fontes-locais').click();await expect(p.locator('#aviso-migracao-local')).toHaveAttribute('data-review','ready');p.removeAllListeners('dialog');p.on('dialog',dialog=>dialog.accept());}
     const source=await stored(page,'estado:@local');
     await Promise.all([page.locator('#importar-fontes-locais').click(),other.locator('#importar-fontes-locais').click()]);
@@ -395,4 +407,119 @@ test('real SDK Safari proactive resolver cannot hide the shell while its helper 
         expect(await page.evaluate(()=>navigator.onLine)).toBe(false);if(!process.env.STABILITY_BASELINE)await zero(page);
         expect(await page.evaluate(()=>window.__authSubscriptions)).toBe(1);
     }finally{release();await context.close();}
+});
+
+
+test('native cleanup preserves a different confirmed UID in the same synthetic database', async ({ context, page }) => {
+    await start(context, page);
+    const result = await page.evaluate(async () => {
+        const { PersistenciaFinanceira } = await import('/indexeddb-persistence.js');
+        const { normalizarEstado } = await import('/finance-core.js');
+        const db = await new Promise((resolve, reject) => {
+            const request = indexedDB.open('synthetic-cleanup-' + crypto.randomUUID(), 1);
+            request.onupgradeneeded = () => request.result.createObjectStore('documents');
+            request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error);
+        });
+        try {
+            const a = 'synthetic-cleanup-A', b = 'synthetic-cleanup-B';
+            const state = { revisao: 4, dados: normalizarEstado({ meses: {}, categorias: ['Synthetic'] }) };
+            const queue = { outbox: [], conflicts: [], lastConfirmed: '2026-11-06T12:00:00Z', confirmedRevision: 4, confirmedGeneration: 'legacy' };
+            await new Promise((resolve, reject) => {
+                const tx = db.transaction('documents', 'readwrite'), store = tx.objectStore('documents');
+                store.put({ version: 1, epoch: 8, uid: null, closing: false, revoked: [a, b] }, 'account-access:v1');
+                for (const uid of [a, b]) { store.put(state, 'estado:' + uid); store.put(queue, 'fila:' + uid); }
+                tx.oncomplete = resolve; tx.onabort = () => reject(tx.error);
+            });
+            const persistence = new PersistenciaFinanceira(db);
+            const removed = await persistence.removerContasConfirmadas(8, a);
+            return { removed: removed.map(x => x.uid), a: await persistence.ler('estado:' + a),
+                b: await persistence.ler('estado:' + b), queueB: await persistence.ler('fila:' + b), state, queue };
+        } finally { db.close(); }
+    });
+    expect(result.removed).toEqual(['synthetic-cleanup-A']); expect(result.a).toBeNull();
+    expect(result.b).toEqual(result.state); expect(result.queueB).toEqual(result.queue);
+});
+
+
+const localPin = '8347291056';
+async function keepLocal(page) {
+    await openOptions(page); await page.locator('#sair-google').click(); await page.locator('#sair-keep').click();
+    await page.locator('#pin-local').fill(localPin); await page.locator('#pin-local-confirmar').fill(localPin);
+    await page.locator('#dialogo-pin-local button[type="submit"]').click();
+    await expect(page.locator('#desbloquear-dados-locais')).toBeVisible(); await zero(page);
+}
+async function unlockLocal(page) {
+    await openOptions(page); await expect(page.locator('#desbloquear-dados-locais')).toBeVisible(); await page.locator('#desbloquear-dados-locais').click();
+    await page.locator('#pin-local').fill(localPin); await page.locator('#dialogo-pin-local button[type="submit"]').click();
+    await expect(page.locator('#conta-sincronizacao')).toContainText('Modo local'); await expect(page.locator('#adicionar-receita')).toBeEnabled(); await closeOptions(page);
+}
+
+test('local PIN: cancelled logout leaves data and authorization unchanged', async ({ context, page, request }) => {
+    const a = await account(request); await start(context, page); await signIn(page, a); await addIncome(page); await synced(page);
+    const before = await stored(page, 'estado:' + a.uid), control = await stored(page, 'account-access:v1');
+    await openOptions(page); await page.locator('#sair-google').click(); await page.locator('#sair-cancel').click();
+    expect(await stored(page, 'account-access:v1')).toEqual(control);
+    const after = await stored(page, 'estado:' + a.uid); expect(after.dados).toEqual(before.dados); expect(after.revisao).toBeGreaterThanOrEqual(before.revisao);
+    await expect(page.locator('#conta-sincronizacao')).toContainText(a.email); await closeOptions(page); await expect(page.locator('#adicionar-receita')).toBeEnabled();
+});
+
+test('local PIN: A-B-A retains independent local edits without remote authority', async ({ context, page, request }) => {
+    const a = await account(request), b = await account(request, 'B'); await start(context, page); await signIn(page, a); await addIncome(page, 'SYNTHETIC A ORIGINAL'); await synced(page);
+    await keepLocal(page); await unlockLocal(page); await addIncome(page, 'SYNTHETIC LOCAL ONLY');
+    await expect.poll(async () => (await stored(page, 'fila:' + a.uid))?.outbox.length).toBe(1);
+    expect(await remoteRecordCount(request, a.uid)).toBe(1);
+    await openOptions(page); await page.locator('#bloquear-dados-locais').click(); await zero(page);
+    const pending = await stored(page, 'fila:' + a.uid); await signIn(page, b); expect(JSON.stringify(await stored(page, 'estado:' + b.uid))).not.toContain('SYNTHETIC A');
+    expect((await stored(page, 'fila:' + a.uid)).outbox).toEqual(pending.outbox);
+    const peer = await context.newPage(); await start(context, peer); await page.bringToFront(); await expect(page.locator('#adicionar-receita')).toBeEnabled();
+    expect(JSON.stringify(await stored(page, 'estado:' + b.uid))).not.toContain('SYNTHETIC LOCAL ONLY'); await peer.close();
+    await logout(page); await signIn(page, a);
+    await expect.poll(async () => (await stored(page, 'fila:' + a.uid)).outbox.length).toBe(0); expect(await remoteRecordCount(request, a.uid)).toBe(2);
+    expect(JSON.stringify(await stored(page, 'estado:' + a.uid))).toContain('SYNTHETIC LOCAL ONLY');
+});
+
+test('local PIN: Firebase bundle blackhole cannot delay authorized local hydration', async ({ context, page, request }) => {
+    const a = await account(request); await start(context, page); await signIn(page, a); await addIncome(page, 'SYNTHETIC BLACKHOLE LOCAL'); await synced(page); await keepLocal(page);
+    const held = []; await context.route('**/firebase-sync.bundle.js*', route => new Promise(resolve => held.push(() => { void route.abort().catch(() => {}); resolve(); })));
+    try {
+        await page.reload({ waitUntil: 'domcontentloaded' }); await expect(page.locator('main.container')).toBeVisible(); expect(await page.evaluate(() => navigator.onLine)).toBe(true);
+        await unlockLocal(page); expect(await page.locator('body').textContent()).toContain('SYNTHETIC BLACKHOLE LOCAL');
+        await addIncome(page, 'SYNTHETIC WITHOUT FIREBASE'); await expect.poll(async () => (await stored(page, 'fila:' + a.uid)).outbox.length).toBe(1);
+        expect(await remoteRecordCount(request, a.uid)).toBe(1); expect(held.length).toBeGreaterThan(0);
+    } finally { for (const release of held) release(); }
+});
+
+test('local PIN: durable mobile PWA survives two offline process restarts and syncs once after fresh Google login', async ({ request }, info) => {
+    const a = await account(request), profile = await mkdtemp(path.join(tmpdir(), 'cf-local-pin-offline-'));
+    const options = { baseURL: process.env.LOCAL_TEST_BASE_URL, serviceWorkers: 'allow', headless: true, viewport: { width: 375, height: 812 }, isMobile: true, hasTouch: true, ...(info.project.use.channel ? { channel: info.project.use.channel } : {}) };
+    let context = await chromium.launchPersistentContext(profile, options);
+    try {
+        let page = context.pages()[0] || await context.newPage(); await start(context, page); await signIn(page, a); await addIncome(page, 'SYNTHETIC MOBILE ORIGINAL'); await synced(page); await keepLocal(page);
+        await page.evaluate(() => navigator.serviceWorker.ready); await closeOptions(page); await page.reload(); await expect.poll(() => page.evaluate(() => !!navigator.serviceWorker.controller)).toBe(true);
+        await context.close(); context = await chromium.launchPersistentContext(profile, options); await context.setOffline(true);
+        page = context.pages()[0] || await context.newPage(); await setup(context, page); await page.goto('/', { waitUntil: 'domcontentloaded' }); await zero(page);
+        await unlockLocal(page); expect(await page.evaluate(() => window.__authSubscriptions || 0)).toBe(0); expect(await page.evaluate(() => navigator.onLine)).toBe(false); expect(await page.locator('body').textContent()).toContain('SYNTHETIC MOBILE ORIGINAL');
+        await addIncome(page, 'SYNTHETIC MOBILE OFFLINE'); await expect.poll(async () => (await stored(page, 'fila:' + a.uid)).outbox.length).toBe(1);
+        const pending = await stored(page, 'fila:' + a.uid), state = await stored(page, 'estado:' + a.uid);
+        expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
+        await context.close(); context = await chromium.launchPersistentContext(profile, options); await context.setOffline(true);
+        page = context.pages()[0] || await context.newPage(); await setup(context, page); await page.goto('/', { waitUntil: 'domcontentloaded' }); await zero(page); await unlockLocal(page); expect(await page.evaluate(() => window.__authSubscriptions || 0)).toBe(0);
+        expect((await stored(page, 'estado:' + a.uid)).dados).toEqual(state.dados); expect((await stored(page, 'fila:' + a.uid)).outbox).toEqual(pending.outbox);
+        await page.setViewportSize({ width: 390, height: 844 }); expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
+        await context.setOffline(false); await signIn(page, a); await expect.poll(async () => (await stored(page, 'fila:' + a.uid)).outbox.length).toBe(0);
+        expect(await remoteRecordCount(request, a.uid)).toBe(2);
+    } finally { await context.close(); console.log('Synthetic PIN profile retained:', profile); }
+});
+
+test('local PIN: UID-owned source migrates automatically, preserves original and never duplicates after reload', async ({ context, page, request }) => {
+    const a = await account(request); await setup(context, page); await page.goto('/firebase-config.js');
+    const original = await page.evaluate(uid => {
+        const state = { versao: 3, categorias: ['SYNTHETIC OWNED'], orcamentos: { padrao: { 'SYNTHETIC OWNED': 73 }, meses: {} }, meses: { '2026-11': { receitas: [{ id: 'synthetic-owned-source', nome: 'SYNTHETIC UID ORIGINAL', valor: 23, recebido: false }], despesas: [] } } };
+        const raw = JSON.stringify(state); localStorage.setItem('controleFinanceiro:v3:uid:' + uid, raw); localStorage.setItem('controleFinanceiro:sync:' + uid, JSON.stringify({ outbox: [], conflicts: [], firstLinkSource: 'account' })); return raw;
+    }, a.uid);
+    await page.goto('/'); await expect(page.locator('#entrar-google')).toBeEnabled(); await signIn(page, a);
+    expect(JSON.stringify(await stored(page, 'estado:' + a.uid))).toContain('SYNTHETIC UID ORIGINAL'); expect(await remoteRecordCount(request, a.uid)).toBe(1);
+    expect(await page.evaluate(uid => localStorage.getItem('controleFinanceiro:v3:uid:' + uid), a.uid)).toBe(original);
+    const copied = await stored(page, 'estado:' + a.uid); await page.reload(); await synced(page);
+    expect((await stored(page, 'estado:' + a.uid)).migrationDigest).toBe(copied.migrationDigest); expect(await remoteRecordCount(request, a.uid)).toBe(1);
 });

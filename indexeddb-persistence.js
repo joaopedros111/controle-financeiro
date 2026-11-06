@@ -108,6 +108,20 @@ export class PersistenciaFinanceira {
             tx.onerror = () => reject(tx.error || new Error('Não foi possível ler as fontes'));
         });
     }
+    listarImportacoesPendentes(uid) {
+        if (!/^[A-Za-z0-9_-]{1,128}$/.test(uid || '')) return Promise.reject(new Error('UID inválido'));
+        return new Promise((resolve, reject) => {
+            const tx = this.db.transaction(STORE, 'readonly'), keys = [], prefix = 'restore-recovery:' + uid + ':migration-';
+            const request = tx.objectStore(STORE).openCursor();
+            request.onsuccess = () => { const row = request.result; if (!row) return;
+                if (typeof row.key === 'string' && row.key.startsWith(prefix) && row.value?.state !== 'confirmed') keys.push(row.key);
+                row.continue();
+            };
+            tx.oncomplete = () => resolve(keys);
+            tx.onabort = () => reject(tx.error || new Error('Leitura de diários interrompida'));
+            request.onerror = () => reject(request.error || new Error('Falha ao ler diários'));
+        });
+    }
     listarRecuperacoesConta(uid) {
         return new Promise((resolve, reject) => {
             const tx = this.db.transaction(STORE, 'readonly'), rows = [], request = tx.objectStore(STORE).openCursor();
@@ -128,7 +142,7 @@ export class PersistenciaFinanceira {
         return key;
     }
     // One transaction: proof, session fence, and deletion of ONLY confirmed pairs.
-    removerContasConfirmadas(epoch) {
+    removerContasConfirmadas(epoch, onlyUid) {
         return new Promise((resolve, reject) => {
             const tx = this.db.transaction(STORE, 'readwrite'), store = tx.objectStore(STORE), docs = new Map();
             let result = [], failure;
@@ -143,7 +157,7 @@ export class PersistenciaFinanceira {
                     for (const [key, state] of docs) {
                         if (!/^estado:[A-Za-z0-9_-]{1,128}$/.test(key)) continue;
                         const uid = key.slice(7), queue = docs.get('fila:' + uid);
-                        if (uid === 'local') continue;
+                        if (uid === 'local' || uid !== onlyUid) continue;
                         if (!confirmedForRemoval(state, queue) || [...docs.keys()].some(k => k.startsWith('account-recovery:' + uid + ':'))) continue;
                         store.delete(key); store.delete('fila:' + uid); result.push({ uid, state: structuredClone(state.dados) });
                     }

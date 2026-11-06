@@ -92,7 +92,7 @@ export function analisarMigracaoLocal(estadoLocal, registrosRemotos = [], filaLo
 // A preview is not a backup, consent to import, or a migration completion receipt.
 import { migrarDadosLegados, normalizarValorMonetario } from './finance-core.js';
 import { ANONYMOUS_KEYS, LEGACY_STORAGE_KEYS } from './account-data-policy.js';
-import { recordEntityKey, snapshotConfirmed, validateRemoteSettings, validateRemoteConflicts, jsonCanonico, operationId, settingsEquivalent } from './sync-core.js';
+import { chaveLocalConta, readSyncMetadata, validSyncIdentity, recordEntityKey, snapshotConfirmed, validateRemoteSettings, validateRemoteConflicts, jsonCanonico, operationId, settingsEquivalent } from './sync-core.js';
 
 const failure = (code, message) => Object.assign(new Error(message), { code });
 const ordinary = x => x !== null && typeof x === 'object' && !Array.isArray(x);
@@ -285,6 +285,14 @@ import { pendingFinancialData } from './account-data-policy.js';
 // An immutable reviewed plan is private until explicit consent produces a durable journal.
 const reviewedImports = new WeakMap();
 const same = (a, b) => jsonCanonico(a) === jsonCanonico(b);
+function sameReviewedRemote(a, b) {
+    if (!validateRemoteSettings(a?.settings) || !validateRemoteSettings(b?.settings)) return false;
+    // The v4 settings adapter synthesizes updatedAt at READ time. It is not a
+    // server revision. Compare the complete content and revision, not that clock.
+    const stable = snapshot => ({ ...snapshot, settings: snapshot.settings === null ? null
+        : Object.fromEntries(Object.entries(snapshot.settings).filter(([key]) => key !== 'updatedAt')) });
+    return same(stable(a), stable(b));
+}
 const pairKeys = uid => [`estado:${uid}`, `fila:${uid}`];
 const requireCurrent = isCurrent => {
     if (typeof isCurrent !== 'function' || isCurrent() !== true) throw failure('migration/session-changed', 'Sessão encerrada.');
@@ -399,7 +407,7 @@ export async function retomarImportacaoAnonima({ db, uid, journalKey, isCurrent,
         if (!queue || (queue.generation || 'legacy') !== journal.generation) throw failure('migration/generation-changed', 'Geração local alterada.');
         if (durable.state === 'applied' || durable.state === 'confirmed') return docs; // No replay, even after later edits.
         if (durable.state !== 'prepared') throw failure('migration/journal-invalid', 'Estado de diário inválido.');
-        if (!same(remote, durable.remote)) throw failure('migration/remote-changed', 'Destino remoto mudou; revisão necessária.');
+        if (!sameReviewedRemote(remote, durable.remote)) throw failure('migration/remote-changed', 'Destino remoto mudou; revisão necessária.');
         checkSource(durable, reads); checkOwned(durable, docs);
         const before = docs.get(keys[0]);
         const next = { ...before, revisao: before.revisao + 1, dados: structuredClone(durable.source) };
@@ -453,4 +461,41 @@ export async function consultarImportacaoPendente({ db, uid, isCurrent }) {
     validateJournal(journal, uid, keys[0]);
     return { uid, generation: journal.generation, journalKey: keys[0], resumeAllowed: true, importAllowed: false,
         quantityLocal: journal.operations.length, quantityRemote: 0, analyses: [], sources: [], blockers: [] };
+}
+
+
+// Copy only the historic UID-scoped source. Anonymous keys are never candidates.
+export async function migrarFonteDaConta({ db, storage, uid, isCurrent }) {
+    const check = () => { if (!isCurrent()) throw failure('migration/session-changed', 'Sessão alterada; fontes preservadas.'); };
+    check(); const sourceKey = chaveLocalConta(uid), stateKey = 'estado:' + uid, queueKey = 'fila:' + uid;
+    const pair = await db.lerDocumentos([stateKey, queueKey]); check();
+    if ((pair.get(stateKey) === null) !== (pair.get(queueKey) === null)) throw failure('migration/partial', 'Cópia local incompleta; recuperação necessária.');
+    if (pair.get(stateKey) !== null) return { status: 'existing' };
+    const raw = storage.getItem(sourceKey), metaKey = 'controleFinanceiro:sync:' + uid, metaRaw = storage.getItem(metaKey);
+    if (raw === null) return { status: 'absent' };
+    let state; try { state = JSON.parse(raw); } catch { throw failure('migration/invalid-local', 'Fonte da conta inválida; original preservado.'); }
+    if (!validarBackup(state) || !validarTotaisMonetarios(state)) throw failure('migration/invalid-local', 'Fonte da conta inválida; original preservado.');
+    const rows = registrosFinanceiros(state);
+    if (rows.length !== rowCount(state) || rows.some(row => !validSyncIdentity(row.id) || !validConflictRecord({ ...row, deleted: false })) || new Set(rows.map(recordEntityKey)).size !== rows.length) throw failure('migration/invalid-local', 'Identificadores legados ausentes, duplicados ou incompatíveis; recuperação necessária.');
+    const meta = readSyncMetadata(storage, uid);
+    if (meta.firstLinkSource === 'anonymous' && !meta.firstLinkReviewed) return { status: 'ambiguous' };
+    const queue = { outbox: [], conflicts: [], lastConfirmed: null, settingsPristine: false, ...meta };
+    if (queue.generation !== undefined && (typeof queue.generation !== 'string' || !queue.generation || queue.generation.length > 256) || queue.recoveryKeys !== undefined && !Array.isArray(queue.recoveryKeys)) throw failure('migration/invalid-local', 'Metadados da conta inválidos; original preservado.');
+    if ((queue.recoveryKeys || []).some(k => typeof k !== 'string' || !k.startsWith('restore-recovery:' + uid + ':'))) throw failure('migration/invalid-local', 'Referências de outra conta; recuperação necessária.');
+    const digest = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify([uid, raw, metaRaw])))), x => x.toString(16).padStart(2, '0')).join(''); check();
+    const journalKey = 'restore-recovery:' + uid + ':owned-migration-' + digest;
+    queue.recoveryKeys = [...new Set([...(queue.recoveryKeys || []), journalKey])];
+    queue.automaticHasLocalSettings = true;
+    const snapshot = { version: 1, kind: 'owned-local-copy', uid, digest, sourceKey, source: raw, metadata: metaRaw, state: 'copied', generation: queue.generation || 'legacy' };
+    const result = await db.alterarDocumentos([stateKey, queueKey, journalKey], docs => {
+        check();
+        if (storage.getItem(sourceKey) !== raw || storage.getItem(metaKey) !== metaRaw) throw failure('migration/source-changed', 'Outra aba alterou a origem; nada foi importado.');
+        if (docs.get(stateKey) !== null || docs.get(queueKey) !== null) {
+            if (!docs.get(stateKey) || !docs.get(queueKey)) throw failure('migration/partial', 'Destino incompleto; dados preservados.');
+            return docs;
+        }
+        docs.set(stateKey, { revisao: Number.isSafeInteger(state.revisao) && state.revisao >= 0 ? state.revisao : 0, dados: state, origem: 'localStorage-uid', migrationDigest: digest });
+        docs.set(queueKey, queue); docs.set(journalKey, snapshot); return docs;
+    });
+    check(); return { status: result.get(stateKey)?.migrationDigest === digest ? 'copied' : 'existing', digest };
 }
