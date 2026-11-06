@@ -713,15 +713,15 @@
 
     /* Resumo financeiro moderno */
 .resumo {
-    padding: 16px 14px 12px;
+    padding: 12px 14px 10px;
     margin-bottom: 14px;
     border-radius: var(--raio-menor);
     background: var(--superficie);
     box-shadow: var(--sombra-flutuante);
 }
 
-.resumo-cabecalho { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
-.resumo-cabecalho .resumo-titulo { margin-bottom: 10px; }
+.resumo-cabecalho { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 6px; }
+.resumo-cabecalho .resumo-titulo { margin-bottom: 0; }
 .resumo-acoes { position: relative; display: flex; flex: 0 0 auto; align-items: center; gap: 8px; }
 .resumo-visibilidade { width: 34px; min-width: 34px; height: 34px; min-height: 34px; padding: 6px; margin: -5px -4px 4px 0; }
 .resumo-visibilidade svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
@@ -870,13 +870,13 @@ body #dialogo-ajustes .ajuste-controle { gap: var(--densidade-opcoes-controle-ga
     .indicadores {
         display: grid;
         grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 10px;
+        gap: 8px;
         margin: 0;
         padding: 0;
         list-style: none;
 
         & > div {
-            padding: 12px;
+            padding: 8px 10px;
             background: var(--superficie-suave);
             border-radius: var(--raio-menor);
         }
@@ -1739,7 +1739,7 @@ dialog#dialogo-receita #campo-recebido-receita { grid-column: 1 / -1; }
         gap: 8px;
         padding: 8px;
         margin: 0;
-        border-radius: 0 0 16px 16px;
+        border-radius: var(--raio);
         background: var(--superficie);
         box-shadow: 0 5px 18px -13px color-mix(in srgb, var(--texto) 48%, transparent);
         backdrop-filter: blur(14px);
@@ -1751,6 +1751,9 @@ dialog#dialogo-receita #campo-recebido-receita { grid-column: 1 / -1; }
     .periodo #hoje { grid-column: 4; grid-row: 1; width: auto; min-height: 44px; margin: 0; padding-inline: 12px; }
     .periodo #mes-proximo { grid-column: 5; grid-row: 1; }
     .periodo > * { justify-self: stretch; }
+    .periodo .resumo-acoes { grid-column: 1 / -1; grid-row: 2; justify-self: end; }
+    .periodo .resumo-acoes .btn-icone { width: 44px; min-width: 44px; border-radius: var(--raio-menor); }
+    .periodo #hoje { border-radius: var(--raio-menor); }
     .periodo .btn-icone { width: 44px; min-width: 44px; min-height: 44px; border-radius: 13px; }
     .periodo select {
         min-height: 44px;
