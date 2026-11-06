@@ -25,8 +25,8 @@ test('Aurora, Peônia and Pangolim use their identity colors with readable seman
             primaria: '#2563eb', texto: '#0f172a' },
         rosa: { fundo: '#fff7f8', superficie: '#ffffff', 'superficie-suave': '#fbe4e9',
             primaria: '#b54d72', texto: '#70445b' },
-        pangolim: { fundo: '#2d211c', superficie: '#49352a', texto: '#f5e9d8',
-            acento: '#a76a36', primaria: '#d8a35a' }
+        pangolim: { fundo: '#F2D98B', superficie: '#FFF1C6', texto: '#79502C',
+            acento: '#C89A46', primaria: '#C89A46', 'primaria-texto': '#79502C' }
     };
     for (const theme of ['claro', 'rosa', 'pangolim']) {
         for (const [token, expected] of Object.entries(identities[theme])) {
@@ -44,12 +44,19 @@ test('Aurora, Peônia and Pangolim use their identity colors with readable seman
 
 test('all four palettes meet text and graphical contrast targets on their surfaces', () => {
     assert.deepEqual(Object.keys(palettes), themes);
+    assert.match(css, /color: var\(--primaria-texto\)/);
     for (const [theme, p] of Object.entries(palettes)) {
         const pairs = ['fundo', 'superficie', 'superficie-suave'].flatMap(bg => [['texto', bg], ['texto-secundario', bg]]);
         pairs.push(['texto-na-primaria', 'primaria'], ['texto-na-primaria', 'primaria-hover']);
-        for (const color of ['primaria', 'verde', 'vermelho', 'ambar']) pairs.push([color, color + '-suave']);
+        // The gold fill and the readable foreground are distinct in Pangolim.
+        const resolve = token => {
+            const value = p[token] ?? palettes.claro[token];
+            const reference = /^var\(--([\w-]+)\)$/.exec(value);
+            return reference ? resolve(reference[1]) : value;
+        };
+        for (const color of ['primaria', 'verde', 'vermelho', 'ambar']) pairs.push([color === 'primaria' ? 'primaria-texto' : color, color + '-suave']);
         for (const [foreground, background] of pairs) {
-            assert.ok(contrast(p[foreground], p[background]) >= 4.5, `${theme}: ${foreground} / ${background}`);
+            assert.ok(contrast(resolve(foreground), resolve(background)) >= 4.5, `${theme}: ${foreground} / ${background}`);
         }
         const categories = Array.from({ length: 12 }, (_, i) => p['categoria-' + (i + 1)]);
         assert.equal(new Set(categories).size, 12, `${theme}: distinct category colors`);

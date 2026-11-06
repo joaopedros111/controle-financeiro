@@ -141,8 +141,31 @@ export class PersistenciaFinanceira {
         });
         return key;
     }
-    // One transaction: proof, session fence, and deletion of ONLY confirmed pairs.
-    removerContasConfirmadas(epoch, onlyUid) {
+    lerRecuperacoesParaSaida(uid) {
+        return new Promise((resolve, reject) => {
+            const tx = this.db.transaction(STORE, 'readonly'), rows = [], request = tx.objectStore(STORE).openCursor();
+            request.onsuccess = () => { const row = request.result; if (!row) return;
+                if (typeof row.key === 'string' && (row.key.startsWith('account-recovery:' + uid + ':') || row.key.startsWith('restore-recovery:' + uid + ':'))) rows.push([row.key, structuredClone(row.value)]);
+                row.continue();
+            };
+            tx.oncomplete = () => resolve(rows); tx.onabort = () => reject(tx.error || new Error('Leitura de recuperação interrompida'));
+            tx.onerror = () => reject(tx.error);
+        });
+    }
+    // Deletes obsolete access verifiers only; never touches financial documents.
+    removerCredenciaisLocaisObsoletas() {
+        return new Promise((resolve, reject) => {
+            const tx = this.db.transaction(STORE, 'readwrite'), request = tx.objectStore(STORE).openCursor();
+            request.onsuccess = () => { const row = request.result; if (!row) return;
+                if (typeof row.key === 'string' && row.key.startsWith('account-offline:v1:')) row.delete();
+                row.continue();
+            };
+            tx.oncomplete = resolve; tx.onabort = () => reject(tx.error || new Error('Limpeza de autorização interrompida'));
+            tx.onerror = () => reject(tx.error);
+        });
+    }
+    // One transaction: current owner, exact reviewed snapshot and account-scoped deletion.
+    removerContasConfirmadas(epoch, onlyUid, { discardPending = false, expectedState, expectedQueue, expectedRecoveries } = {}) {
         return new Promise((resolve, reject) => {
             const tx = this.db.transaction(STORE, 'readwrite'), store = tx.objectStore(STORE), docs = new Map();
             let result = [], failure;
@@ -154,12 +177,20 @@ export class PersistenciaFinanceira {
                     const control = docs.get(ACCOUNT_ACCESS_KEY);
                     if (!validAccountControl(control) || control.uid !== null || control.epoch !== epoch || control.closing)
                         throw new Error('Session changed during cleanup; copies preserved');
+                    const recoveries = [...docs].filter(([key]) => typeof key === 'string' && (key.startsWith('account-recovery:' + onlyUid + ':') || key.startsWith('restore-recovery:' + onlyUid + ':')));
+                    if (expectedRecoveries !== undefined && JSON.stringify(recoveries) !== JSON.stringify(expectedRecoveries)) throw new Error('Histórico alterado após a confirmação; dados preservados');
                     for (const [key, state] of docs) {
                         if (!/^estado:[A-Za-z0-9_-]{1,128}$/.test(key)) continue;
                         const uid = key.slice(7), queue = docs.get('fila:' + uid);
                         if (uid === 'local' || uid !== onlyUid) continue;
-                        if (!confirmedForRemoval(state, queue) || [...docs.keys()].some(k => k.startsWith('account-recovery:' + uid + ':'))) continue;
-                        store.delete(key); store.delete('fila:' + uid); result.push({ uid, state: structuredClone(state.dados) });
+                        if (expectedState !== undefined && JSON.stringify(state) !== JSON.stringify(expectedState)
+                            || expectedQueue !== undefined && JSON.stringify(queue) !== JSON.stringify(expectedQueue)) throw new Error('Dados alterados após a confirmação; cópias preservadas');
+                        if (!discardPending && (!confirmedForRemoval(state, queue) || [...docs.keys()].some(k => k.startsWith('account-recovery:' + uid + ':')))) continue;
+                        for (const candidate of docs.keys()) {
+                            if (candidate === key || candidate === 'fila:' + uid || candidate === 'account-offline:v1:' + uid
+                                || candidate.startsWith('account-recovery:' + uid + ':') || candidate.startsWith('restore-recovery:' + uid + ':')) store.delete(candidate);
+                        }
+                        result.push({ uid, state: structuredClone(state.dados) });
                     }
                 } catch (error) { failure = error; tx.abort(); }
             };

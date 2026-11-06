@@ -112,9 +112,9 @@ test('offline logout preserves pending operations and A-B-A isolates owners then
     const a = await account(request), b = await account(request, 'B'); await start(context, page); await signIn(page, a);
     await context.setOffline(true); await addIncome(page, 'SYNTHETIC PENDING');
     await expect.poll(async () => (await stored(page, `fila:${a.uid}`))?.outbox.length).toBe(1);
-    const pending = await stored(page, `fila:${a.uid}`); await logout(page); await zero(page);
+    const pending = await stored(page, `fila:${a.uid}`); await keepLocal(page); await unlockLocal(page);
     expect((await stored(page, `fila:${a.uid}`)).outbox).toEqual(pending.outbox);
-    await context.setOffline(false); await page.reload(); await expect(page.locator('#entrar-google')).toBeEnabled(); await zero(page);
+    await context.setOffline(false); await page.reload(); await expect(page.locator('#entrar-google')).toBeEnabled(); await unlockLocal(page);
     await signIn(page, b); const bState = await stored(page, `estado:${b.uid}`); expect(JSON.stringify(bState)).not.toContain('SYNTHETIC PENDING');
     expect((await stored(page, `fila:${a.uid}`)).outbox).toEqual(pending.outbox);
     await logout(page); await signIn(page, a);
@@ -335,7 +335,7 @@ test('logout after durable consent fences a late import callback and preserves p
     const source=await stored(page,'estado:@local');page.removeAllListeners('dialog');page.on('dialog',dialog=>dialog.accept());
     await page.evaluate(()=>{window.__holdMigrationSnapshot=true;});await page.locator('#importar-fontes-locais').click();
     await expect.poll(()=>page.evaluate(()=>typeof window.__releaseMigrationSnapshot)).toBe('function');const key=await migrationJournalKey(page,a.uid);
-    await logout(page);await zero(page);await page.evaluate(()=>window.__releaseMigrationSnapshot());
+    await keepLocal(page);await page.evaluate(()=>window.__releaseMigrationSnapshot());
     await expect(page.locator('#aviso-migracao-local')).toBeHidden();expect((await stored(page,key)).state).toBe('prepared');
     expect((await stored(page,`fila:${a.uid}`)).outbox).toEqual([]);expect(await stored(page,'estado:@local')).toEqual(source);expect(await remoteRecordCount(request,a.uid)).toBe(0);
 });
@@ -441,20 +441,18 @@ test('native cleanup preserves a different confirmed UID in the same synthetic d
 });
 
 
-const localPin = '8347291056';
 async function keepLocal(page) {
     await openOptions(page); await page.locator('#sair-google').click(); await page.locator('#sair-keep').click();
-    await page.locator('#pin-local').fill(localPin); await page.locator('#pin-local-confirmar').fill(localPin);
-    await page.locator('#dialogo-pin-local button[type="submit"]').click();
-    await expect(page.locator('#desbloquear-dados-locais')).toBeVisible(); await zero(page);
+    await expect(page.locator('#conta-sincronizacao')).toContainText('Modo local');
+    await expect(page.locator('#adicionar-receita')).toBeEnabled();
+    await expect(page.locator('#pin-local, #dialogo-pin-local, #desbloquear-dados-locais, #bloquear-dados-locais')).toHaveCount(0);
 }
 async function unlockLocal(page) {
-    await openOptions(page); await expect(page.locator('#desbloquear-dados-locais')).toBeVisible(); await page.locator('#desbloquear-dados-locais').click();
-    await page.locator('#pin-local').fill(localPin); await page.locator('#dialogo-pin-local button[type="submit"]').click();
+    // Readiness assertion only: access is automatic, with no unlock action.
     await expect(page.locator('#conta-sincronizacao')).toContainText('Modo local'); await expect(page.locator('#adicionar-receita')).toBeEnabled(); await closeOptions(page);
 }
 
-test('local PIN: cancelled logout leaves data and authorization unchanged', async ({ context, page, request }) => {
+test('automatic local access: cancelled logout leaves data and authorization unchanged', async ({ context, page, request }) => {
     const a = await account(request); await start(context, page); await signIn(page, a); await addIncome(page); await synced(page);
     const before = await stored(page, 'estado:' + a.uid), control = await stored(page, 'account-access:v1');
     await openOptions(page); await page.locator('#sair-google').click(); await page.locator('#sair-cancel').click();
@@ -463,12 +461,11 @@ test('local PIN: cancelled logout leaves data and authorization unchanged', asyn
     await expect(page.locator('#conta-sincronizacao')).toContainText(a.email); await closeOptions(page); await expect(page.locator('#adicionar-receita')).toBeEnabled();
 });
 
-test('local PIN: A-B-A retains independent local edits without remote authority', async ({ context, page, request }) => {
+test('automatic local access: A-B-A retains independent local edits without remote authority', async ({ context, page, request }) => {
     const a = await account(request), b = await account(request, 'B'); await start(context, page); await signIn(page, a); await addIncome(page, 'SYNTHETIC A ORIGINAL'); await synced(page);
     await keepLocal(page); await unlockLocal(page); await addIncome(page, 'SYNTHETIC LOCAL ONLY');
     await expect.poll(async () => (await stored(page, 'fila:' + a.uid))?.outbox.length).toBe(1);
     expect(await remoteRecordCount(request, a.uid)).toBe(1);
-    await openOptions(page); await page.locator('#bloquear-dados-locais').click(); await zero(page);
     const pending = await stored(page, 'fila:' + a.uid); await signIn(page, b); expect(JSON.stringify(await stored(page, 'estado:' + b.uid))).not.toContain('SYNTHETIC A');
     expect((await stored(page, 'fila:' + a.uid)).outbox).toEqual(pending.outbox);
     const peer = await context.newPage(); await start(context, peer); await page.bringToFront(); await expect(page.locator('#adicionar-receita')).toBeEnabled();
@@ -478,40 +475,40 @@ test('local PIN: A-B-A retains independent local edits without remote authority'
     expect(JSON.stringify(await stored(page, 'estado:' + a.uid))).toContain('SYNTHETIC LOCAL ONLY');
 });
 
-test('local PIN: Firebase bundle blackhole cannot delay authorized local hydration', async ({ context, page, request }) => {
+test('automatic local access: Firebase bundle blackhole cannot delay authorized local hydration', async ({ context, page, request }) => {
     const a = await account(request); await start(context, page); await signIn(page, a); await addIncome(page, 'SYNTHETIC BLACKHOLE LOCAL'); await synced(page); await keepLocal(page);
     const held = []; await context.route('**/firebase-sync.bundle.js*', route => new Promise(resolve => held.push(() => { void route.abort().catch(() => {}); resolve(); })));
     try {
         await page.reload({ waitUntil: 'domcontentloaded' }); await expect(page.locator('main.container')).toBeVisible(); expect(await page.evaluate(() => navigator.onLine)).toBe(true);
         await unlockLocal(page); expect(await page.locator('body').textContent()).toContain('SYNTHETIC BLACKHOLE LOCAL');
         await addIncome(page, 'SYNTHETIC WITHOUT FIREBASE'); await expect.poll(async () => (await stored(page, 'fila:' + a.uid)).outbox.length).toBe(1);
-        expect(await remoteRecordCount(request, a.uid)).toBe(1); expect(held.length).toBeGreaterThan(0);
+        expect(await remoteRecordCount(request, a.uid)).toBe(1); expect(held.length).toBe(0);
     } finally { for (const release of held) release(); }
 });
 
-test('local PIN: durable mobile PWA survives two offline process restarts and syncs once after fresh Google login', async ({ request }, info) => {
-    const a = await account(request), profile = await mkdtemp(path.join(tmpdir(), 'cf-local-pin-offline-'));
+test('automatic local access: durable mobile PWA survives two offline process restarts and syncs once after fresh Google login', async ({ request }, info) => {
+    const a = await account(request), profile = await mkdtemp(path.join(tmpdir(), 'cf-local-offline-'));
     const options = { baseURL: process.env.LOCAL_TEST_BASE_URL, serviceWorkers: 'allow', headless: true, viewport: { width: 375, height: 812 }, isMobile: true, hasTouch: true, ...(info.project.use.channel ? { channel: info.project.use.channel } : {}) };
     let context = await chromium.launchPersistentContext(profile, options);
     try {
         let page = context.pages()[0] || await context.newPage(); await start(context, page); await signIn(page, a); await addIncome(page, 'SYNTHETIC MOBILE ORIGINAL'); await synced(page); await keepLocal(page);
         await page.evaluate(() => navigator.serviceWorker.ready); await closeOptions(page); await page.reload(); await expect.poll(() => page.evaluate(() => !!navigator.serviceWorker.controller)).toBe(true);
         await context.close(); context = await chromium.launchPersistentContext(profile, options); await context.setOffline(true);
-        page = context.pages()[0] || await context.newPage(); await setup(context, page); await page.goto('/', { waitUntil: 'domcontentloaded' }); await zero(page);
+        page = context.pages()[0] || await context.newPage(); await setup(context, page); await page.goto('/', { waitUntil: 'domcontentloaded' });
         await unlockLocal(page); expect(await page.evaluate(() => window.__authSubscriptions || 0)).toBe(0); expect(await page.evaluate(() => navigator.onLine)).toBe(false); expect(await page.locator('body').textContent()).toContain('SYNTHETIC MOBILE ORIGINAL');
         await addIncome(page, 'SYNTHETIC MOBILE OFFLINE'); await expect.poll(async () => (await stored(page, 'fila:' + a.uid)).outbox.length).toBe(1);
         const pending = await stored(page, 'fila:' + a.uid), state = await stored(page, 'estado:' + a.uid);
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
         await context.close(); context = await chromium.launchPersistentContext(profile, options); await context.setOffline(true);
-        page = context.pages()[0] || await context.newPage(); await setup(context, page); await page.goto('/', { waitUntil: 'domcontentloaded' }); await zero(page); await unlockLocal(page); expect(await page.evaluate(() => window.__authSubscriptions || 0)).toBe(0);
+        page = context.pages()[0] || await context.newPage(); await setup(context, page); await page.goto('/', { waitUntil: 'domcontentloaded' }); await unlockLocal(page); expect(await page.evaluate(() => window.__authSubscriptions || 0)).toBe(0);
         expect((await stored(page, 'estado:' + a.uid)).dados).toEqual(state.dados); expect((await stored(page, 'fila:' + a.uid)).outbox).toEqual(pending.outbox);
         await page.setViewportSize({ width: 390, height: 844 }); expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
         await context.setOffline(false); await signIn(page, a); await expect.poll(async () => (await stored(page, 'fila:' + a.uid)).outbox.length).toBe(0);
         expect(await remoteRecordCount(request, a.uid)).toBe(2);
-    } finally { await context.close(); console.log('Synthetic PIN profile retained:', profile); }
+    } finally { await context.close(); console.log('Synthetic local profile retained:', profile); }
 });
 
-test('local PIN: UID-owned source migrates automatically, preserves original and never duplicates after reload', async ({ context, page, request }) => {
+test('automatic local access: UID-owned source migrates automatically, preserves original and never duplicates after reload', async ({ context, page, request }) => {
     const a = await account(request); await setup(context, page); await page.goto('/firebase-config.js');
     const original = await page.evaluate(uid => {
         const state = { versao: 3, categorias: ['SYNTHETIC OWNED'], orcamentos: { padrao: { 'SYNTHETIC OWNED': 73 }, meses: {} }, meses: { '2026-11': { receitas: [{ id: 'synthetic-owned-source', nome: 'SYNTHETIC UID ORIGINAL', valor: 23, recebido: false }], despesas: [] } } };
@@ -522,4 +519,72 @@ test('local PIN: UID-owned source migrates automatically, preserves original and
     expect(await page.evaluate(uid => localStorage.getItem('controleFinanceiro:v3:uid:' + uid), a.uid)).toBe(original);
     const copied = await stored(page, 'estado:' + a.uid); await page.reload(); await synced(page);
     expect((await stored(page, 'estado:' + a.uid)).migrationDigest).toBe(copied.migrationDigest); expect(await remoteRecordCount(request, a.uid)).toBe(1);
+});
+
+test('automatic local access: rejecting pending-data loss cancels logout without touching financial graph', async ({ context, page, request }) => {
+    const a = await account(request); await start(context, page); await signIn(page, a);
+    await context.setOffline(true); await addIncome(page, 'SYNTHETIC DO NOT DISCARD');
+    await expect.poll(async () => (await stored(page, 'fila:' + a.uid)).outbox.length).toBe(1);
+    const state = await stored(page, 'estado:' + a.uid), queue = await stored(page, 'fila:' + a.uid), control = await stored(page, 'account-access:v1');
+    await openOptions(page); await page.locator('#sair-google').click(); await page.locator('#sair-delete-confirmed').click();
+    await expect(page.locator('#sair-google')).toBeEnabled();
+    expect(await stored(page, 'estado:' + a.uid)).toEqual(state); expect(await stored(page, 'fila:' + a.uid)).toEqual(queue);
+    expect(await stored(page, 'account-access:v1')).toEqual(control); await expect(page.locator('#conta-sincronizacao')).toContainText(a.email);
+    await context.setOffline(false); await synced(page);
+});
+test('automatic local access: confirmed loss deletes only chosen UID and keeps remote documents', async ({ context, page, request }) => {
+    const a = await account(request), b = await account(request, 'B'); await start(context, page); await signIn(page, a); await addIncome(page, 'SYNTHETIC REMOTE KEPT'); await synced(page);
+    await keepLocal(page); await signIn(page, b); await addIncome(page, 'SYNTHETIC OTHER OWNER'); await synced(page); await keepLocal(page); await signIn(page, a);
+    const bState = await stored(page, 'estado:' + b.uid), bQueue = await stored(page, 'fila:' + b.uid);
+    await context.setOffline(true); await addIncome(page, 'SYNTHETIC EXPLICIT LOSS');
+    await expect.poll(async () => (await stored(page, 'fila:' + a.uid)).outbox.length).toBe(1);
+    await chooseDelete(page); await zero(page); await expect.poll(() => stored(page, 'estado:' + a.uid)).toBeNull();
+    expect(await stored(page, 'fila:' + a.uid)).toBeNull(); expect(await stored(page, 'estado:' + b.uid)).toEqual(bState); expect(await stored(page, 'fila:' + b.uid)).toEqual(bQueue);
+    expect(await remoteRecordCount(request, a.uid)).toBe(1);
+    await context.setOffline(false); await page.reload(); await expect(page.locator('#entrar-google')).toBeEnabled(); await zero(page);
+    await signIn(page, a); expect(await remoteRecordCount(request, a.uid)).toBe(1);
+    expect(JSON.stringify(await stored(page, 'estado:' + a.uid))).not.toContain('SYNTHETIC EXPLICIT LOSS');
+});
+test('automatic local access: Google cache reopens offline without signing out first', async ({ context, page, request }) => {
+    const a = await account(request); await start(context, page); await signIn(page, a); await addIncome(page, 'SYNTHETIC AUTOMATIC CACHE'); await synced(page);
+    // Cached application modules remain reachable, while the SDK never resolves.
+    await context.route('**/firebase-sync.bundle.js*', route => route.abort('internetdisconnected'));
+    await page.reload({ waitUntil: 'domcontentloaded' }); await unlockLocal(page);
+    expect(await page.locator('body').textContent()).toContain('SYNTHETIC AUTOMATIC CACHE');
+    await addIncome(page, 'SYNTHETIC CACHED EDIT'); await expect.poll(async () => (await stored(page, 'fila:' + a.uid)).outbox.length).toBe(1);
+    expect(await remoteRecordCount(request, a.uid)).toBe(1);
+});
+
+test('automatic local access: native cleanup removes obsolete credentials and fences changed recovery snapshots', async ({ context, page }) => {
+    await start(context, page);
+    const result = await page.evaluate(async () => {
+        const { abrirPersistenciaFinanceira } = await import('/indexeddb-persistence.js');
+        const { normalizarEstado } = await import('/finance-core.js');
+        const db = await abrirPersistenciaFinanceira(), a = 'synthetic-pending-A', b = 'synthetic-pending-B';
+        const state = { revisao: 1, dados: normalizarEstado(null) }, queue = { outbox: [{ id: 'tombstone', value: { deleted: true } }], conflicts: [{ id: 'conflict' }] };
+        const put = async (key, value) => db.alterar(key, () => value);
+        try {
+            await put('account-access:v1', { version: 1, epoch: 20, uid: null, closing: false, revoked: [a, b] });
+            for (const uid of [a, b]) {
+                await put('estado:' + uid, state); await put('fila:' + uid, queue);
+                await put('account-offline:v1:' + uid, { salt: 'obsolete', ciphertext: 'obsolete' });
+                await put('restore-recovery:' + uid + ':history', { id: uid });
+            }
+            await db.removerCredenciaisLocaisObsoletas();
+            const credentialsGone = await db.ler('account-offline:v1:' + a) === null && await db.ler('account-offline:v1:' + b) === null;
+            const intactAfterMigration = JSON.stringify(await db.ler('estado:' + a)) === JSON.stringify(state) && JSON.stringify(await db.ler('fila:' + a)) === JSON.stringify(queue);
+            const before = await db.lerRecuperacoesParaSaida(a);
+            await put('account-recovery:' + a + ':late-edit', { pending: true });
+            let rejected = false;
+            try { await db.removerContasConfirmadas(20, a, { discardPending: true, expectedState: state, expectedQueue: queue, expectedRecoveries: before }); } catch { rejected = true; }
+            const preservedOnRace = !!await db.ler('estado:' + a) && !!await db.ler('account-recovery:' + a + ':late-edit');
+            const removed = await db.removerContasConfirmadas(20, a, { discardPending: true, expectedState: state, expectedQueue: queue, expectedRecoveries: await db.lerRecuperacoesParaSaida(a) });
+            return { credentialsGone, intactAfterMigration, rejected, preservedOnRace, removed: removed.map(x => x.uid),
+                a: await db.ler('estado:' + a), queueA: await db.ler('fila:' + a), archiveA: await db.ler('restore-recovery:' + a + ':history'), lateA: await db.ler('account-recovery:' + a + ':late-edit'),
+                b: await db.ler('estado:' + b), queueB: await db.ler('fila:' + b), archiveB: await db.ler('restore-recovery:' + b + ':history'), state, queue };
+        } finally { db.fechar(); }
+    });
+    expect(result.credentialsGone && result.intactAfterMigration && result.rejected && result.preservedOnRace).toBe(true);
+    expect(result.removed).toEqual(['synthetic-pending-A']); expect([result.a, result.queueA, result.archiveA, result.lateA]).toEqual([null, null, null, null]);
+    expect(result.b).toEqual(result.state); expect(result.queueB).toEqual(result.queue); expect(result.archiveB).toEqual({ id: 'synthetic-pending-B' });
 });

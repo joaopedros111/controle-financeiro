@@ -26,24 +26,25 @@ test('account deletion requires exact revision, generation, valid data and no pe
     assert.equal(confirmedForRemoval({ ...state(), dados: { invalid: true } }, queue()), false);
     assert.equal(pendingFinancialData(null), true);
 });
-test('logout hides immediately, drains local saves, confirms, revokes, signs out, then cleans', async () => {
+test('logout drains local saves, confirms, revokes, signs out, then cleans', async () => {
     const h = await ready();
     const result = await h.policy.logout({ uid: userA.uid, drainLocal: async () => h.calls.push('drain'), flush: async () => { h.calls.push('flush'); assert.equal(await h.policy.isCurrent(), true); }, signOut: async () => { h.calls.push('signOut'); assert.equal(await h.policy.isCurrent(), false); } });
-    assert.deepEqual(h.calls, ['hide', 'drain', 'flush', 'hide', 'signOut', 'cleanup']);
+    assert.deepEqual(h.calls, ['drain', 'flush', 'hide', 'hide', 'signOut', 'cleanup']);
     assert.equal(result.preserved, false); assert.equal(result.signedOut, true);
     await assert.rejects(h.policy.identify(userA), { code: 'account/access-revoked' });
 });
-test('offline logout signs out, preserves exact state and queue, and never calls cleanup', async () => {
-    const h = await ready(), before = JSON.stringify([...h.docs].filter(([k]) => k.startsWith('estado:') || k.startsWith('fila:')));
+test('offline pending logout without additional confirmation cancels and preserves authorization', async () => {
+    const h = await ready(); h.docs.get('fila:' + userA.uid).outbox.push({ id: 'pending' });
+    const before = JSON.stringify([...h.docs].filter(([k]) => k.startsWith('estado:') || k.startsWith('fila:')));
     const result = await h.policy.logout({ uid: userA.uid, flush: async () => { throw Object.assign(new Error('offline'), { code: 'account/offline' }); }, signOut: async () => h.calls.push('signOut') });
-    assert.equal(result.preserved, true); assert.equal(result.error, 'account/offline'); assert.ok(!h.calls.includes('cleanup'));
+    assert.equal(result.preserved, true); assert.equal(result.cancelled, true); assert.equal(h.policy.access.uid, userA.uid); assert.ok(!h.calls.includes('cleanup'));
     assert.equal(JSON.stringify([...h.docs].filter(([k]) => k.startsWith('estado:') || k.startsWith('fila:'))), before);
 });
 test('missing ACK, conflicts and recovery references never authorize deletion', async () => {
     for (const patch of [{ outbox: [{ id: 'pending' }] }, { conflicts: [{}] }, { recoveryKeys: ['archive'] }, { confirmedRevision: 4 }]) {
         const h = await ready(); h.docs.set(`fila:${userA.uid}`, { ...queue(), ...patch });
         const result = await h.policy.logout({ uid: userA.uid, flush: async () => {}, signOut: async () => {} });
-        assert.equal(result.confirmed, false); assert.equal(result.preserved, true); assert.ok(!h.calls.includes('cleanup'));
+        assert.equal(result.cancelled, true); assert.equal(result.preserved, true); assert.ok(!h.calls.includes('cleanup'));
     }
 });
 test('signOut failure remains revoked after policy restart and does not delete anything', async () => {
@@ -80,4 +81,28 @@ test('interrupted logout restarts revoked and keeps the financial pair intact', 
 test('quota or invalid control does not become an empty financial state', async () => {
     const h = await ready(), before = clone(h.docs.get(`estado:${userA.uid}`)); h.docs.set(ACCOUNT_ACCESS_KEY, { invalid: true });
     await assert.rejects(h.policy.initialize(), { code: 'account/invalid-control' }); assert.deepEqual(h.docs.get(`estado:${userA.uid}`), before);
+});
+
+test('explicit confirmation permits discarding pending data only for the captured account', async () => {
+    const h = await ready(); h.docs.get('fila:' + userA.uid).outbox.push({ id: 'pending' }); let asked = 0;
+    const result = await h.policy.logout({ uid: userA.uid, confirmDiscard: async () => { asked++; return true; }, signOut: async () => {} });
+    assert.equal(asked, 1); assert.equal(result.preserved, false); assert.equal(result.signedOut, true);
+});
+test('a pending deletion confirmation cannot revoke a newer account', async () => {
+    const h = await ready(); h.docs.get('fila:' + userA.uid).outbox.push({ id: 'pending' });
+    const result = await h.policy.logout({ uid: userA.uid, confirmDiscard: async () => { await h.policy.identify(userB, () => true, true); return true; }, signOut: () => { throw Error('must not sign out new account'); } });
+    assert.equal(result.cancelled, true); assert.equal(h.policy.access.uid, userB.uid); assert.ok(!h.calls.includes('cleanup'));
+});
+
+test('pending legacy account metadata also requires explicit confirmation before any logout', async () => {
+    const h = await ready(), before = clone([...h.docs]), access = h.policy.access;
+    h.policy.storage = { getItem: key => key === 'controleFinanceiro:sync:' + userA.uid ? JSON.stringify({ outbox: [{ id: 'legacy-pending' }] }) : null };
+    const result = await h.policy.logout({ uid: userA.uid, signOut: () => { throw Error('must not sign out'); } });
+    assert.equal(result.cancelled, true); assert.equal(h.policy.access, access); assert.deepEqual([...h.docs], before);
+});
+test('legacy changes during signOut cancel cleanup and preserve every local copy', async () => {
+    const h = await ready(); let raw = JSON.stringify(state().dados);
+    h.policy.storage = { setItem() {}, getItem: key => key === 'controleFinanceiro:v3:uid:' + userA.uid ? raw : null };
+    const result = await h.policy.logout({ uid: userA.uid, signOut: async () => { raw = JSON.stringify({ ...state().dados, changed: true }); } });
+    assert.equal(result.preserved, true); assert.equal(result.error, 'account/local-changed'); assert.ok(!h.calls.includes('cleanup')); assert.ok(h.docs.has('estado:' + userA.uid));
 });

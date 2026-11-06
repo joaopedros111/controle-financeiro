@@ -1,5 +1,5 @@
 import { migrarFonteDaConta } from './account-local-migration.js';
-import { AccountDataPolicy, ACCOUNT_NOTICE_KEY, confirmedForRemoval } from './account-data-policy.js';
+import { AccountDataPolicy, ACCOUNT_NOTICE_KEY } from './account-data-policy.js';
 import { criarRecuperacaoFinanceira, storage as storagePadrao, capturarDependenciasAplicacao } from "./storage.js";
 import { abrirPersistenciaFinanceira } from "./indexeddb-persistence.js";
 import { ServicoFinanceiroAtomico } from "./financial-atomic-service.js";
@@ -753,9 +753,9 @@ async function prepararArmazenamentoInicial() {
             idbBanco = await dependenciasAplicacao.openPersistence();
             politicaDadosConta = new AccountDataPolicy(idbBanco, { onHide: ocultarDadosFinanceiros,
                 onNotice: result => {
-                    const text = result.mode === 'keep' ? 'Google desconectado. Dados locais bloqueados; use Desbloquear dados locais e seu PIN. As operações pendentes foram preservadas.' : result.preserved
+                    const text = result.mode === 'keep' ? 'Google desconectado. Dados disponíveis neste dispositivo, sem sincronização remota. As operações pendentes foram preservadas.' : result.preserved
                         ? 'Sessao encerrada. Copias locais preservadas: entre novamente na mesma conta para sincronizar ou baixar o historico. Nenhum dado remoto foi excluido.'
-                        : 'Sessao encerrada. Dados confirmados removidos deste dispositivo.';
+                        : 'Sessão encerrada. Dados desta conta removidos somente deste dispositivo. Nenhum dado remoto foi excluído.';
                     const status = $('estado-sincronizacao'); if (status) status.textContent = text;
                     avisar(text);
                 } });
@@ -809,7 +809,7 @@ function ocultarDadosFinanceiros() {
     $('fontes-migracao-local')?.replaceChildren();
     ultimaRemocao = null; receitaEmEdicao = null; despesaEmEdicao = null; receitaSerieEmCriacao = null; despesaParaRemover = null; receitaParaRemover = null;
     ui.listaOrcamentos?.replaceChildren(); $('lista-categorias')?.replaceChildren();
-    for (const id of ['dialogo-receita','dialogo-despesa','dialogo-serie','dialogo-orcamentos','dialogo-conflitos','dialogo-pin-local','dialogo-sair-local']) $(id)?.close();
+    for (const id of ['dialogo-receita','dialogo-despesa','dialogo-serie','dialogo-orcamentos','dialogo-conflitos','dialogo-sair-local']) $(id)?.close();
     for (const id of ['receita-nome','receita-valor','despesa-nome','despesa-valor','nova-categoria']) if ($(id)) $(id).value = '';
     ui.aviso?.replaceChildren(); ui.aviso?.classList.remove('visivel','com-acao');
     renderTudo(false); atualizarPermissaoFinanceira();
@@ -4946,63 +4946,40 @@ if (!IDB_HOMOLOGACAO && $("entrar-google") && $("sair-google") && firebaseConfig
     const login = $("entrar-google"), logout = $("sair-google"), status = $("estado-sincronizacao"), account = $("conta-sincronizacao");
     let client = null, loadedSdk = null, initialization = null, initTimer = null;
     const syncClient = new Proxy({}, { get(_target, key) { const value = client?.[key]; return typeof value === 'function' ? value.bind(client) : value; } });
-    const localUnlock = document.createElement('button'), localLock = document.createElement('button'), recoverSources = document.createElement('button');
-    for (const button of [localUnlock, localLock, recoverSources]) { button.type = 'button'; button.className = 'btn btn-secundario'; button.hidden = true; logout.parentElement.append(button); }
-    localUnlock.id = 'desbloquear-dados-locais'; localUnlock.textContent = 'Desbloquear dados locais';
-    localLock.id = 'bloquear-dados-locais'; localLock.textContent = 'Bloquear dados locais';
+    const recoverSources = document.createElement('button');
+    recoverSources.type = 'button'; recoverSources.className = 'btn btn-secundario'; recoverSources.hidden = true; logout.parentElement.append(recoverSources);
     recoverSources.id = 'recuperar-fontes-antigas'; recoverSources.textContent = 'Recuperar dados antigos não associados';
-    let lockPending = null;
-    const refreshLocal = async () => {
-        if (!politicaDadosConta) return;
-        const candidate = await politicaDadosConta.offline.available();
-        localUnlock.hidden = !candidate || Boolean(politicaDadosConta.access);
-        localUnlock.dataset.owner = candidate?.uid || '';
-        localLock.hidden = politicaDadosConta.access?.kind !== 'local';
+    let restoringLocal = null, selectedLocalUid = null, localSelectionInitialized = false;
+    const refreshLocal = () => {
+        if (restoringLocal) return restoringLocal;
+        restoringLocal = (async () => {
+            if (!politicaDadosConta || politicaDadosConta.closing) return;
+            const candidate = await politicaDadosConta.offline.available();
+            if (!candidate || candidate.uid !== selectedLocalUid || client?.authenticatedUser?.() && client.authenticatedUser().uid !== candidate.uid) return;
+            prepararSincronizacao();
+            if (automaticController.session?.localOnly && await politicaDadosConta.isCurrent()) {
+                await automaticController.hydrateCurrent(); return;
+            }
+            if (politicaDadosConta.access?.kind === 'google') return;
+            const local = await politicaDadosConta.offline.resume();
+            if (local) await automaticController.useLocal(local);
+        })().catch(error => showStatus(error.message, true)).finally(() => { restoringLocal = null; });
+        return restoringLocal;
     };
     function dialogChoice() {
         const dialog = document.createElement('dialog'); dialog.id = 'dialogo-sair-local'; dialog.addEventListener('close', restaurarRolagemFundoModal);
         const heading = document.createElement('h2'); heading.textContent = 'Sair da conta Google';
-        const text = document.createElement('p'); text.textContent = 'Manter exige um PIN independente. Neste dispositivo compartilhado, bloqueie os dados ao terminar.';
-        dialog.append(heading, text); dialog.setAttribute('aria-labelledby', 'titulo-sair-local'); heading.id = 'titulo-sair-local';
-        for (const [value, label] of [['keep', 'Manter dados locais'], ['delete-confirmed', 'Apagar dados locais'], ['cancel', 'Cancelar']]) {
-            const b = document.createElement('button'); b.type = 'button'; b.className = 'btn btn-secundario'; b.id = 'sair-' + value; b.textContent = label; b.onclick = () => dialog.close(value); dialog.append(b);
+        const text = document.createElement('p'); text.textContent = 'Escolha o que fazer com os dados desta conta neste dispositivo. Nenhuma opção apaga dados da nuvem ou de outras contas.';
+        const body = document.createElement('div'), top = document.createElement('div'), actions = document.createElement('div');
+        body.className = 'dialogo-corpo'; top.className = 'bloco-topo'; actions.className = 'campos'; text.className = 'texto-dialogo';
+        top.append(heading); body.append(top, text, actions); dialog.append(body);
+        dialog.setAttribute('aria-labelledby', 'titulo-sair-local'); heading.id = 'titulo-sair-local';
+        for (const [value, label] of [['keep', 'Sair e manter dados locais'], ['delete-confirmed', 'Sair e apagar dados locais'], ['cancel', 'Cancelar']]) {
+            const b = document.createElement('button'); b.type = 'button'; b.className = 'btn btn-secundario'; b.id = 'sair-' + value; b.textContent = label; b.onclick = () => dialog.close(value); actions.append(b);
         }
         document.body.append(dialog); abrirDialogoModal(dialog);
         return new Promise(resolve => dialog.addEventListener('close', () => { const value = dialog.returnValue; dialog.remove(); resolve(value || 'cancel'); }, { once: true }));
     }
-    function askPin(create = false) {
-        const dialog = document.createElement('dialog'); dialog.id = 'dialogo-pin-local'; dialog.addEventListener('close', restaurarRolagemFundoModal);
-        const form = document.createElement('form'), title = document.createElement('h2'), note = document.createElement('p');
-        title.id = 'titulo-pin-local'; title.textContent = create ? 'Criar PIN local' : 'Desbloquear dados locais'; dialog.setAttribute('aria-labelledby', title.id);
-        note.textContent = 'Use de 8 a 64 dígitos. O PIN não é sua senha Google. Se o esquecer, entre novamente com Google; as operações locais serão preservadas.';
-        const makeInput = (id, label) => { const l = document.createElement('label'), input = document.createElement('input'); l.htmlFor = id; l.textContent = label; input.id = id; input.type = 'password'; input.inputMode = 'numeric'; input.pattern = '[0-9]{8,64}'; input.minLength = 8; input.maxLength = 64; input.required = true; input.autocomplete = create ? 'new-password' : 'current-password'; form.append(l, input); return input; };
-        form.append(title, note); const pin = makeInput('pin-local', 'PIN'); const repeated = create ? makeInput('pin-local-confirmar', 'Confirmar PIN') : null;
-        const submit = document.createElement('button'), cancel = document.createElement('button'); submit.type = 'submit'; submit.className = 'btn'; submit.textContent = create ? 'Proteger e sair' : 'Desbloquear'; cancel.type = 'button'; cancel.className = 'btn btn-secundario'; cancel.textContent = 'Cancelar'; cancel.onclick = () => dialog.close();
-        form.append(submit, cancel); dialog.append(form); document.body.append(dialog);
-        let secret = null;
-        form.onsubmit = event => { event.preventDefault(); if (repeated && pin.value !== repeated.value) { repeated.setCustomValidity('Os PINs devem coincidir.'); repeated.reportValidity(); return; } secret = pin.value; dialog.close('ok'); };
-        if (repeated) repeated.oninput = () => repeated.setCustomValidity('');
-        abrirDialogoModal(dialog); pin.focus();
-        return new Promise(resolve => dialog.addEventListener('close', () => { pin.value = ''; if (repeated) repeated.value = ''; dialog.remove(); resolve(secret); secret = null; }, { once: true }));
-    }
-    async function lockLocal() {
-        if (lockPending) return lockPending;
-        const access = politicaDadosConta?.access;
-        if (access?.kind !== 'local') return;
-        automaticController?.closeSession(); politicaDadosConta.hide();
-        lockPending = politicaDadosConta.revoke(access.uid).then(() => { showStatus('Dados locais bloqueados. Desbloqueie com seu PIN.'); return refreshLocal(); }).catch(error => showStatus(error.message, true)).finally(() => { lockPending = null; });
-        return lockPending;
-    }
-    localLock.addEventListener('click', () => { void lockLocal(); });
-    localUnlock.addEventListener('click', async () => {
-        await lockPending; if (!politicaDadosConta || politicaDadosConta.closing) return;
-        const candidate = await politicaDadosConta.offline.available(); if (!candidate) return;
-        const pin = await askPin(); if (pin === null) return;
-        localUnlock.disabled = true; const pendingIntent = politicaDadosConta.intent + 1, pendingAccess = politicaDadosConta.access;
-        try { prepararSincronizacao(); const unlocked = await politicaDadosConta.offline.unlock(candidate.uid, pin); await automaticController.useLocal(unlocked); await refreshLocal(); }
-        catch (error) { if (politicaDadosConta.intent === pendingIntent && politicaDadosConta.access === pendingAccess) showStatus(error.message, true); }
-        finally { localUnlock.disabled = false; }
-    });
     const showStatus = (text, failed = false, confirmedAt = null) => {
         if (text === 'Sincronizado' && automaticController?.session?.localMigration?.pending) text = 'Recuperação local em revisão; sincronização pausada.';
         if (text === 'Atualização obrigatória: esta versão não é compatível com a geração da conta. Os dados locais foram preservados.') renderAvisosFinanceiros({ recoveryNotices: avisosFinanceiros, compatibilityBlocked: true });
@@ -5164,11 +5141,12 @@ if (!IDB_HOMOLOGACAO && $("entrar-google") && $("sair-google") && firebaseConfig
                 ocultarDadosFinanceiros(); resetAccountForms(); iniciarCarregamentoConta(); idbBloqueado = true;
                 chaveEstadoAtual = user ? chaveLocalConta(user.uid) : CHAVE_ESTADO;
                 estado = normalizarEstado(null); idbBase = structuredClone(estadoParaSalvar()); renderTudo(false);
-                login.hidden = !!user && !user.localOnly; logout.hidden = !user || !!user.localOnly; localLock.hidden = !user?.localOnly;
+                login.hidden = !!user && !user.localOnly; logout.hidden = !user || !!user.localOnly;
                 account.textContent = user?.email || user?.displayName || '';
                 $("ultima-sincronizacao").textContent = ''; delete $("ultima-sincronizacao").dataset.i18nDate;
             },
             onAccount: async user => {
+                if (user && !user.localOnly) selectedLocalUid = user.uid;
                 const sessionCurrent = capturarSessaoPersistencia();
                 idbBloqueado = !user; // Storage ownership is already validated by the coordinator.
                 contaFinanceiraVisivel = false; // Editing stays blocked until onState hydrates this owner.
@@ -5193,7 +5171,7 @@ if (!IDB_HOMOLOGACAO && $("entrar-google") && $("sair-google") && firebaseConfig
                 renderAvisosFinanceiros(meta);
                 estado = normalizarEstado(next); idbBase = structuredClone(estadoParaSalvar()); renderTudo(false);
                 if (session?.localMigration?.pending && !session.localMigration.checking) { migrationPanel.hidden = false; if (!migrationText.textContent) migrationText.textContent = 'Recuperação local em revisão. As fontes serão revalidadas antes de importar.'; }
-                if (access.kind === 'local') { account.textContent = 'Modo local — Google desconectado'; login.hidden = false; logout.hidden = true; localLock.hidden = false; }
+                if (access.kind === 'local') { account.textContent = 'Modo local — Google desconectado'; login.hidden = false; logout.hidden = true; }
                 concluirCarregamentoConta();
                 } catch (error) { if (current()) showStatus(error.message, true); }
             },
@@ -5205,10 +5183,13 @@ if (!IDB_HOMOLOGACAO && $("entrar-google") && $("sair-google") && firebaseConfig
         login.disabled = true;
         initialization = (async () => {
             if (!idbBanco || !idbServico || !politicaDadosConta) throw new Error('Armazenamento indisponivel. Dados preservados; recarregue para recuperar.');
-            prepararSincronizacao(); void refreshLocal();
+            prepararSincronizacao();
+            const candidate = await politicaDadosConta.offline.available();
+            if (!localSelectionInitialized) { selectedLocalUid = candidate?.uid || null; localSelectionInitialized = true; }
+            await refreshLocal();
+            if (candidate && !candidate.resumeGoogle) { concluirCarregamentoConta(); return; }
+            automaticController.resumeGoogle = candidate?.resumeGoogle === true;
             const sdk = await dependenciasAplicacao.loadFirebase(VERSAO_BUNDLE); loadedSdk = sdk;
-            // A retained local grant must not initialize a persisted SDK user or refresh tokens.
-            if (!client && await politicaDadosConta.offline.available()) return;
             prepararAutenticacao(sdk);
             await automaticController.start();
             concluirCarregamentoConta();
@@ -5223,17 +5204,21 @@ if (!IDB_HOMOLOGACAO && $("entrar-google") && $("sair-google") && firebaseConfig
         }).finally(() => { login.disabled = false; });
         return initialization;
     };
-    login.addEventListener('click', () => {
+    login.addEventListener('click', async () => {
         if (politicaDadosConta?.closing || politicaDadosConta?.pendingSignOut) return;
-        if (!client && loadedSdk) { prepararAutenticacao(loadedSdk); prepararSincronizacao(); void automaticController.start().catch(error => { if (!automaticController?.session?.localOnly) showStatus(error.message, true); }); }
-        if (!client) { void initialize(); return; }
         login.disabled = true;
-        try { const ticket = politicaDadosConta.loginIntent(); Promise.resolve(client.login()).then(async result => {
+        try {
+            loadedSdk ||= await dependenciasAplicacao.loadFirebase(VERSAO_BUNDLE);
+            prepararAutenticacao(loadedSdk); prepararSincronizacao();
+            automaticController.resumeGoogle = false;
+            if (!automaticController.unAuth) void automaticController.start().catch(error => { if (!automaticController?.session?.localOnly) showStatus(error.message, true); });
+            const ticket = politicaDadosConta.loginIntent(), result = await client.login();
             const user = result?.user || client.authenticatedUser?.();
             await politicaDadosConta.acceptLogin(user, ticket, () => client.authenticatedUser?.()?.uid === user?.uid);
+            selectedLocalUid = user.uid;
             await automaticController.useAccount(user);
-        }).catch(error => showStatus(error.message || 'Falha na sincronização.', true)).finally(() => { login.disabled = false; }); }
-        catch (error) { login.disabled = false; showStatus(error.message, true); }
+        } catch (error) { showStatus(error.message || 'Falha na sincronização.', true); }
+        finally { login.disabled = false; }
     });
     logout.addEventListener('click', async () => {
         const session = automaticController?.session, access = politicaDadosConta?.access;
@@ -5242,19 +5227,14 @@ if (!IDB_HOMOLOGACAO && $("entrar-google") && $("sair-google") && firebaseConfig
         logout.disabled = true;
         try {
             const mode = await dialogChoice(); if (mode === 'cancel' || !current()) return;
-            if (mode === 'keep') {
-                const pin = await askPin(true); if (pin === null || !current()) return;
-                await politicaDadosConta.offline.enroll(access.uid, pin, current);
-            } else {
-                const stored = await idbBanco.ler('estado:' + access.uid), queue = await idbServico.lerFila(access.uid);
-                if (!current()) return;
-                if (!confirmedForRemoval(stored, queue) && !window.confirm('Há alterações ou históricos sem confirmação remota. Sair e preservar estes dados se não for possível confirmar a sincronização?')) return;
-            }
             if (!current()) return;
-            await politicaDadosConta.logout({ uid: access.uid, mode,
+            automaticController.resumeGoogle = false;
+            const result = await politicaDadosConta.logout({ uid: access.uid, mode,
+                confirmDiscard: () => window.confirm('Há alterações offline, exclusões, conflitos ou históricos sem confirmação na nuvem. Apagar os dados locais desta conta pode perder definitivamente essas informações ainda não sincronizadas. Confirmar a perda e apagar somente os dados deste dispositivo?'),
                 drainLocal: async () => { let pending; do { pending = idbPendente; await pending; } while (pending !== idbPendente); },
                 flush: () => { if (automaticController?.session !== session) throw Object.assign(new Error('Sessão alterada; fila preservada.'), { code: 'persistence/cancelled' }); return automaticController.flushForLogout(); },
                 signOut: () => { if (client.authenticatedUser()?.uid !== access.uid) throw Object.assign(new Error('Conta alterada; saída anterior ignorada.'), { code: 'persistence/cancelled' }); return client.logout(); } });
+            if (result.cancelled) { if (result.error) showStatus(result.error, true); return; }
             if (automaticController?.session === session) automaticController.closeSession();
             await refreshLocal();
         } catch (error) { if (current()) showStatus(error.message, true); }
@@ -5268,15 +5248,15 @@ if (!IDB_HOMOLOGACAO && $("entrar-google") && $("sair-google") && firebaseConfig
     window.addEventListener('pageshow', async event => {
         if (!event.persisted) return;
         ocultarDadosFinanceiros();
-        if (politicaDadosConta?.access?.kind === 'local') { await lockLocal(); return; }
+        if (politicaDadosConta?.access?.kind === 'local') { await refreshLocal(); return; }
         const user = client?.authenticatedUser?.();
         if (user) await automaticController.useAccount(user).catch(error => showStatus(error.message, true));
     });
     document.addEventListener('visibilitychange', () => {
-        if (document.visibilityState === 'hidden') { if (politicaDadosConta?.access?.kind === 'local') void lockLocal(); else ocultarDadosFinanceiros(); }
+        if (document.visibilityState === 'hidden') ocultarDadosFinanceiros();
         else {
             const user = client?.authenticatedUser?.();
-            if (politicaDadosConta?.access?.kind === 'local' || !politicaDadosConta?.access && localUnlock.dataset.owner) { void refreshLocal(); return; }
+            if (politicaDadosConta?.access?.kind === 'local') { void refreshLocal(); return; }
             if (user && !politicaDadosConta?.closing) {
                 const controller = automaticController, session = controller?.session;
                 const operation = session?.user === user && politicaDadosConta.access?.kind !== 'local' ? controller.hydrateCurrent(session) : controller.useAccount(user);

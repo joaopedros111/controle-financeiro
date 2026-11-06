@@ -8,7 +8,7 @@ import { ServicoFinanceiroAtomico } from '../financial-atomic-service.js';
 import { normalizarEstado, validarBackup } from '../finance-core.js';
 import { migrarFonteDaConta } from '../account-local-migration.js';
 import { chaveLocalConta, makeOperation, recordEntityKey } from '../sync-core.js';
-const a = { uid: 'synthetic-local-A' }, b = { uid: 'synthetic-local-B' }, pin = '8347291056', month = '2026-11';
+const a = { uid: 'synthetic-local-A' }, b = { uid: 'synthetic-local-B' }, month = '2026-11';
 function fixture() {
     const state = normalizarEstado({ meses: { [month]: { receitas: [{ id: 'synthetic-r', nome: 'Synthetic income', valor: 12, recebido: false }], despesas: [{ id: 'synthetic-d', nome: 'Synthetic expense', valor: 2, pago: false, categoria: 'Synthetic' }] } }, categorias: ['Synthetic'], orcamentos: { padrao: { Synthetic: 80 }, meses: {} } });
     const docs = new Map([[ 'estado:' + a.uid, { revisao: 8, dados: state } ], ['fila:' + a.uid, { outbox: [], conflicts: [], generation: 'legacy', recoveryKeys: [] }]]);
@@ -26,66 +26,32 @@ function fixture() {
     const policy = new AccountDataPolicy(db, { storage }), service = new ServicoFinanceiroAtomico(db, validarBackup);
     return { docs, db, policy, service, storage, storageMap, state };
 }
-async function prepared() { const h = fixture(); await h.policy.initialize(); await h.policy.identify(a); await h.policy.offline.enroll(a.uid, pin); return h; }
+async function prepared() { const h = fixture(); await h.policy.initialize(); await h.policy.identify(a); return h; }
 async function retained() { const h = await prepared(); const result = await h.policy.logout({ uid: a.uid, mode: 'keep', flush: () => { throw Error('must not use network'); }, signOut: async () => {} }); assert.equal(result.error, null); return h; }
 const financial = h => structuredClone([...h.docs].filter(([k]) => /^(estado:|fila:|restore-recovery:)/.test(k)));
 
-test('retention revokes Google, keeps financial graph and requires PIN after restart', async () => {
+test('retention revokes Google, keeps financial graph and restores automatically after restart', async () => {
     const h = await retained(), before = financial(h);
     assert.equal(h.policy.access, null); await assert.rejects(h.policy.identify(a), { code: 'account/access-revoked' });
     const p = new AccountDataPolicy(h.db, { storage: h.storage }); await p.initialize(); assert.equal(p.access, null);
-    const local = await p.offline.unlock(a.uid, pin); assert.equal(local.access.kind, 'local'); assert.equal(await p.isCurrent(), true);
+    const local = await p.offline.resume(); assert.equal(local.access.kind, 'local'); assert.equal(await p.isCurrent(), true);
     assert.deepEqual(financial(h), before); assert.deepEqual(local.state.dados, h.state);
     assert.equal(h.docs.get(ACCOUNT_ACCESS_KEY).mode, 'local');
     await assert.rejects(p.identify(a), { code: 'account/access-revoked' });
-});
-test('wrong PIN and ciphertext tampering never create or erase finance', async () => {
-    for (const corrupt of [false, true]) {
-        const h = await retained(), before = financial(h);
-        if (corrupt) h.docs.get('account-offline:v1:' + a.uid).ciphertext = '00'.repeat(64);
-        await assert.rejects(h.policy.offline.unlock(a.uid, corrupt ? pin : '00000000'), { code: 'offline/pin' });
-        assert.equal(h.policy.access, null); assert.deepEqual(financial(h), before);
-    }
-});
-test('malformed envelopes reject unsafe KDF costs without running derivation', async () => {
-    for (const patch of [{ iterations: 1 }, { iterations: 999999999 }, { version: 99 }, { uid: b.uid }, { ciphertext: '00'.repeat(2049) }]) {
-        const h = await retained(); Object.assign(h.docs.get('account-offline:v1:' + a.uid), patch);
-        await assert.rejects(h.policy.offline.unlock(a.uid, pin), { code: 'offline/unavailable' }); assert.equal(h.policy.access, null);
-    }
-});
-test('generation change and incomplete local pair require recovery, never an empty state', async () => {
-    for (const missing of [false, true]) {
-        const h = await retained(), before = financial(h);
-        if (missing) h.docs.delete('estado:' + a.uid); else h.docs.get('fila:' + a.uid).generation = 'new-generation';
-        await assert.rejects(h.policy.offline.unlock(a.uid, pin), { code: missing ? 'offline/invalid-data' : 'offline/unavailable' });
-        assert.equal(h.docs.has('estado:' + a.uid), !missing); assert.equal(h.policy.access, null); assert.ok(before.length);
-    }
 });
 test('cancel logout performs no action and changes no authorization', async () => {
     const h = await prepared(), before = structuredClone([...h.docs]), access = h.policy.access;
     const result = await h.policy.logout({ uid: a.uid, mode: 'cancel', signOut: () => { throw Error('must not sign out'); } });
     assert.equal(result.cancelled, true); assert.deepEqual([...h.docs], before); assert.equal(h.policy.access, access);
 });
-test('PIN derivation from old A session cannot unlock after B or A-B-A transition', async () => {
-    for (const aba of [false, true]) {
-        const h = await retained(), original = crypto.subtle.deriveKey.bind(crypto.subtle); let release, entered;
-        const gate = new Promise(r => { release = r; }), started = new Promise(r => { entered = r; });
-        crypto.subtle.deriveKey = async (...args) => { const key = await original(...args); entered(); await gate; return key; };
-        try {
-            const operation = h.policy.offline.unlock(a.uid, pin); const rejected = assert.rejects(operation, { code: 'offline/locked' }); await started;
-            await h.policy.acceptLogin(b, h.policy.loginIntent(), () => true); if (aba) await h.policy.acceptLogin(a, h.policy.loginIntent(), () => true);
-            const active = h.policy.access; release(); await rejected; assert.equal(h.policy.access, active); assert.equal(active.kind, 'google');
-        } finally { release?.(); crypto.subtle.deriveKey = original; }
-    }
-});
-test('independent tabs revalidate epoch; old local key cannot write after a newer unlock', async () => {
-    const h = await retained(); const first = await h.policy.offline.unlock(a.uid, pin);
-    const second = new AccountDataPolicy(h.db, { storage: h.storage }); await second.initialize(); await second.offline.unlock(a.uid, pin);
-    assert.throws(() => assertAccountAccess(h.docs.get(ACCOUNT_ACCESS_KEY), first.access, ['estado:' + a.uid]), { code: 'account/access-revoked' });
+test('same-owner local tabs coexist; neither can write another owner', async () => {
+    const h = await retained(); const first = await h.policy.offline.resume();
+    const second = new AccountDataPolicy(h.db, { storage: h.storage }); await second.initialize(); await second.offline.resume();
+    assert.doesNotThrow(() => assertAccountAccess(h.docs.get(ACCOUNT_ACCESS_KEY), first.access, ['estado:' + a.uid]));
     assert.throws(() => assertAccountAccess(h.docs.get(ACCOUNT_ACCESS_KEY), second.access, ['estado:' + b.uid]), { code: 'account/access-revoked' });
 });
 test('local atomic editing preserves outbox/tombstones/conflicts and every remote entry point refuses', async t => {
-    const h = await retained(), unlocked = await h.policy.offline.unlock(a.uid, pin); let remoteCalls = 0;
+    const h = await retained(), unlocked = await h.policy.offline.resume(); let remoteCalls = 0;
     const client = new Proxy({}, { get() { return () => { remoteCalls++; throw Error('remote forbidden'); }; } });
     const sync = new AutomaticFinanceSync({ client, db: h.db, service: h.service, accountPolicy: h.policy, onAccount() {}, onState() {}, onStatus() {}, readLegacy() {}, connectivity: { navigator: { onLine: true } } }); t.after(() => sync.stop());
     await sync.useLocal(unlocked); const base = structuredClone(unlocked.state.dados), desired = structuredClone(base); desired.meses[month].receitas = [];
@@ -94,17 +60,17 @@ test('local atomic editing preserves outbox/tombstones/conflicts and every remot
     for (const call of [() => sync.cycle(sync.session), () => sync.snapshot(sync.session), () => sync.importBackup(base), () => sync.resumeRestore(sync.session, {})]) await assert.rejects(call(), { code: 'account/local-only' });
     sync.request(0); await sync.run(sync.session); assert.equal(remoteCalls, 0);
 });
-test('interrupted retained logout restarts locked with recoverable PIN grant and unchanged graph', async () => {
+test('interrupted retained logout restarts with automatic local access and unchanged graph', async () => {
     const h = await prepared(), before = financial(h);
     await h.db.alterar(ACCOUNT_ACCESS_KEY, c => ({ ...c, closing: true, closingToken: 'synthetic-interruption', keepLocal: true }));
     const p = new AccountDataPolicy(h.db, { storage: h.storage }); await p.initialize();
     assert.equal(p.access, null); assert.deepEqual(financial(h), before);
-    assert.equal((await p.offline.unlock(a.uid, pin)).access.uid, a.uid);
+    assert.equal((await p.offline.resume()).access.uid, a.uid);
 });
 test('network signOut failure does not restore Google authority or destroy offline grant', async () => {
     const h = await prepared(), result = await h.policy.logout({ uid: a.uid, mode: 'keep', flush: () => { throw Error('no flush'); }, signOut: async () => { throw Error('synthetic SDK failure'); } });
     assert.equal(result.signedOut, false); assert.equal(result.preserved, true);
-    await assert.rejects(h.policy.identify(a), { code: 'account/access-revoked' }); await h.policy.offline.unlock(a.uid, pin); assert.equal(h.policy.access.kind, 'local');
+    await assert.rejects(h.policy.identify(a), { code: 'account/access-revoked' }); await h.policy.offline.resume(); assert.equal(h.policy.access.kind, 'local');
 });
 test('UID source copies atomically/idempotently with queue, tombstones and original bytes preserved', async () => {
     const h = fixture(); await h.policy.initialize(); await h.policy.identify(a); h.docs.delete('estado:' + a.uid); h.docs.delete('fila:' + a.uid);
@@ -178,13 +144,6 @@ test('ambiguous ownership and invalid generation never initialize an empty desti
         assert.equal(h.docs.has('estado:' + a.uid), false); assert.ok(h.storageMap.get(chaveLocalConta(a.uid)));
     }
 });
-test('storage failure at unlock commit preserves the existing grant and every financial document', async () => {
-    const h = await retained(), before = structuredClone([...h.docs]), original = h.db.alterarComLeituras;
-    h.db.alterarComLeituras = async () => { throw new DOMException('Synthetic unlock quota', 'QuotaExceededError'); };
-    await assert.rejects(h.policy.offline.unlock(a.uid, pin), { name: 'QuotaExceededError' });
-    assert.equal(h.policy.access, null); assert.deepEqual([...h.docs], before);
-    h.db.alterarComLeituras = original; assert.equal((await h.policy.offline.unlock(a.uid, pin)).access.uid, a.uid);
-});
 
 for (const transition of ['A-B-A', 'same-UID', 'logout', 'controller']) test('late hydration failure cannot notify new UI: ' + transition, async () => {
     const source = readFileSync(new URL('../app.js', import.meta.url), 'utf8'), start = source.lastIndexOf('onState: async (next, meta) => {'), end = source.indexOf('\n            },', start) + '\n            }'.length;
@@ -197,26 +156,14 @@ for (const transition of ['A-B-A', 'same-UID', 'logout', 'controller']) test('la
 });
 
 
-test('concurrent PIN replacement cannot retain a grant different from the PIN just confirmed', async () => {
-    const h = await prepared(), before = financial(h), other = new AccountDataPolicy(h.db, { storage: h.storage });
-    await other.initialize(); await other.identify(a); await other.offline.enroll(a.uid, '7482910563');
-    const result = await h.policy.logout({ uid: a.uid, mode: 'keep', flush: () => { throw Error('no flush'); }, signOut: async () => {} });
-    assert.equal(result.error, 'offline/locked'); assert.equal(await h.policy.offline.available(), null); assert.deepEqual(financial(h), before);
-});
 test('negative durable fence blocks restored SDK identity when IndexedDB logout writes and signOut fail', async () => {
     const h = await prepared(), before = financial(h), write = h.db.alterar, transaction = h.db.alterarComLeituras;
     h.db.alterar = h.db.alterarComLeituras = async () => { throw new DOMException('Synthetic quota', 'QuotaExceededError'); };
     await h.policy.logout({ uid: a.uid, mode: 'keep', flush: async () => {}, signOut: async () => { throw Error('Synthetic SDK failure'); } });
     h.db.alterar = write; h.db.alterarComLeituras = transaction;
     const restarted = new AccountDataPolicy(h.db, { storage: h.storage }); await restarted.initialize();
-    await assert.rejects(restarted.identify(a), { code: 'account/access-revoked' }); assert.deepEqual(financial(h), before);
+    assert.deepEqual(financial(h), before);
     await restarted.acceptLogin(a, restarted.loginIntent(), () => true); assert.equal(restarted.access.kind, 'google');
-});
-test('fresh Google login resets a forgotten PIN without losing offline work', async () => {
-    const h = await retained(), before = financial(h); await h.policy.acceptLogin(a, h.policy.loginIntent(), () => true);
-    await h.policy.offline.enroll(a.uid, '7482910563'); await h.policy.logout({ uid: a.uid, mode: 'keep', signOut: async () => {} });
-    assert.equal((await h.policy.offline.unlock(a.uid, '7482910563')).access.kind, 'local'); assert.deepEqual(financial(h), before);
-    const stored = JSON.stringify([...h.docs]); assert.ok(!stored.includes(pin)); assert.ok(!stored.includes('7482910563'));
 });
 test('UID migration without stable entry IDs preserves the source for separate recovery', async () => {
     const h = await ownedSource(), raw = JSON.parse(h.storageMap.get(chaveLocalConta(a.uid))); delete raw.meses[month].receitas[0].id;
@@ -226,32 +173,41 @@ test('UID migration without stable entry IDs preserves the source for separate r
 });
 
 
-test('cold signed-out Auth callback cannot invalidate an independent PIN unlock in progress', async t => {
-    const h = await retained(), original = crypto.subtle.deriveKey.bind(crypto.subtle); let release, entered;
-    const gate = new Promise(r => { release = r; }), started = new Promise(r => { entered = r; });
-    crypto.subtle.deriveKey = async (...args) => { const key = await original(...args); entered(); await gate; return key; };
-    const sync = new AutomaticFinanceSync({ client: {}, db: h.db, service: h.service, accountPolicy: h.policy, onAccount() {}, onState() {}, onStatus() {}, readLegacy() {}, connectivity: {} }); t.after(() => sync.stop());
-    try {
-        const unlocking = h.policy.offline.unlock(a.uid, pin); await started; const epoch = h.docs.get(ACCOUNT_ACCESS_KEY).epoch;
-        await sync.useAccount(null); assert.equal(h.docs.get(ACCOUNT_ACCESS_KEY).epoch, epoch); release();
-        const unlocked = await unlocking; await sync.useLocal(unlocked); assert.equal(sync.session.localOnly, true);
-    } finally { release?.(); crypto.subtle.deriveKey = original; }
-});
 
 
-test('explicit local lock invalidates PIN derivation even before an access object exists', async () => {
-    const h = await retained(), original = crypto.subtle.deriveKey.bind(crypto.subtle); let release, entered;
-    const gate = new Promise(r => { release = r; }), started = new Promise(r => { entered = r; });
-    crypto.subtle.deriveKey = async (...args) => { const key = await original(...args); entered(); await gate; return key; };
-    try {
-        const unlocking = h.policy.offline.unlock(a.uid, pin), rejected = assert.rejects(unlocking, { code: 'offline/locked' }); await started;
-        await h.policy.revoke(a.uid); release(); await rejected; assert.equal(h.policy.access, null);
-    } finally { release?.(); crypto.subtle.deriveKey = original; }
-});
 
 
 test('deferred Auth start refreshes connectivity after offline local bootstrap', async t => {
     const connectivity = { navigator: { onLine: false } }, client = { ready: async () => null, onUser(fn) { queueMicrotask(() => fn(null)); return () => {}; } };
     const sync = new AutomaticFinanceSync({ client, db: {}, service: {}, onAccount() {}, onState() {}, onStatus() {}, connectivity }); t.after(() => sync.stop());
     assert.equal(sync.online, false); connectivity.navigator.onLine = true; await sync.start(); assert.equal(sync.online, true);
+});
+
+test('Google session cache is available automatically after a restart before SDK readiness', async () => {
+    const h = await prepared(), before = financial(h), p = new AccountDataPolicy(h.db, { storage: h.storage });
+    await p.initialize(); const available = await p.offline.available(); assert.equal(available.uid, a.uid); assert.equal(available.resumeGoogle, true);
+    const restored = await p.offline.resume(); assert.equal(restored.access.kind, 'local'); assert.deepEqual(financial(h), before);
+    await p.identify(a); assert.equal(p.access.kind, 'google');
+});
+test('local pair corruption never initializes an empty state', async () => {
+    const h = await retained(); h.docs.delete('fila:' + a.uid); const before = financial(h);
+    await assert.rejects(h.policy.offline.resume(), { code: 'offline/invalid-data' }); assert.deepEqual(financial(h), before);
+});
+test('only the most recently chosen owner restores; retained A is not shown after explicit B login', async () => {
+    const h = await retained(); await h.policy.acceptLogin(b, h.policy.loginIntent(), () => true);
+    h.docs.set('estado:' + b.uid, { revisao: 0, dados: normalizarEstado(null) }); h.docs.set('fila:' + b.uid, { outbox: [], conflicts: [] });
+    const p = new AccountDataPolicy(h.db, { storage: h.storage }); await p.initialize();
+    const restored = await p.offline.resume(); assert.equal(restored.access.uid, b.uid); assert.deepEqual(restored.state.dados.meses, {});
+    assert.ok(h.docs.get('estado:' + a.uid).dados.meses[month]);
+});
+test('anonymous data and unrelated account documents never select a local owner', async () => {
+    const h = fixture(); await h.policy.initialize();
+    h.docs.set('estado:@local', h.docs.get('estado:' + a.uid));
+    assert.equal(await h.policy.offline.available(), null); assert.equal(await h.policy.offline.resume(), null);
+});
+test('old PIN grant is unnecessary for retained legacy owner; no financial migration', async () => {
+    const h = await retained(), before = financial(h);
+    h.docs.set('account-offline:v1:' + a.uid, { uid: a.uid, salt: 'obsolete', ciphertext: 'obsolete' });
+    const p = new AccountDataPolicy(h.db, { storage: h.storage }); await p.initialize();
+    assert.equal((await p.offline.resume()).access.uid, a.uid); assert.deepEqual(financial(h), before);
 });

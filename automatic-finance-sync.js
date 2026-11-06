@@ -37,7 +37,7 @@ export class AutomaticFinanceSync {
         const initial = new Promise(resolve => { settleInitial = resolve; });
         let awaitingInitial = true;
         this.unAuth = this.client.onUser(user => {
-            if (this.session?.localOnly && this.accountPolicy?.access?.kind === 'local') { if (awaitingInitial) { awaitingInitial = false; settleInitial(); } return; }
+            if (this.session?.localOnly && this.accountPolicy?.access?.kind === 'local' && (!user || !this.resumeGoogle || user.uid !== this.session.uid)) { if (awaitingInitial) { awaitingInitial = false; settleInitial(); } return; }
             if (
     this.accountPolicy &&
     typeof this.client.authenticatedUser === 'function' &&
@@ -74,7 +74,7 @@ export class AutomaticFinanceSync {
     }
     async useLocal(unlocked) {
         const access = unlocked?.access;
-        if (!access || access.kind !== 'local' || this.accountPolicy?.access !== access || !await this.accountPolicy.isCurrent()) throw error('account/access-revoked', 'Desbloqueio local inválido.');
+        if (!access || access.kind !== 'local' || this.accountPolicy?.access !== access || !await this.accountPolicy.isCurrent()) throw error('account/access-revoked', 'Acesso local alterado.');
         if (this.accountPolicy.access !== access) return;
         this.closeSession();
         const user = { uid: access.uid, localOnly: true };
@@ -84,10 +84,10 @@ export class AutomaticFinanceSync {
         if (!this.current(s) || this.accountPolicy.access !== access || !await this.accountPolicy.isCurrent()) return;
         if (!this.current(s) || this.accountPolicy.access !== access) return;
         this.emitState(s, unlocked.state, unlocked.queue);
-        this.status('Modo local desbloqueado — sem sessão Google e sem sincronização remota.');
+        this.status('Modo local — sem sessão Google e sem sincronização remota.');
     }
     async hydrateCurrent(s = this.session) {
-        if (!s || s.localOnly || !this.current(s)) return;
+        if (!s || !this.current(s)) return;
         const access = this.accountPolicy?.access;
         const active = () => this.current(s) && (!this.accountPolicy || this.accountPolicy.access === access);
         if (this.accountPolicy && !await this.accountPolicy.isCurrent() || !active()) return;
@@ -95,7 +95,10 @@ export class AutomaticFinanceSync {
         if (!active() || this.accountPolicy && !await this.accountPolicy.isCurrent() || !active()) return;
         const state = docs.get('estado:' + s.uid), queue = docs.get('fila:' + s.uid);
         if (!state || !Number.isSafeInteger(state.revisao) || !validarBackup(state.dados) || !validarTotaisMonetarios(state.dados) || !Array.isArray(queue?.outbox) || !Array.isArray(queue?.conflicts)) throw error('sync/invalid-local', 'Cópia local incompleta. Recuperação necessária.');
-        if ((queue.generation || 'legacy') !== s.generation) return this.useAccount(s.user);
+        if ((queue.generation || 'legacy') !== s.generation) {
+            if (s.localOnly) { const local = await this.accountPolicy.offline.resume(); if (local) await this.useLocal(local); return; }
+            return this.useAccount(s.user);
+        }
         this.emitState(s, state, queue);
     }
     async useAccount(user) {
@@ -187,7 +190,7 @@ export class AutomaticFinanceSync {
         s.timer.unref?.();
     }
     localChanged() {
-        if (this.session?.localOnly) { this.status('Modo local desbloqueado — sem sessão Google e sem sincronização remota.'); return; }
+        if (this.session?.localOnly) { this.status('Modo local — sem sessão Google e sem sincronização remota.'); return; }
         if (this.session) this.session.localVersion = (this.session.localVersion || 0) + 1;
         this.request(0);
     }

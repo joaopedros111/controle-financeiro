@@ -124,7 +124,7 @@ test("controles das preferências incrementais têm implementação e cache atua
     assert.equal((serviceWorker.match(/"\.\/preferences\.js"/g) || []).length, 1, "preferences.js deve ser precacheado uma vez");
 });
 
-test("densidade usa slider progressivo, mapeia preferências antigas e preserva o extremo confortável", async () => {
+test("densidade usa slider progressivo, mapeia preferências antigas e aplica compactação discreta", async () => {
     const [html, preferences, styles, app] = await Promise.all([
         read("index.html"), read("preferences.js"), read("style.css"), read("app.js")
     ]);
@@ -141,8 +141,8 @@ test("densidade usa slider progressivo, mapeia preferências antigas e preserva 
 );
     assert.match(preferences, /densidade: 50/);
     assert.match(preferences, /export function calcularEspacamentosDensidade/);
-    assert.match(styles, /padding: var\(--densidade-bloco-vertical, 28px\) var\(--densidade-bloco-horizontal, 24px\)/);
-    assert.match(styles, /padding-top: var\(--densidade-lancamento-vertical, 20px\)/);
+    assert.match(styles, /padding: calc\(var\(--densidade-bloco-vertical, 28px\) \* \.9\) calc\(var\(--densidade-bloco-horizontal, 24px\) \* \.92\)/);
+    assert.match(styles, /padding-top: calc\(var\(--densidade-lancamento-vertical, 20px\) \* \.9\)/);
     assert.match(styles, /gap: var\(--densidade-opcoes-secao-gap, 16px\)/);
     assert.match(styles, /margin-top: var\(--densidade-opcoes-grupo-margem, 28px\)/);
     assert.match(styles, /padding-top: var\(--densidade-opcoes-grupo-padding, 24px\)/);
