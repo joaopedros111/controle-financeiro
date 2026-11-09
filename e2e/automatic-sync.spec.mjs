@@ -40,6 +40,8 @@ async function importFile(page, backup) {
     await page.locator('#fechar-ajustes').click();
 }
 async function edit(page, value) {
+    await page.locator('#ano').selectOption('2026');
+    await page.locator('#mes').selectOption('10');
     if (!await page.locator('#conteudo-receitas').isVisible()) await page.locator('[aria-controls="conteudo-receitas"]').click();
     await page.locator('.editar-receita').first().click(); await page.locator('#receita-valor').fill(String(value));
     await page.locator('#form-receita button[type="submit"]').click();
@@ -72,6 +74,8 @@ test('automatic UI: backup A reaches B, B edits reach A, no decisions/buttons an
     await expect.poll(async () => (await rows(other, uid)).length).toBe(2);
     await expect.poll(async () => (await read(other, st(uid))).dados.orcamentos.padrao.Casa).toBe(100);
     expect((await rows(other, uid)).find(item => item.nome === 'Parcel').parcela).toEqual({ atual: 1, total: 2 });
+    await other.locator('#ano').selectOption('2026');
+    await other.locator('#mes').selectOption('10');
     await edit(other, 1200);
     await expect.poll(async () => (await rows(page, uid)).find(item => item.id === 'salary')?.valor).toBe(1200);
     await importFile(page, backup);
@@ -98,6 +102,8 @@ test('automatic UI: concurrent edit/edit chooses server and archives rejection; 
     await expect.poll(async () => (await rows(other, uid))[0]?.valor).toBe(20);
     await expect.poll(async () => (await read(other, q(uid))).automaticHistory?.some(item => JSON.stringify(item.local).includes('30'))).toBe(true);
     await otherContext.setOffline(true); await edit(other, 99);
+    await page.locator('#ano').selectOption('2026');
+    await page.locator('#mes').selectOption('10');
     if (!await page.locator('#conteudo-receitas').isVisible()) await page.locator('[aria-controls="conteudo-receitas"]').click();
     await page.getByRole('button', { name: 'Remover entrada Salary', exact: true }).click();
     await expect.poll(async () => (await remote(request, uid, 'records'))[0].fields.deleted.booleanValue).toBe(true);
@@ -115,9 +121,11 @@ test('automatic UI: backup offline persists across restart and reconnects withou
     const { uid, other } = await pair({ page, context, request }, info);
     await context.setOffline(true); await importFile(page, backup);
     await expect.poll(async () => Boolean((await read(page, q(uid))).restoreJob)).toBe(true);
+    // Dados persistidos offline; a pagina volta a carregar com rede.
+    // O fixture E2E bloqueia Service Workers.
+    await context.setOffline(false);
     await page.reload({ waitUntil: 'domcontentloaded' });
     expect((await read(page, q(uid))).restoreJob).toBeTruthy();
-    await context.setOffline(false);
     await expect.poll(async () => (await rows(other, uid)).length).toBe(2);
     await expect(page.locator('#estado-sincronizacao')).toHaveText('Sincronizado');
     expect((await read(page, q(uid))).restoreJob).toBeNull();
@@ -133,6 +141,8 @@ test('automatic UI: online transient failures retry with backoff; an offline del
     expect(failures[1].at - failures[0].at).toBeGreaterThanOrEqual(150);
     expect(failures[2].at - failures[1].at).toBeGreaterThanOrEqual(300);
     await otherContext.setOffline(true);
+    await other.locator('#ano').selectOption('2026');
+    await other.locator('#mes').selectOption('10');
     if (!await other.locator('#conteudo-receitas').isVisible()) await other.locator('[aria-controls="conteudo-receitas"]').click();
     await other.getByRole('button', { name: 'Remover entrada Salary', exact: true }).click();
     await expect.poll(async () => (await read(other, q(uid))).outbox.some(item => item.value.deleted)).toBe(true);
@@ -159,22 +169,62 @@ test('automatic UI: existing remote conflicts settle once, including rejected de
         const value = { month: '2026-10', type: 'receitas', id: 'salary', deleted,
             ...(deleted ? {} : { record: { id: 'salary', nome: 'Salary', valor: 99 } }) };
         const generation = (await client.generationMarker(uid))?.activeGeneration;
-        return client.commit(uid, { ...makeOperation(recordEntityKey(value), value, null), generation });
+        const operation = { ...makeOperation(recordEntityKey(value), value, null), generation };
+        return { ...await client.commit(uid, operation), operationId: operation.id };
     }, { uid, deleted });
-    expect((await rejected(false)).conflict).toBe(true);
-    await expect.poll(async () => (await remote(request, uid, 'conflicts')).every(item => item.fields.resolved?.booleanValue === true)).toBe(true);
+    const conflictState = async () => (await remote(request, uid, 'conflicts')).map(item => ({
+        id: item.fields.operationId.stringValue, resolved: item.fields.resolved?.booleanValue,
+        resolution: item.fields.resolution?.stringValue
+    })).sort((a, b) => a.id.localeCompare(b.id));
+    const editConflict = await rejected(false);
+    expect(editConflict.conflict).toBe(true);
+    await expect.poll(conflictState).toEqual([{ id: editConflict.operationId, resolved: true, resolution: 'remote' }]);
     expect((await rows(other, uid))[0].valor).toBe(10);
-    expect((await rejected(true)).conflict).toBe(true);
+    const deleteConflict = await rejected(true);
+    expect(deleteConflict.conflict).toBe(true);
     await expect.poll(async () => (await rows(other, uid)).length).toBe(0);
-    await expect.poll(async () => (await remote(request, uid, 'conflicts')).every(item => item.fields.resolved?.booleanValue === true)).toBe(true);
-    await expect(page.locator('#estado-sincronizacao')).toHaveText('Sincronizado');
-    const history = (await remote(request, uid, 'operations')).filter(item => item.name.includes('/auto-history-')).length;
-    expect(history).toBeGreaterThanOrEqual(2);
+    const expectedConflicts = [
+        { id: editConflict.operationId, resolved: true, resolution: 'remote' },
+        { id: deleteConflict.operationId, resolved: true, resolution: 'local' }
+    ].sort((a, b) => a.id.localeCompare(b.id));
+    await expect.poll(conflictState).toEqual(expectedConflicts);
+    await expect.poll(async () => (await remote(request, uid, 'records'))[0]?.fields.deleted.booleanValue).toBe(true);
+    const records = await remote(request, uid, 'records');
+    expect(records).toHaveLength(1);
+    const tombstone = records[0], entityKey = tombstone.name.split('/').at(-1);
+    const historyDocuments = async () => (await remote(request, uid, 'operations'))
+        .filter(item => item.name.includes('/auto-history-')).sort((a, b) => a.name.localeCompare(b.name));
+    const settled = async () => {
+        // A status in one browser cannot attest the other browser's durable ACKs.
+        // Require both to have observed this tombstone and settled their own work.
+        await expect.poll(async () => Promise.all([page, other].map(async tab => {
+            const stored = await read(tab, st(uid)), queue = await read(tab, q(uid));
+            return {
+                outbox: queue.outbox.length, conflicts: queue.conflicts.length,
+                historyPending: (queue.automaticHistory || []).filter(item => !item.uploaded).map(item => item.id),
+                resolutionsPending: (queue.automaticResolutions || []).filter(item => !item.confirmed).map(item => item.id),
+                settingsPending: Boolean(queue.automaticSettingsDirty), restorePending: Boolean(queue.restoreJob || queue.restoredPending),
+                confirmed: Boolean(queue.lastConfirmed && queue.confirmedRevision === stored.revisao
+                    && queue.confirmedGeneration === queue.generation),
+                revision: queue.remoteRevisions?.[entityKey]
+            };
+        }))).toEqual([page, other].map(() => ({ outbox: 0, conflicts: 0, historyPending: [], resolutionsPending: [],
+            settingsPending: false, restorePending: false, confirmed: true, revision: tombstone.fields.revision.stringValue })));
+        for (const tab of [page, other]) await expect(tab.locator('#estado-sincronizacao')).toHaveText('Sincronizado');
+        const queues = await Promise.all([page, other].map(tab => read(tab, q(uid))));
+        const histories = queues.flatMap(queue => queue.automaticHistory || []);
+        for (const conflict of expectedConflicts) expect(histories.some(item => item.local?.operationId === conflict.id)).toBe(true);
+        const ids = [...new Set(histories.map(item => item.id))].sort();
+        expect(ids.length).toBeGreaterThanOrEqual(2);
+        await expect.poll(async () => (await historyDocuments()).map(item => item.name.split('/').at(-1)).sort()).toEqual(ids);
+    };
+    await settled();
+    const history = await historyDocuments();
     await page.reload(); await other.reload();
-    await expect(page.locator('#estado-sincronizacao')).toHaveText('Sincronizado');
-    await expect(other.locator('#estado-sincronizacao')).toHaveText('Sincronizado');
-    expect((await remote(request, uid, 'records'))).toHaveLength(1);
-    expect((await remote(request, uid, 'operations')).filter(item => item.name.includes('/auto-history-'))).toHaveLength(history);
+    await settled();
+    expect(await remote(request, uid, 'records')).toEqual(records);
+    expect(await conflictState()).toEqual(expectedConflicts);
+    expect(await historyDocuments()).toEqual(history);
     expect(await page.evaluate(() => window.syncDialogs)).toEqual([]);
     expect(await other.evaluate(() => window.syncDialogs)).toEqual([]);
 });
@@ -239,6 +289,8 @@ test('automatic UI: explicit financial undo creates a new identity and preserves
     const { uid, other } = await pair({ page, context, request }, info);
     await importFile(page, { versao: 3, meses: { '2026-10': { receitas: [{ id: 'salary', nome: 'Salary', valor: 10 }], despesas: [] } } });
     await expect.poll(async () => (await rows(other, uid)).length).toBe(1);
+    await page.locator('#ano').selectOption('2026');
+    await page.locator('#mes').selectOption('10');
     if (!await page.locator('#conteudo-receitas').isVisible()) await page.locator('[aria-controls="conteudo-receitas"]').click();
     await page.getByRole('button', { name: 'Remover entrada Salary', exact: true }).click();
     await expect.poll(async () => (await remote(request, uid, 'records'))[0].fields.deleted.booleanValue).toBe(true);
@@ -273,7 +325,7 @@ test('automatic UI: legacy pending backup resumes settings and preserves its alt
             tx.oncomplete = resolve; tx.onabort = () => reject(tx.error);
         }); db.close();
     }, uid);
-    await page.reload({ waitUntil: 'domcontentloaded' }); await context.setOffline(false);
+    await context.setOffline(false); await page.reload({ waitUntil: 'domcontentloaded' });
     await expect(page.locator('#estado-sincronizacao')).toHaveText('Sincronizado');
     await expect.poll(async () => (await read(other, st(uid))).dados.categorias.includes('Legacy import')).toBe(true);
     expect((await rows(page, uid))[0].valor).toBe(10);

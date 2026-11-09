@@ -6,6 +6,7 @@ import { financeSettings, reconcileAutomatic, prepareGenerationRestore, transien
 
 const error = (code, message) => Object.assign(new Error(message), { code });
 const upgradeMessage = 'Atualização obrigatória: esta versão não é compatível com a geração da conta. Os dados locais foram preservados.';
+const networkStatus = 'Conexão lenta ou indisponível. Dados locais preservados; tentando novamente.';
 const recoveryStatus = 'Dados ativos sincronizados; há alterações somente no histórico de recuperação.';
 const pending = queue => queue.outbox.length || queue.automaticSettingsDirty || queue.conflicts.length
     || queue.compatibilityBlocked || queue.restoreJob || queue.automaticHistory?.some(item => !item.uploaded) || queue.automaticResolutions?.some(item => !item.confirmed);
@@ -25,8 +26,9 @@ function validateRecords(items) {
 export class AutomaticFinanceSync {
     constructor({ client, db, service, readLegacy, onAccount, onState, onStatus, onTransition = () => {}, waitLocal = async () => {}, storageBlocked = () => false,
         connectivity = globalThis, delayMs = 200, maxDelayMs = 30000, requiredProtocol = 1,
+        networkTimeoutMs = 45000, retryBaseMs = 1000, random = Math.random,
         readLegacyMetadata = uid => readSyncMetadata(globalThis.localStorage, uid), accountPolicy = null, beforeAccountSync = null, onMigrationGate = () => {} }) {
-        Object.assign(this, { client, db, service, readLegacy, readLegacyMetadata, accountPolicy, beforeAccountSync, onMigrationGate, onAccount, onState, onStatus, onTransition, waitLocal, storageBlocked, connectivity, delayMs, maxDelayMs, requiredProtocol });
+        Object.assign(this, { client, db, service, readLegacy, readLegacyMetadata, accountPolicy, beforeAccountSync, onMigrationGate, onAccount, onState, onStatus, onTransition, waitLocal, storageBlocked, connectivity, delayMs, maxDelayMs, requiredProtocol, networkTimeoutMs, retryBaseMs, random });
         // A distinct context also fences anonymous -> login -> anonymous transitions.
         this.session = null; this.sessionContext = {}; this.online = connectivity.navigator?.onLine !== false;
     }
@@ -49,28 +51,80 @@ export class AutomaticFinanceSync {
                 if (awaitingInitial) { awaitingInitial = false; settleInitial(); }
             });
         });
-        this.offline = () => { this.online = false; this.status('Offline'); };
-        this.reconnect = () => { this.online = true; if (this.session) { this.session.permanent = false; this.session.retryAt = 0; } this.request(0); };
+        this.offline = () => { this.online = false; clearTimeout(this.session?.timer); if (!this.session?.localOnly) this.status('Offline'); };
+        this.reconnect = () => {
+            this.online = this.connectivity.navigator?.onLine !== false;
+            if (this.online && this.session) {
+                this.session.permanent = false;
+                this.session.retryAt = 0;
+            }
+            this.request(0);
+        };
+        this.foreground = () => { if (!this.hidden()) { this.online = this.connectivity.navigator?.onLine !== false; this.request(0); } };
+        this.visibility = () => { if (this.hidden()) clearTimeout(this.session?.timer); else this.foreground(); };
         this.connectivity.addEventListener?.('online', this.reconnect);
         this.connectivity.addEventListener?.('offline', this.offline);
-        await this.client.ready();
+        this.connectivity.addEventListener?.('focus', this.foreground);
+        this.connectivity.addEventListener?.('pageshow', this.foreground);
+        this.connectivity.document?.addEventListener?.('visibilitychange', this.visibility);
+        try { await this.deadline(this.client.ready()); }
+        catch (cause) { if (cause.code !== 'deadline-exceeded') throw cause; if (!this.session?.ready && !this.session?.localOnly) this.status(networkStatus); return; }
         // Não libera a interface entre a restauração do Auth e a hidratação
         // do estado IndexedDB pertencente ao UID restaurado.
-        await initial;
+        try { await this.deadline(initial); }
+        catch (cause) { if (cause.code !== 'deadline-exceeded') throw cause; if (!this.session?.localOnly) this.status(networkStatus); }
     }
-    stop() {
-        this.closeSession(); this.unAuth?.(); this.unAuth = null;
-        this.connectivity.removeEventListener?.('online', this.reconnect); this.connectivity.removeEventListener?.('offline', this.offline);
-    }
+stop() {
+    this.closeSession();
+    this.unAuth?.();
+    this.unAuth = null;
+
+    this.connectivity.removeEventListener?.('online', this.reconnect);
+    this.connectivity.removeEventListener?.('offline', this.offline);
+    this.connectivity.removeEventListener?.('focus', this.foreground);
+    this.connectivity.removeEventListener?.('pageshow', this.foreground);
+    this.connectivity.document?.removeEventListener?.('visibilitychange', this.visibility);
+}
     closeSession() {
         const s = this.session;
         this.session = null; this.sessionContext = {};
-        if (s) { clearTimeout(s.timer); s.stops.forEach(stop => stop()); }
+        if (s) { clearTimeout(s.timer); s.networkWaiters?.forEach(cancel => cancel()); s.stops.forEach(stop => stop()); }
     }
     current(s) { return this.session === s; }
+    hidden() { return this.connectivity.document?.visibilityState === 'hidden'; }
+    // A deadline bounds only the waiter. It never treats a timeout as an ACK.
+    deadline(task, s = null) {
+        let timer, cancel;
+        const timeout = new Promise((_, reject) => {
+            cancel = () => reject(error('persistence/cancelled', 'Sessão alterada.'));
+            if (s) { s.networkWaiters ||= new Set(); s.networkWaiters.add(cancel); }
+            timer = setTimeout(() => reject(error('deadline-exceeded', networkStatus)), this.networkTimeoutMs);
+        });
+        return Promise.race([task, timeout]).finally(() => { clearTimeout(timer); s?.networkWaiters?.delete(cancel); });
+    }
+    async network(s, operation, { write = false } = {}) {
+        this.assertRemote(s);
+        if (!this.current(s)) throw error('persistence/cancelled', 'Sessão alterada.');
+        // An SDK write cannot be cancelled safely: retain its lock/individual ACK,
+        // and wait for it before any subsequent remote dispatch in this session.
+        if (s.pendingWrite) await this.deadline(s.pendingWrite, s);
+        this.assertRemote(s);
+        if (!this.current(s)) throw error('persistence/cancelled', 'Sessão alterada.');
+        let live = true;
+        const active = () => live && this.current(s);
+        const task = Promise.resolve().then(() => { this.assertRemote(s); if (!active()) throw error('persistence/cancelled', 'Sessão alterada.'); return operation(active); });
+        if (write) {
+            s.pendingWrite = task;
+            const clear = () => { if (s.pendingWrite === task) s.pendingWrite = null; };
+            void task.then(clear, clear);
+        }
+        try { return await this.deadline(task, s); }
+        finally { live = false; }
+    }
     status(message, failed = false, confirmedAt = null) { this.onStatus(message, failed, confirmedAt); }
     assertRemote(s) {
         if (s?.localOnly || this.accountPolicy?.access?.kind === 'local') throw error('account/local-only', 'Modo local não autoriza operações remotas. Entre novamente com Google.');
+        if (s && typeof this.client.authenticatedUser === 'function' && this.client.authenticatedUser()?.uid !== s.uid) throw error('auth/user-token-expired', 'Sessão Google indisponível. Dados locais preservados; reconecte a conta.');
     }
     async useLocal(unlocked) {
         const access = unlocked?.access;
@@ -183,7 +237,7 @@ export class AutomaticFinanceSync {
     }
     request(delay = this.delayMs) {
         const s = this.session;
-        if (!s || s.localOnly || s.permanent || s.localMigration?.pending) return;
+        if (!s || s.localOnly || s.permanent || s.localMigration?.pending || this.hidden()) return;
         clearTimeout(s.timer);
         if (!this.online) { this.status('Offline'); return; }
         s.timer = setTimeout(() => { void this.run(s); }, Math.max(delay, (s.retryAt || 0) - Date.now()));
@@ -207,15 +261,16 @@ export class AutomaticFinanceSync {
                 if (this.current(s)) { this.emitState(s, stored, queue); this.status(upgradeMessage, true); }
             }).catch(failure => { if (this.current(s)) this.status(failure.message || upgradeMessage, true); });
         }
-        this.status(transientSyncError(cause) ? 'Sincronizando' : (cause.message || 'Falha na sincronização.'), !transientSyncError(cause));
+        this.status(transientSyncError(cause) ? networkStatus : ['unauthenticated', 'auth/user-token-expired', 'auth/invalid-user-token'].includes(cause.code) ? 'Sessão Google indisponível. Dados locais preservados; reconecte a conta.' : (cause.message || 'Falha na sincronização.'), !transientSyncError(cause));
         if (transientSyncError(cause)) {
-            const delay = Math.min(this.maxDelayMs, this.delayMs * 2 ** Math.min(s.attempt++, 8));
+            const ceiling = Math.min(this.maxDelayMs, this.retryBaseMs * 2 ** Math.min(s.attempt++, 8));
+            const delay = Math.round(ceiling * (.5 + .5 * this.random()));
             s.retryAt = Date.now() + delay; this.request(delay);
         }
         else s.permanent = true;
     }
     async run(s) {
-        if (!this.current(s) || s.localOnly || !this.online || s.permanent || s.localMigration?.pending) return;
+        if (!this.current(s) || s.localOnly || !this.online || s.permanent || s.localMigration?.pending || this.hidden()) return;
         if (s.running) { s.again = true; return; }
         let settleRun;
         s.finished = new Promise(resolve => { settleRun = resolve; });
@@ -249,13 +304,13 @@ export class AutomaticFinanceSync {
     async snapshot(s) {
         this.assertRemote(s);
         if (!this.current(s)) throw error('persistence/cancelled', 'Sessão alterada.');
-        if (!this.client.generationSnapshot && this.client.generationMarker && await this.client.generationMarker(s.uid)) throw error('sync/upgrade-required', upgradeMessage);
+        if (!this.client.generationSnapshot && this.client.generationMarker && await this.network(s, () => this.client.generationMarker(s.uid))) throw error('sync/upgrade-required', upgradeMessage);
         if (!this.current(s)) throw error('persistence/cancelled', 'Sessão alterada.');
-        const data = this.client.generationSnapshot ? await this.client.generationSnapshot(s.uid) : null;
+        const data = this.client.generationSnapshot ? await this.network(s, () => this.client.generationSnapshot(s.uid)) : null;
         if (!this.current(s)) throw error('persistence/cancelled', 'Sessão alterada.');
         if (data?.protocol > (this.client.protocolVersion || 2)) throw error('sync/upgrade-required', upgradeMessage);
         const [records, settings, conflicts] = data ? [data.records, data.settings, data.conflicts]
-            : await Promise.all([this.client.list(s.uid), this.client.getSettings(s.uid), this.client.listConflicts(s.uid)]);
+            : await this.network(s, () => Promise.all([this.client.list(s.uid), this.client.getSettings(s.uid), this.client.listConflicts(s.uid)]));
         if (!this.current(s)) throw error('persistence/cancelled', 'Sessão alterada.');
         validateRecords(records);
         if (!validateRemoteSettings(settings) || !validateRemoteConflicts(conflicts)) throw error('sync/invalid-data', 'Configurações remotas inválidas.');
@@ -333,8 +388,8 @@ export class AutomaticFinanceSync {
         let snapshot = await this.snapshot(s);
         if (!this.current(s)) return;
         await this.reconcile(s, snapshot); if (!this.current(s)) return;
-        await this.service.enviarFila(s.uid, (uid, op) => this.current(s) ? this.client.commit(uid, op) : Promise.reject(error('persistence/cancelled', 'Sessão alterada.')),
-            () => this.current(s), () => this.current(s), snapshot.records);
+        await this.network(s, active => this.service.enviarFila(s.uid, (uid, op) => active() ? this.client.commit(uid, op) : Promise.reject(error('persistence/cancelled', 'Sessão alterada.')),
+            active, () => active() && this.online && !this.hidden(), snapshot.records), { write: true });
         if (!this.current(s)) return;
         snapshot = await this.snapshot(s);
         if (!this.current(s)) return;
@@ -342,8 +397,9 @@ export class AutomaticFinanceSync {
         const stored = await this.db.ler(`estado:${s.uid}`); if (!this.current(s)) return;
         const settings = financeSettings(stored.dados);
         if (!snapshot.settings || queue.automaticSettingsDirty || !queue.settingsBaseline && !settingsEquivalent(settings, snapshot.settings)) {
+            await this.network(s, async active => {
             const result = await this.service.coordenarSettings(s.uid,
-                () => this.client.saveSettings(s.uid, settings, snapshot.settings?.revision || null, () => this.current(s), snapshot.generation), true);
+                () => active() ? this.client.saveSettings(s.uid, settings, snapshot.settings?.revision || null, active, snapshot.generation) : Promise.reject(error('persistence/cancelled', 'Sessão alterada.')), true);
             if (!this.current(s)) return;
             if (result.conflict) { s.again = true; return; }
             if (!result.acknowledged) throw error('sync/invalid-ack', 'Configurações sem confirmação remota.');
@@ -351,25 +407,32 @@ export class AutomaticFinanceSync {
                 // A new local settings edit must survive this old ACK.
                 if (settingsEquivalent(q.automaticSettingsValue || settings, settings)) q.automaticSettingsDirty = false;
                 q.settingsBaseline = functionalSettings(settings); q.settingsRevision = result.revision; return q; });
+            }, { write: true });
+            if (!this.current(s)) return;
+            if (s.again) return;
             snapshot = await this.snapshot(s); if (!this.current(s)) return;
             queue = await this.reconcile(s, snapshot); if (!this.current(s)) return;
         }
         for (const item of queue.automaticHistory || []) if (!item.uploaded) {
             if (!this.current(s)) return;
+            await this.network(s, async () => {
             await this.client.saveAutomaticHistory(s.uid, item, snapshot.generation);
             if (!this.current(s)) return;
             await this.service.alterarFila(s.uid, q => { if (!this.current(s)) throw error('persistence/cancelled', 'Sessão alterada.');
                 const target = q.automaticHistory?.find(row => row.id === item.id); if (target) target.uploaded = true; return q; });
+            }, { write: true });
         }
         queue = await this.service.lerFila(s.uid);
         if (!this.current(s)) return;
         if (queue.outbox.length) { s.again = true; return; }
         for (const resolution of queue.automaticResolutions || []) if (!resolution.confirmed) {
             if (!this.current(s)) return;
+            await this.network(s, async () => {
             if (!await this.client.resolveConflict(s.uid, resolution.id, resolution.choice, snapshot.generation)) throw error('sync/invalid-ack', 'Histórico sem confirmação remota.');
             if (!this.current(s)) return;
             await this.service.alterarFila(s.uid, q => { if (!this.current(s)) throw error('persistence/cancelled', 'Sessão alterada.');
                 const item = q.automaticResolutions?.find(row => row.id === resolution.id); if (item) item.confirmed = true; return q; });
+            }, { write: true });
         }
         if (!this.current(s)) return;
         const final = await this.db.ler(`estado:${s.uid}`);
@@ -432,7 +495,8 @@ export class AutomaticFinanceSync {
         this.assertRemote(s);
         if (s.localMigration?.pending) throw error('migration/review-required', 'Revisão das fontes locais obrigatória antes de retomar a restauração.');
         if (!this.client.publishRestore) throw error('sync/upgrade-required', 'Atualize o cliente antes de restaurar.');
-        await this.client.publishRestore(s.uid, job, () => this.current(s));
+        await this.network(s, async active => {
+        await this.client.publishRestore(s.uid, job, active);
         if (!this.current(s)) return;
         const result = await this.db.alterarDocumentos([`estado:${s.uid}`, `fila:${s.uid}`], docs => {
             if (!this.current(s)) throw error('persistence/cancelled', 'Sessão alterada.');
@@ -445,6 +509,7 @@ export class AutomaticFinanceSync {
             docs.set(`fila:${s.uid}`, queue); return docs;
         });
         this.emitState(s, result.get(`estado:${s.uid}`), result.get(`fila:${s.uid}`));
+        }, { write: true });
     }
     async importBackup(raw, confirm = () => false, onSessionRenewed = () => {}) {
         if (this.session?.localMigration?.pending) throw error('migration/review-required', 'Revisão das fontes locais obrigatória antes de restaurar.');

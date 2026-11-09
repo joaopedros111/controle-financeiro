@@ -116,6 +116,10 @@ export function createVaultComposition({ config, client, auth, makeStore, onView
         if (lifecycle.state().ownership === 'confirmed') {
             const guarded = new Proxy(client, { get(target, name) {
                 const method = Reflect.get(target, name); if (typeof method !== 'function') return method;
+                if (name === 'authenticatedUser') return () => {
+                    if (!remoteCurrent(r)) fail('composition/stale-session');
+                    return method.call(target);
+                };
                 if (name === 'onUser') return callback => method.call(target, user => { if (remoteCurrent(r) && user?.uid === r.owner.uid) callback(user); });
                 if (String(name).startsWith('listen')) return (...args) => { if (!remoteCurrent(r)) fail('composition/stale-session');
                     return method.apply(target, args.map(a => typeof a === 'function' ? (...values) => { if (remoteCurrent(r)) a(...values); } : a)); };

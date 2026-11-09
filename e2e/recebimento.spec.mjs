@@ -53,13 +53,13 @@ test('received and pending entries retain status across editing, reload, deletio
     // Wait for the existing atomic persistence confirmation before reloading.
     await expect.poll(() => page.evaluate(async () => {
         const db = await new Promise((resolve, reject) => {
-            const r = indexedDB.open('controleFinanceiro:integridade:v1', 1);
+            const r = indexedDB.open('controleFinanceiro:integridade:v1');
             r.onsuccess = () => resolve(r.result); r.onerror = () => reject(r.error);
         });
         try {
             return await new Promise((resolve, reject) => {
                 const tx = db.transaction('documents', 'readonly');
-                const r = tx.objectStore('documents').get('estado:@local');
+                const r = tx.objectStore('documents').get('estado:local');
                 r.onsuccess = () => resolve(Object.values(r.result?.dados?.meses || {}).some(month =>
                     month.receitas.some(row => row.nome === 'Synthetic received edited' && row.recebido === true)));
                 r.onerror = () => reject(r.error);
@@ -201,7 +201,7 @@ test('entry and expense action colors and interaction states match across themes
                 document.body.append(probe);
                 const color = token => { probe.style.color = 'var(' + token + ')'; return getComputedStyle(probe).color; };
                 const palettes = {
-                    edit: { background: color('--primaria-suave'), color: color('--primaria'), border: color('--borda') },
+                    edit: { background: color('--primaria-suave'), color: color('--primaria-texto'), border: color('--borda') },
                     remove: { background: color('--vermelho-suave'), color: color('--vermelho'), border: color('--borda') }
                 };
                 probe.remove();

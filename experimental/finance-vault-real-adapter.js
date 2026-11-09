@@ -77,6 +77,11 @@ export function createRealVaultAdapter({ store, owner, crypto = globalThis.crypt
                         return asyncOrListener(name, method, target);
                     } });
                     function asyncOrListener(name, method, target) {
+                        // The synchronizer reads Auth identity synchronously, without a UID argument.
+                        if (name === 'authenticatedUser') return () => {
+                            check(); const user = method.call(target);
+                            return user?.uid === uid ? user : null;
+                        };
                         // Listener unsubscribe functions must remain synchronous.
                         if (name === 'onUser') return callback => { check(); return method.call(target, user => { if (current === lease) callback(user?.uid === uid ? user : null); }); };
                         if (String(name).startsWith('listen')) return (...args) => { check(); return method.apply(target, args); };

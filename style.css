@@ -763,7 +763,7 @@ main.container { gap: var(--densidade-container-gap, 12px); }
 body .bloco {
     padding: calc(var(--densidade-bloco-vertical, 28px) * .9) calc(var(--densidade-bloco-horizontal, 24px) * .92);
 }
-body .grafico-bloco { padding: 16px 14px 12px; }
+body .grafico-bloco { padding: 12px 14px 10px; }
 body .bloco-topo { gap: var(--densidade-cabecalho-gap, 12px); }
 body .bloco > .bloco-topo:not(.grafico-topo) {
     margin-bottom: calc(var(--densidade-cabecalho-margem, 14px) * .9);
@@ -1076,7 +1076,7 @@ body #dialogo-ajustes .ajuste-controle { gap: var(--densidade-opcoes-controle-ga
 
     .receita > .editar-receita, .despesa > .editar-despesa {
         --acao-fundo: var(--primaria-suave);
-        --acao-icone: var(--primaria);
+        --acao-icone: var(--primaria-texto);
         --acao-borda: var(--borda);
     }
 

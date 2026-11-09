@@ -8,7 +8,8 @@ export async function setup() {
     const config = { experimentalVault: true, projectId: 'demo-vault-integration', authEmulator: 'http://127.0.0.1:9099', firestoreEmulator: 'http://127.0.0.1:8080', databaseName: 'controleFinanceiro:cofre-isolado:v1:synthetic-integrated-composition-node', accounts };
     const notify = next => { user = next; for (const f of [...subscribers]) f(user); };
     const client = new Proxy({ ready: async () => user, onUser(fn) { subscribers.add(fn); queueMicrotask(() => { if (subscribers.has(fn)) fn(user); }); return () => subscribers.delete(fn); }, protocolVersion: 2 }, {
-        get(target, key) { if (key in target) return target[key]; if (typeof key === 'symbol') return;
+        get(target, key) { if (key === 'authenticatedUser') return () => user;
+            if (key in target) return target[key]; if (typeof key === 'symbol') return;
             return (uid, ...args) => { if (uid !== user?.uid) throw new Error('Synthetic auth owner mismatch'); if (!remotes.has(uid)) remotes.set(uid, realContractClient({ projectId: config.projectId, uid })); return remotes.get(uid).client[key](uid, ...args); };
         }
     });

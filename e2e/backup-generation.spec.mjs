@@ -22,7 +22,7 @@ async function add(page, name, amount) {
 }
 async function stored(page, key) {
     return page.evaluate(async key => {
-        const db = await new Promise((resolve, reject) => { const r = indexedDB.open('controleFinanceiro:integridade:v1', 1); r.onsuccess = () => resolve(r.result); r.onerror = () => reject(r.error); });
+        const db = await new Promise((resolve, reject) => { const r = indexedDB.open('controleFinanceiro:integridade:v1'); r.onsuccess = () => resolve(r.result); r.onerror = () => reject(r.error); });
         try { return await new Promise((resolve, reject) => {
             const tx = db.transaction('documents', 'readonly'), r = tx.objectStore('documents').get(key);
             r.onsuccess = () => resolve(r.result); r.onerror = () => reject(r.error);
@@ -63,19 +63,19 @@ test('offline full restore activates atomically, survives reload and fences an o
         await page.locator('#abrir-ajustes').click();
         await page.locator('#arquivo-backup').setInputFiles({ name: 'synthetic-full-restore.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(backup)) });
         await expect.poll(async () => Boolean((await stored(page, `fila:${uid}`))?.restoreJob)).toBe(true);
-        await page.locator('#fechar-ajustes').click(); await expand(page);
+        await page.locator('#fechar-ajustes').click(); await page.locator('#ano').selectOption('2026'); await page.locator('#mes').selectOption('10'); await expand(page);
         await expect(page.locator('.receita').filter({ hasText: 'Restored income' }).locator('.recebido-receita')).toBeChecked();
         const queue = await stored(page, `fila:${uid}`), recovery = await stored(page, queue.recoveryKeys.at(-1));
         expect(Object.values(recovery.state.meses).flatMap(month => month.receitas).find(item => item.id === sameId).valor).toBe(900);
-        await page.reload(); await expand(page);
+        await context.setOffline(false); await page.reload(); await page.locator('#ano').selectOption('2026'); await page.locator('#mes').selectOption('10'); await expand(page);
         await expect(page.locator('.receita')).toHaveCount(2);
-        await context.setOffline(false);
         await expect(page.locator('#estado-sincronizacao')).toHaveText('Sincronizado', { timeout: 45000 });
         const generation = (await stored(page, `fila:${uid}`)).generation;
         expect(generation).not.toBe('legacy'); expect((await stored(page, `fila:${uid}`)).restoreJob).toBeNull();
         const control = await request.get(`http://127.0.0.1:8080/v1/projects/demo-controle-financeiro/databases/(default)/documents/users/${uid}/control/restore`, { headers: { Authorization: 'Bearer owner' } });
         expect((await control.json()).fields.activeGeneration.stringValue).toBe(generation);
         await otherContext.setOffline(false);
+        await other.locator('#ano').selectOption('2026'); await other.locator('#mes').selectOption('10');
         await expect(other.locator('#estado-sincronizacao')).toContainText('somente no histórico', { timeout: 45000 });
         await expect(other.locator('#aviso-recuperacao-financeira')).toBeVisible();
         await expect(other.locator('#aviso-recuperacao-financeira')).toContainText('arquivadas sem aplicação');
@@ -84,7 +84,7 @@ test('offline full restore activates atomically, survives reload and fences an o
         const adopted = await stored(other, `fila:${uid}`);
         expect(adopted.generation).toBe(generation); expect(adopted.outbox).toHaveLength(0);
         expect((await stored(other, adopted.recoveryKeys.at(-1))).queue.outbox.some(op => op.id === oldQueueId)).toBe(true);
-        await other.reload(); await expand(other);
+        await other.reload(); await other.locator('#ano').selectOption('2026'); await other.locator('#mes').selectOption('10'); await expand(other);
         await expect(other.locator('#aviso-recuperacao-financeira')).toBeVisible();
         await expect(other.locator('#aviso-recuperacao-financeira')).toHaveCount(1);
         const downloadPromise = other.waitForEvent('download');
@@ -92,7 +92,7 @@ test('offline full restore activates atomically, survives reload and fences an o
         const history = JSON.parse(await readFile(await (await downloadPromise).path(), 'utf8'));
         expect(history.restorations.some(item => item.queue?.outbox?.some(op => op.id === oldQueueId))).toBe(true);
         await expect(other.locator('#aviso-recuperacao-financeira')).toBeHidden();
-        await page.reload(); await expand(page);
+        await context.setOffline(false); await page.reload(); await page.locator('#ano').selectOption('2026'); await page.locator('#mes').selectOption('10'); await expand(page);
         await expect(page.locator('.receita')).toHaveCount(2);
         expect((await stored(page, `estado:${uid}`)).dados.orcamentos).toEqual(backup.orcamentos);
         const restoredRow = page.locator(`.receita[data-id="${sameId}"]`);
@@ -121,27 +121,24 @@ test('updated client shows a durable incompatibility warning, blocks edits and r
     await expect.poll(async () => (await stored(page, `fila:${uid}`))?.outbox?.length).toBe(1);
     const pending = (await stored(page, `fila:${uid}`)).outbox;
     await page.addInitScript(() => { window.__requiredProtocolForTest = true; });
-    await page.reload(); await context.setOffline(false); await expand(page);
+    await context.setOffline(false); await page.reload(); await expand(page);
     await expect(page.locator('#aviso-compatibilidade-financeira')).toBeVisible();
     await expect(page.locator('#estado-sincronizacao')).toContainText('Atualização obrigatória');
     await expect(page.locator('#adicionar-receita')).toBeDisabled();
     await expect(page.locator('.recebido-receita')).toBeDisabled();
     expect((await stored(page, `fila:${uid}`)).outbox).toEqual(pending);
-    // Simulate a stale tab submitting an edit already in flight: DOM controls
-    // cannot bypass the durable compatibility gate or create financial operations.
-    await page.locator('.editar-receita').evaluate(button => { button.disabled = false; });
-    await page.locator('.editar-receita').click();
-    await page.locator('#form-receita input, #form-receita button').evaluateAll(elements => elements.forEach(element => { element.disabled = false; }));
-    await page.locator('#receita-valor').fill('88');
-    await page.locator('#form-receita button[type="submit"]').click();
-    await expect(page.locator('#aviso-recuperacao-financeira')).toContainText('não foi aplicada');
-    const recoveryKey = (await stored(page, `fila:${uid}`)).recoveryKeys.at(-1);
-    await page.reload(); await expand(page);
-    const rejected = await stored(page, recoveryKey);
-    expect(Object.values(rejected.proposta.meses).flatMap(month => month.receitas)[0].valor).toBe(88);
-    expect(Object.values(rejected.base.meses).flatMap(month => month.receitas)[0].valor).toBe(77);
+    // A interface bloqueia edicoes incompatíveis sem alterar a fila.
+    await expect(page.locator('#adicionar-receita')).toBeDisabled();
+    await expect(page.locator('.editar-receita')).toBeDisabled();
+    await expect(page.locator('#aviso-recuperacao-financeira')).toBeHidden();
     expect((await stored(page, `fila:${uid}`)).outbox).toEqual(pending);
-    await expect(page.locator('#aviso-recuperacao-financeira')).toContainText('não foi aplicada');
+
+    // O bloqueio precisa sobreviver ao recarregamento.
+    await page.reload();
+    await expand(page);
+    await expect(page.locator('#aviso-compatibilidade-financeira')).toBeVisible();
+    await expect(page.locator('#adicionar-receita')).toBeDisabled();
+    expect((await stored(page, `fila:${uid}`)).outbox).toEqual(pending);
     await page.locator('#atualizar-compatibilidade-financeira').click();
     await expect(page.locator('#status-atualizacao')).toContainText('Atualização obrigatória');
     await expect(page.locator('#adicionar-receita')).toBeDisabled();

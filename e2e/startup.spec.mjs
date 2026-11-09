@@ -1,5 +1,7 @@
 import { test, expect } from '@playwright/test';
 
+test.use({ serviceWorkers: 'allow' });
+
 const project = 'demo-controle-financeiro';
 const firestore = 'http://127.0.0.1:8080';
 const auth = 'http://127.0.0.1:9099';
@@ -7,7 +9,7 @@ const auth = 'http://127.0.0.1:9099';
 async function idbState(page, uid, prefix = 'estado') {
     return page.evaluate(async key => {
         const db = await new Promise((resolve, reject) => {
-            const request = indexedDB.open('controleFinanceiro:integridade:v1', 1);
+            const request = indexedDB.open('controleFinanceiro:integridade:v1');
             request.onsuccess = () => resolve(request.result);
             request.onerror = () => reject(request.error);
         });
@@ -41,20 +43,23 @@ test('restored mobile session reveals the account cache before remote synchroniz
     await page.locator('#abrir-ajustes').click();
     await page.locator('#entrar-google').click();
     await expect(page.locator('#estado-sincronizacao')).toHaveText('Sincronizado');
+    const month = `${await page.locator('#ano').inputValue()}-${(await page.locator('#mes').inputValue()).padStart(2, '0')}`;
     await page.locator('#arquivo-backup').setInputFiles({
         name: 'startup.json', mimeType: 'application/json',
         buffer: Buffer.from(JSON.stringify({ versao: 3, meses: {
-            '2026-10': { receitas: [{ id: 'startup-income', nome: 'Persistida', valor: 321 }], despesas: [] }
+            [month]: { receitas: [{ id: 'startup-income', nome: 'Persistida', valor: 321 }], despesas: [] }
         } }))
     });
     // Wait for the restored generation before editing its visual preference.
-    await expect.poll(async () => (await idbState(page, uid))?.dados?.meses?.['2026-10']?.receitas?.[0]?.id).toBe('startup-income');
+    await expect.poll(async () => (await idbState(page, uid))?.dados?.meses?.[month]?.receitas?.[0]?.id).toBe('startup-income');
     await expect.poll(async () => (await idbState(page, uid, 'fila'))?.restoreJob, { timeout: 45000 }).toBeNull();
     await expect(page.locator('#estado-sincronizacao')).toHaveText('Sincronizado');
     await page.locator('#alternar-tema').click();
     await expect(page.locator('html')).toHaveAttribute('data-tema', 'escuro');
     await expect(page.locator('#estado-sincronizacao')).toHaveText('Sincronizado');
     await expect.poll(async () => (await idbState(page, uid)).dados.tema).toBe('escuro');
+    await page.evaluate(() => navigator.serviceWorker.ready);
+    await page.waitForFunction(() => Boolean(navigator.serviceWorker.controller));
 
     await context.addInitScript(() => {
         window.__startupAudit = { loadingSeen: false, reveal: null, prePaintTheme: null };
@@ -63,7 +68,8 @@ test('restored mobile session reveals the account cache before remote synchroniz
             const loading = root.classList.contains('app-inicializando') || root.classList.contains('app-carregando-conta');
             if (loading) window.__startupAudit.loadingSeen = true;
             if (!window.__startupAudit.prePaintTheme && root.dataset.tema) window.__startupAudit.prePaintTheme = root.dataset.tema;
-            if (!loading && !window.__startupAudit.reveal && document.querySelector('#lista-receitas')) {
+            const authorized = document.querySelector('#adicionar-receita')?.disabled === false;
+            if (!loading && authorized && !window.__startupAudit.reveal && document.querySelector('#lista-receitas')) {
                 window.__startupAudit.reveal = {
                     theme: root.dataset.tema,
                     incomes: document.querySelectorAll('.receita').length,
@@ -78,13 +84,15 @@ test('restored mobile session reveals the account cache before remote synchroniz
     await page.reload({ waitUntil: 'domcontentloaded' });
     await expect(page.locator('html')).not.toHaveClass(/app-inicializando|app-carregando-conta/);
     await expect(page.locator('#estado-sincronizacao')).toHaveText('Offline');
+    // The public shell may paint first; audit the first authorized financial paint.
+    await expect.poll(() => page.evaluate(() => window.__startupAudit.reveal)).toEqual({ theme: 'escuro', incomes: 1, busy: null });
     const audit = await page.evaluate(() => window.__startupAudit);
     expect(audit.loadingSeen).toBe(true);
     expect(audit.prePaintTheme).toBe('escuro');
     expect(audit.reveal).toEqual({ theme: 'escuro', incomes: 1, busy: null });
-    expect((await idbState(page, uid)).dados.meses['2026-10'].receitas).toHaveLength(1);
+    expect((await idbState(page, uid)).dados.meses[month].receitas).toHaveLength(1);
 
     await context.setOffline(false);
     await expect(page.locator('#estado-sincronizacao')).toHaveText('Sincronizado');
-    expect((await idbState(page, uid)).dados.meses['2026-10'].receitas).toHaveLength(1);
+    expect((await idbState(page, uid)).dados.meses[month].receitas).toHaveLength(1);
 });

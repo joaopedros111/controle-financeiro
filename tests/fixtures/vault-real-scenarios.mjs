@@ -26,10 +26,15 @@ export async function edit(h, fn, settingsIntent = false) {
 }
 export const income = (h, id = 'synthetic-real-income') => edit(h, m => m.receitas.push({ id, nome: 'SYNTHETIC REAL ADAPTER INCOME', valor: 123.45, recebido: false }));
 export function connect(h, client = h.client) {
-    const statuses = [], states = [], sync = h.session.attachSync({ client, connectivity: { navigator: { onLine: false } }, onAccount() {}, onState: value => states.push(clone(value)), onStatus: value => statuses.push(value) });
+    const statuses = [], states = [], sync = h.session.attachSync({ client, connectivity: { navigator: { onLine: true } }, onAccount() {}, onState: value => states.push(clone(value)), onStatus: value => statuses.push(value) });
+    // Scenarios explicitly drive cycles. Keep scheduling separate from connectivity.
+    sync.request = () => {};
     h.sync = sync; h.statuses = statuses; h.states = states; return sync;
 }
-export async function cycle(h) { return h.sync.cycle(h.sync.session); }
+export async function cycle(h) {
+    h.sync.session.again = false; // Match run() when explicitly starting the next cycle.
+    return h.sync.cycle(h.sync.session);
+}
 export function adapterCases({ makeStore, crypto, locks = serialLocks() }) {
     const cases = [], closers = [];
     const add = (name, run) => cases.push({ name, run: async () => { try { await run(); } finally { closers.splice(0).reverse().forEach(fn => fn()); } } });
@@ -40,9 +45,23 @@ export function adapterCases({ makeStore, crypto, locks = serialLocks() }) {
         connect(h); await h.sync.useAccount({ uid: customOwner.uid }); return h;
     }
     const q = h => h.session.service.lerFila(h.owner.uid), state = async h => (await h.session.db.ler(`estado:${h.owner.uid}`)).dados;
+    add('synchronous Auth identity preserves the owner object and rejects mismatched or revoked leases', async () => {
+        const h = await setup(), user = { uid: owner.uid };
+        h.client.authenticatedUser = () => user;
+        ok(h.sync.client.authenticatedUser() === user);
+        await income(h); await cycle(h); equal((await q(h)).outbox.length, 0);
+        h.client.authenticatedUser = () => ({ uid: 'synthetic-other-owner' });
+        equal(h.sync.client.authenticatedUser(), null);
+        equal((await rejects(() => cycle(h))).code, 'auth/user-token-expired');
+        await h.adapter.lock();
+        await rejects(() => h.sync.client.authenticatedUser());
+    });
     add('real controller creates, edits, deletes and confirms the corresponding operations', async () => {
         const h = await setup(); await income(h); await edit(h, m => m.despesas.push({ id: 'synthetic-expense', nome: 'SYNTHETIC EXPENSE', valor: 5.67, categoria: 'Casa', pago: false }));
-        await cycle(h); equal((await q(h)).outbox.length, 0); ok(h.statuses.includes('Sincronizado') === false); // offline controller never claims online success
+        h.sync.online = false; await cycle(h);
+        equal((await q(h)).outbox.length, 2); equal(h.remote.inspect(owner).records.length, 0);
+        ok(!h.statuses.includes('Sincronizado'));
+        h.sync.online = true; await cycle(h); equal((await q(h)).outbox.length, 0);
         await edit(h, m => { m.receitas[0].valor = 99.99; m.despesas = []; }); await cycle(h);
         const records = await h.client.list(owner.uid); ok(records.some(r => r.deleted)); equal(records.find(r => r.id === 'synthetic-real-income').record.valor, 99.99);
     });
@@ -135,6 +154,7 @@ export function adapterCases({ makeStore, crypto, locks = serialLocks() }) {
     });
     add('real settings ACK cannot clear a newer intent and online success waits for every ACK', async () => {
         const h = await setup(); await cycle(h); h.sync.online = true;
+        h.statuses.length = 0;
         await edit(h, (_, state) => { state.categorias.push('Primeira'); }, true);
         let enter, release; const started = new Promise(r => { enter = r; }), gate = new Promise(r => { release = r; }), original = h.client.saveSettings;
         h.client.saveSettings = async (...args) => { const result = await original(...args); enter(); await gate; return result; };
@@ -145,6 +165,7 @@ export function adapterCases({ makeStore, crypto, locks = serialLocks() }) {
     });
     add('missing history ACK keeps the rejected version pending and prevents synchronized status', async () => {
         const h = await setup(); await income(h); await cycle(h); const old = (await h.client.list(owner.uid))[0];
+        h.statuses.length = 0;
         await edit(h, m => { m.receitas[0].valor = 11.11; }); await h.client.commit(owner.uid, makeOperation(recordEntityKey(old), { ...old, record: { ...old.record, valor: 77.77 } }, old.revision));
         const original = h.client.saveAutomaticHistory; h.client.saveAutomaticHistory = async () => ({}); h.sync.online = true;
         equal((await rejects(() => cycle(h))).code, 'sync/invalid-ack'); ok((await q(h)).automaticHistory.some(x => !x.uploaded)); ok(!h.statuses.includes('Sincronizado'));

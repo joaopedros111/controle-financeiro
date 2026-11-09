@@ -794,7 +794,7 @@ function carregarEstadoFinanceiroPersistido(result) {
 }
 
 function edicaoFinanceiraPermitida() {
-    return acessoFinanceiroPermitido() && !automaticController?.session?.localMigration?.pending;
+    return acessoFinanceiroPermitido() && !atualizacaoObrigatoria && !automaticController?.session?.localMigration?.pending;
 }
 function acessoFinanceiroPermitido() {
     return !contaGoogleObrigatoria || Boolean(contaFinanceiraVisivel && politicaDadosConta?.access && !politicaDadosConta.closing && !idbBloqueado);

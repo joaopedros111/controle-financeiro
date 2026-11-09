@@ -8,7 +8,8 @@ async function stored(page, key) { return page.evaluate(async key => {
     const db = await new Promise((resolve,reject)=>{const r=indexedDB.open('controleFinanceiro:integridade:v1',2);r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error);});
     try {
         const documentKey = key.startsWith('controleFinanceiro:sync:') ? 'fila:'+key.split(':').at(-1)
-            : key.startsWith('controleFinanceiro:v3:uid:') ? 'estado:'+key.split(':').at(-1) : key === 'controleFinanceiro:v3' ? 'estado:@local' : null;
+            : key.startsWith('controleFinanceiro:v3:uid:') ? 'estado:'+key.split(':').at(-1) : key === 'controleFinanceiro:v3'
+                ? (new URL(location.href).searchParams.get('indexeddb_homologacao') === '1' ? 'estado:local' : 'estado:@local') : null;
         if (!documentKey) return JSON.parse(localStorage.getItem(key) || 'null');
         const doc = await new Promise((resolve,reject)=>{const tx=db.transaction('documents','readonly');let value;
             const r=tx.objectStore('documents').get(documentKey);r.onsuccess=()=>value=r.result;
@@ -31,15 +32,21 @@ async function prepare(context, page, email) {
     page.on("dialog", (dialog) => dialog.accept());
     await page.goto("/");
 }
-async function login(page, account) {
+async function login(page, account, { keepSeparate = false } = {}) {
     await page.evaluate((email) => { window.__testEmail = email; }, account.email);
     await page.locator("#abrir-ajustes").click();
     await page.locator("#entrar-google").click();
     await expect(page.locator("#conta-sincronizacao")).toContainText(account.email);
+    if (keepSeparate) {
+        if (!await page.locator('#aviso-migracao-local').isVisible()) await page.locator('#recuperar-fontes-antigas').click();
+        await expect(page.locator('#aviso-migracao-local')).toBeVisible();
+        await page.locator('#fechar-ajustes').click();
+        await page.locator('#manter-fontes-separadas').click();
+    }
     await expect.poll(async () => (await stored(page, metaKey(account.localId)))?.initialized).toBe(true);
     await expect.poll(async () => (await stored(page, metaKey(account.localId)))?.outbox?.length).toBe(0);
     await expect(page.locator("#estado-sincronizacao")).toHaveText("Sincronizado");
-    await page.locator("#fechar-ajustes").click();
+    if (await page.locator('#dialogo-ajustes').isVisible()) await page.locator("#fechar-ajustes").click();
 }
 async function addIncome(page, name, amount, uid = null) {
     await page.locator("#adicionar-receita").click();
@@ -85,6 +92,8 @@ test.afterEach(async ({ context }, testInfo) => {
     await testInfo.attach("synthetic-state", { body: JSON.stringify(snapshots, null, 2), contentType: "application/json" });
 });
 
+test.describe('PWA offline', () => {
+test.use({ serviceWorkers: 'allow' });
 test("A: criação offline, recarga do PWA e reconexão sem duplicação", async ({ context, page, request }) => {
     const account = await createAccount(request, "offline@local.test");
     await prepare(context, page, account.email); await login(page, account);
@@ -100,6 +109,7 @@ test("A: criação offline, recarga do PWA e reconexão sem duplicação", async
     await expect.poll(async () => (await stored(page, metaKey(account.localId)))?.outbox?.length, { timeout: 30_000 }).toBe(0);
     await expect.poll(async () => (await remoteRecords(request, account)).length).toBe(1);
     expect((await incomes(page, account.localId))[0].valor).toBe(0.29);
+});
 });
 
 test("B: duas sessões preservam revisão concorrente e permitem resolução", async ({ browser, context, page, request }) => {
@@ -136,6 +146,7 @@ test("C: logout e troca de conta não apresentam dados ou fila de outro UID", as
     await page.getByRole("button", { name: "Remover entrada Remover somente Alice", exact: true }).click();
     await expect(page.locator(".aviso-acao")).toHaveText("Desfazer");
     await page.locator("#abrir-ajustes").click(); await page.locator("#sair-google").click();
+    await page.locator('#sair-keep').click();
     await expect(page.locator("#conta-sincronizacao")).toBeEmpty();
     await expect(page.locator(".aviso-acao")).toHaveCount(0);
     await page.locator("#fechar-ajustes").click();
@@ -263,8 +274,20 @@ test('K: a second production factory reuses the configured Auth session',async({
  await expect(page.locator('#conta-sincronizacao')).toContainText(account.email);
 });
 
-test('L: blocked expected Auth persistence preserves offline financial data and permits recovery',async({context,page,request})=>{
+test('L: blocked Auth persistence preserves anonymous sources, denies unauthorized edits and permits recovery',async({context,page,request})=>{
  const account=await createAccount(request,'storage-recovery@local.test');
+ await page.route('**/__auth-storage-fixture.html',route=>route.fulfill({contentType:'text/html',body:'<!doctype html><title>Synthetic Auth fixture</title>'}));
+ await page.goto('/__auth-storage-fixture.html');
+ const original=await page.evaluate(async()=>{
+  const {normalizarEstado}=await import('/finance-core.js');
+  const now=new Date(),month=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+  const state=normalizarEstado({versao:3,meses:{[month]:{receitas:[{id:'synthetic-legacy-auth',nome:'Preservada durante bloqueio Auth',valor:10}],despesas:[]}}});
+  const queue={outbox:[],conflicts:[],remoteRevisions:{},lastConfirmed:null},raw=JSON.stringify(state);
+  localStorage.setItem('controleFinanceiro:v3',raw);
+  const db=await new Promise((resolve,reject)=>{const r=indexedDB.open('controleFinanceiro:integridade:v1',2);r.onupgradeneeded=()=>r.result.createObjectStore('documents');r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error);});
+  try{await new Promise((resolve,reject)=>{const tx=db.transaction('documents','readwrite');tx.objectStore('documents').put({revisao:7,dados:state},'estado:@local');tx.objectStore('documents').put(queue,'fila:@local');tx.oncomplete=resolve;tx.onabort=()=>reject(tx.error);});}finally{db.close();}
+  return {state,queue,raw};
+ });
  await page.addInitScript(()=>{
   const original=Storage.prototype.setItem;
   window.__allowAuthStorage=false;
@@ -272,17 +295,57 @@ test('L: blocked expected Auth persistence preserves offline financial data and 
  });
  await prepare(context,page,account.email);
  await expect(page.locator('#estado-sincronizacao')).toContainText('armazenamento');
- await addIncome(page,'Preservada durante bloqueio Auth',10);
- const local=await stored(page,'controleFinanceiro:v3');expect(Object.values(local.meses).flatMap(m=>m.receitas).some(r=>r.nome==='Preservada durante bloqueio Auth')).toBe(true);
+ await expect(page.locator('#adicionar-receita')).toBeDisabled();
+ expect(await page.locator('body').textContent()).not.toContain('Preservada durante bloqueio Auth');
+ expect(await stored(page,'controleFinanceiro:v3')).toEqual(original.state);
+ expect(await stored(page,metaKey('@local'))).toEqual(original.queue);
+ expect(await page.evaluate(()=>localStorage.getItem('controleFinanceiro:v3'))).toBe(original.raw);
+ expect(await remoteRecords(request,account)).toEqual([]);
  await page.evaluate(()=>{window.__allowAuthStorage=true;window.dispatchEvent(new Event('focus'));});
- await expect(page.locator('#estado-sincronizacao')).toHaveText('Somente neste dispositivo.');
- await login(page,account);
- // Signing in must preserve the anonymous source; this test must not require
- // an automatic financial migration between anonymous and account namespaces.
- expect(await stored(page,'controleFinanceiro:v3')).toEqual(local);
+ await login(page,account,{keepSeparate:true});
+ expect(await stored(page,'controleFinanceiro:v3')).toEqual(original.state);
+ expect(await stored(page,metaKey('@local'))).toEqual(original.queue);
+ await addIncome(page,'Autorizada apos recuperar Auth',20,account.localId);
+ await expect(page.locator('#estado-sincronizacao')).toHaveText('Sincronizado');
+ expect(await incomes(page,account.localId)).toHaveLength(1);
+ expect(await remoteRecords(request,account)).toHaveLength(1);
  await page.locator('#abrir-ajustes').click();await page.locator('#sair-google').click();
+ await page.locator('#sair-delete-confirmed').click();
  await expect(page.locator('#conta-sincronizacao')).toBeEmpty();
- await expect(page.locator('#lista-receitas')).toContainText('Preservada durante bloqueio Auth');
+ await expect(page.locator('#adicionar-receita')).toBeDisabled();
+ expect(await stored(page,'controleFinanceiro:v3')).toEqual(original.state);
+ expect(await stored(page,metaKey('@local'))).toEqual(original.queue);
+ expect(await page.evaluate(()=>localStorage.getItem('controleFinanceiro:v3'))).toBe(original.raw);
+ expect(await page.locator('body').textContent()).not.toContain('Preservada durante bloqueio Auth');
+});
+
+test('L: authorized UID cache remains editable with Auth storage blocked and recovers exact pending ACKs',async({context,page,request})=>{
+ const account=await createAccount(request,'owned-storage-recovery@local.test');
+ await prepare(context,page,account.email);await login(page,account);
+ await addIncome(page,'Copia autorizada antes do bloqueio',10,account.localId);
+ await expect(page.locator('#estado-sincronizacao')).toHaveText('Sincronizado');
+ const beforeState=await stored(page,stateKey(account.localId)),confirmed=await remoteRecords(request,account);
+ await page.addInitScript(()=>{
+  const original=Storage.prototype.setItem;window.__allowAuthStorage=sessionStorage.getItem('__syntheticAllowAuthStorage')==='1';window.__blockedAuthProbes=0;
+  Storage.prototype.setItem=function(key,value){if(key.startsWith('__controle_financeiro_auth_probe__')&&!window.__allowAuthStorage){window.__blockedAuthProbes++;throw new DOMException('test storage blocked','SecurityError');}return original.call(this,key,value);};
+ });
+ await page.reload({waitUntil:'domcontentloaded'});
+ await expect.poll(()=>page.evaluate(()=>window.__blockedAuthProbes)).toBeGreaterThan(0);
+ await expect(page.locator('#adicionar-receita')).toBeEnabled();
+ expect(await stored(page,stateKey(account.localId))).toEqual(beforeState);
+ await addIncome(page,'Persistida com Auth bloqueado',20,account.localId);
+ const pending=(await stored(page,metaKey(account.localId))).outbox;
+ expect(pending).toHaveLength(1);expect(pending[0].value.record.nome).toBe('Persistida com Auth bloqueado');
+ expect(await remoteRecords(request,account)).toEqual(confirmed);
+ await page.evaluate(()=>{sessionStorage.setItem('__syntheticAllowAuthStorage','1');window.__allowAuthStorage=true;});
+ // The previously authenticated UID is restored by the real bootstrap retry.
+ await expect(page.locator('#estado-sincronizacao')).toHaveText('Sincronizado');
+ expect((await stored(page,metaKey(account.localId))).outbox).toEqual([]);
+ const expectedRevisions=[...confirmed.map(row=>row.fields.revision.stringValue),...pending.map(op=>op.id)].sort();
+ expect((await remoteRecords(request,account)).map(row=>row.fields.revision.stringValue).sort()).toEqual(expectedRevisions);
+ await page.reload();await expect(page.locator('#estado-sincronizacao')).toHaveText('Sincronizado');
+ expect(await incomes(page,account.localId)).toHaveLength(2);
+ expect((await remoteRecords(request,account)).map(row=>row.fields.revision.stringValue).sort()).toEqual(expectedRevisions);
 });
 
 // All accounts and writes below are restricted by the fixture to the demo Emulators.

@@ -52,7 +52,9 @@ export function reconcileAutomatic(state, queue, records, settings, remoteConfli
             || remoteConflicts.filter(item => !item.resolved).map(item => ({ entityKey: item.entityKey, value: item.local, id: item.operationId }))
                 .find(item => item.entityKey === key && item.value?.deleted);
         if (remote.deleted) {
-            if (pending.length) archiveAutomatic(q, { entityKey: key, policy: 'delete-wins',
+            // A matching tombstone revision is an ACK, including one committed by
+            // another device. Only rejected intentions need recovery history.
+            if (pending.some(op => !op.value.deleted || op.id !== remote.revision)) archiveAutomatic(q, { entityKey: key, policy: 'delete-wins',
                 local: { record: original || null, operations: pending }, remote });
             q.outbox = q.outbox.filter(op => op.entityKey !== key);
             replaceRecord(next, remote);

@@ -39,6 +39,26 @@ test('server tombstone always defeats a delayed edit, including a matching tombs
     assert.equal(b.queue.automaticHistory.length, a.queue.automaticHistory.length);
 });
 
+test('another device ACK of the exact pending tombstone settles without archiving a rejected intention', () => {
+    const deletion = op(true), remote = entry(deletion.id, 20, true);
+    const a = reconcileAutomatic(state(), queue([deletion]), [remote], null);
+    assert.equal(a.state.meses['2026-10'].receitas.length, 0);
+    assert.deepEqual(a.queue.outbox, []);
+    assert.equal(a.queue.automaticHistory?.length || 0, 0);
+    assert.equal(a.queue.remoteRevisions[recordEntityKey(remote)], deletion.id);
+    const b = reconcileAutomatic(a.state, a.queue, [remote], null);
+    assert.deepEqual(b, a);
+});
+
+test('an acknowledged tombstone never hides a later rejected edit in the same pending chain', () => {
+    const deletion = op(true), edit = makeOperation(deletion.entityKey, op().value, deletion.id);
+    const a = reconcileAutomatic(state(), queue([deletion, edit]), [entry(deletion.id, 20, true)], null);
+    assert.equal(a.state.meses['2026-10'].receitas.length, 0);
+    assert.deepEqual(a.queue.outbox, []);
+    assert.deepEqual(a.queue.automaticHistory[0].local.operations, [deletion, edit]);
+    assert.equal(a.queue.automaticHistory[0].uploaded, false);
+});
+
 test('a rejected deletion left by an older client is completed automatically from its server conflict', () => {
     const rejected = { operationId: op(true).id, entityKey: recordEntityKey(entry()), local: op(true).value, remote: entry() };
     const a = reconcileAutomatic(state(), queue(), [entry()], null, [rejected]);

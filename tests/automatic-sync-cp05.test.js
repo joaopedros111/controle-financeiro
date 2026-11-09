@@ -16,8 +16,10 @@ async function setup(t) {
     async function connect(adapter, session) {
         const statuses = [], client = { ...backend.client };
         const sync = session.attachSync({ client, readLegacyMetadata: () => ({}),
-            connectivity: { navigator: { onLine: false } }, onAccount() {}, onState() {},
+            connectivity: { navigator: { onLine: true } }, onAccount() {}, onState() {},
             onStatus: (...args) => statuses.push(args) });
+        // These races drive each cycle explicitly; offline must not stand in for a paused scheduler.
+        sync.request = () => {};
         await sync.useAccount({ uid: owner.uid });
         const h = { adapter, session, sync, client, owner, statuses, confirmations: 0 };
         const confirm = session.service.confirmarSincronizacao.bind(session.service);
@@ -29,7 +31,7 @@ async function setup(t) {
     h.statuses.length = 0; h.confirmations = 0;
     return { h, peer, backend };
 }
-const cycle = h => h.sync.cycle(h.sync.session);
+const cycle = h => { h.sync.session.again = false; return h.sync.cycle(h.sync.session); };
 const state = h => h.session.db.ler(`estado:${owner.uid}`);
 const queue = h => h.session.service.lerFila(owner.uid);
 function retainSnapshot(t, h, call) {

@@ -3,6 +3,7 @@ import { mkdtemp } from 'node:fs/promises';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
 import { recordEntityKey } from '../sync-core.js';
+import { nativeVisibilityBrowser } from './fixtures/native-visibility-browser.mjs';
 const project = 'demo-controle-financeiro-google-only';
 const authURL = 'http://127.0.0.1:9199';
 if (process.env.LOCAL_TEST_GOOGLE_ACCOUNT !== '1' || process.env.FIRESTORE_EMULATOR_HOST !== '127.0.0.1:8180'
@@ -76,7 +77,7 @@ async function zero(page) {
     expect(await page.locator('#lista-orcamentos').textContent()).toBe('');
 }
 async function start(context, page) {
-    await setup(context, page); await page.goto('/');
+    await setup(context, page); await page.goto(new URL('/', process.env.LOCAL_TEST_BASE_URL).href);
     // Static HTML already enables the button before its handlers exist. Await real bootstrap.
     await expect(page.locator('html')).not.toHaveClass(/app-inicializando/);
     await expect.poll(() => page.evaluate(() => window.__authSubscriptions)).toBe(1);
@@ -587,4 +588,136 @@ test('automatic local access: native cleanup removes obsolete credentials and fe
     expect(result.credentialsGone && result.intactAfterMigration && result.rejected && result.preservedOnRace).toBe(true);
     expect(result.removed).toEqual(['synthetic-pending-A']); expect([result.a, result.queueA, result.archiveA, result.lateA]).toEqual([null, null, null, null]);
     expect(result.b).toEqual(result.state); expect(result.queueB).toEqual(result.queue); expect(result.archiveB).toEqual({ id: 'synthetic-pending-B' });
+});
+
+async function networkDocuments(request, uid, collection) {
+    const response = await request.get(`http://127.0.0.1:8180/v1/projects/${project}/databases/(default)/documents/users/${uid}/${collection}`,
+        { headers: { Authorization: 'Bearer owner' } });
+    expect([200, 404]).toContain(response.status()); return response.status() === 404 ? [] : ((await response.json()).documents || []);
+}
+const pendingPayload = queue => queue.outbox.map(({ id, entityKey, value, baseRevision }) => ({ id, entityKey, value, baseRevision }));
+const documentIds = documents => documents.map(item => decodeURIComponent(item.name.split('/').at(-1))).sort();
+async function holdSyntheticFirestore(context) {
+    const pattern = /^http:\/\/127\.0\.0\.1:8180\//, held = new Set(); let blocking = true, intercepted = 0;
+    const handler = route => {
+        if (!blocking) return route.continue();
+        intercepted++; return new Promise(resolve => held.add({ route, resolve }));
+    };
+    await context.route(pattern, handler);
+    const release = async (abort = false) => {
+        blocking = false; const batch = [...held]; held.clear();
+        await Promise.all(batch.map(async ({ route, resolve }) => {
+            try { await (abort ? route.abort('internetdisconnected') : route.continue()); } catch {} finally { resolve(); }
+        }));
+    };
+    return { get intercepted() { return intercepted; }, release,
+        close: async () => { await release(true); await context.unroute(pattern, handler); } };
+}
+
+test('unstable network: iPhone XR Chromium simulation keeps offline tombstones and reconnects on CDP 3G', async ({ browser, request }) => {
+    // Mobile Chromium emulation exercises viewport/touch/network behavior; it is not Safari coverage.
+    const mobile = await browser.newContext({ baseURL: process.env.LOCAL_TEST_BASE_URL, serviceWorkers: 'block',
+        viewport: { width: 414, height: 896 }, isMobile: true, hasTouch: true,
+        userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1' });
+    const page = await mobile.newPage(), cdp = await mobile.newCDPSession(page), a = await account(request);
+    const threeG = { offline: false, latency: 300, downloadThroughput: 750_000 / 8, uploadThroughput: 250_000 / 8, connectionType: 'cellular3g' };
+    try {
+        await start(mobile, page); await signIn(page, a); await cdp.send('Network.enable'); await cdp.send('Network.emulateNetworkConditions', threeG);
+        await addIncome(page, 'SYNTHETIC 3G ORIGINAL'); await synced(page);
+        const originalIds = documentIds(await networkDocuments(request, a.uid, 'operations'));
+        await mobile.setOffline(true); expect(await page.evaluate(() => navigator.onLine)).toBe(false);
+        if (!await page.locator('#conteudo-receitas').isVisible()) await page.locator('[aria-controls="conteudo-receitas"]').click();
+        await page.locator('.receita').filter({ hasText: 'SYNTHETIC 3G ORIGINAL' }).locator('.remover-receita').click();
+        await addIncome(page, 'SYNTHETIC 3G OFFLINE', '47');
+        await expect.poll(async () => (await stored(page, `fila:${a.uid}`)).outbox.length).toBe(2);
+        const pending = pendingPayload(await stored(page, `fila:${a.uid}`)); expect(pending.filter(op => op.value.deleted)).toHaveLength(1);
+        expect(await remoteRecordCount(request, a.uid)).toBe(1); await expect(page.locator('main.container')).toBeVisible();
+        expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
+        await mobile.setOffline(false); await cdp.send('Network.emulateNetworkConditions', threeG); await page.bringToFront(); await synced(page);
+        expect((await stored(page, `fila:${a.uid}`)).outbox).toEqual([]);
+        const records = await networkDocuments(request, a.uid, 'records'); expect(records).toHaveLength(2);
+        expect(records.filter(item => item.fields.deleted.booleanValue)).toHaveLength(1);
+        expect(documentIds(await networkDocuments(request, a.uid, 'operations'))).toEqual([...originalIds, ...pending.map(op => op.id)].sort());
+        await expect(page.locator('.receita')).toHaveCount(1); await expect(page.locator('.receita')).toContainText('SYNTHETIC 3G OFFLINE');
+    } finally { await mobile.setOffline(false).catch(() => {}); await cdp.detach().catch(() => {}); await mobile.close(); }
+});
+
+const visibilityTest = test.extend({
+    context: async ({}, use, info) => {
+        const native = await nativeVisibilityBrowser(info.project.use.channel);
+        try { await use(native.context); }
+        finally {
+            try {
+                await info.attach('native-visibility-browser', { body: JSON.stringify({ profile: native.profile,
+                    version: native.browser.version(), focusEmulation: false }), contentType: 'application/json' });
+            } finally { await native.close(); }
+        }
+    },
+    page: async ({ context }, use) => {
+        await context.addInitScript(() => {
+            window.__nativeVisibilityTransitions = [];
+            document.addEventListener('visibilitychange', event => window.__nativeVisibilityTransitions.push({
+                state: document.visibilityState, trusted: event.isTrusted
+            }));
+        });
+        await use(context.pages()[0] || await context.newPage());
+    }
+});
+
+async function expectNativeVisibility(page, state) {
+    await expect.poll(() => page.evaluate(() => document.visibilityState)).toBe(state);
+    await expect.poll(() => page.evaluate(state => window.__nativeVisibilityTransitions.some(event =>
+        event.state === state && event.trusted === true), state)).toBe(true);
+}
+
+visibilityTest('unstable network: apparently online Firestore blackhole times out without blocking local edits and resumes once on foreground', async ({ context, page, request }) => {
+    // The production remote deadline is 45s; this test crosses it once and then proves recovery.
+    test.setTimeout(100_000);
+    const a = await account(request); await start(context, page); await signIn(page, a);
+    const gate = await holdSyntheticFirestore(context); let background;
+    try {
+        await addIncome(page, 'SYNTHETIC BLACKHOLE FIRST', '31');
+        await expect.poll(() => gate.intercepted).toBeGreaterThan(0);
+        expect(await page.evaluate(() => navigator.onLine)).toBe(true); await expect(page.locator('main.container')).toBeVisible();
+        await openOptions(page); await expect(page.locator('#diagnostico-app')).toContainText('Build da interface:'); await closeOptions(page);
+        await addIncome(page, 'SYNTHETIC BLACKHOLE SECOND', '62');
+        await expect.poll(async () => (await stored(page, `fila:${a.uid}`)).outbox.length).toBe(2);
+        const state = (await stored(page, `estado:${a.uid}`)).dados, pending = pendingPayload(await stored(page, `fila:${a.uid}`));
+        await expect(page.locator('#estado-sincronizacao')).toContainText('Conexão lenta ou indisponível', { timeout: 52_000 });
+        expect((await stored(page, `estado:${a.uid}`)).dados).toEqual(state);
+        expect(pendingPayload(await stored(page, `fila:${a.uid}`))).toEqual(pending);
+        expect(await remoteRecordCount(request, a.uid)).toBe(0); await expect(page.locator('#adicionar-receita')).toBeEnabled();
+        background = await context.newPage(); await background.bringToFront();
+        await expectNativeVisibility(page, 'hidden');
+        await gate.release(); await page.bringToFront();
+        await expectNativeVisibility(page, 'visible'); await synced(page);
+        expect((await stored(page, `fila:${a.uid}`)).outbox).toEqual([]); expect((await stored(page, `estado:${a.uid}`)).dados).toEqual(state);
+        expect(await remoteRecordCount(request, a.uid)).toBe(2);
+        expect(documentIds(await networkDocuments(request, a.uid, 'operations'))).toEqual(pending.map(op => op.id).sort());
+        await expect(page.locator('.receita')).toHaveCount(2);
+    } finally { await gate.close(); await background?.close(); }
+});
+
+visibilityTest('unstable network: reload preserves exact pending edits while Firestore is held and foreground recovers without duplicates', async ({ context, page, request }) => {
+    const a = await account(request); await start(context, page); await signIn(page, a);
+    const gate = await holdSyntheticFirestore(context); let background;
+    try {
+        await addIncome(page, 'SYNTHETIC PENDING BEFORE RELOAD', '19');
+        await expect.poll(async () => (await stored(page, `fila:${a.uid}`)).outbox.length).toBe(1);
+        const pendingBefore = pendingPayload(await stored(page, `fila:${a.uid}`));
+        await page.reload({ waitUntil: 'domcontentloaded' }); await expect(page.locator('main.container')).toBeVisible();
+        await expect(page.locator('#adicionar-receita')).toBeEnabled(); expect(await page.evaluate(() => navigator.onLine)).toBe(true);
+        expect(pendingPayload(await stored(page, `fila:${a.uid}`))).toEqual(pendingBefore);
+        await addIncome(page, 'SYNTHETIC PENDING AFTER RELOAD', '38');
+        await expect.poll(async () => (await stored(page, `fila:${a.uid}`)).outbox.length).toBe(2);
+        const pending = pendingPayload(await stored(page, `fila:${a.uid}`)); expect(pending).toEqual(expect.arrayContaining(pendingBefore));
+        await expect(page.locator('#estado-sincronizacao')).not.toHaveText('Sincronizado'); expect(await remoteRecordCount(request, a.uid)).toBe(0);
+        background = await context.newPage(); await background.bringToFront();
+        await expectNativeVisibility(page, 'hidden');
+        await gate.release(); await page.bringToFront();
+        await expectNativeVisibility(page, 'visible'); await synced(page);
+        expect((await stored(page, `fila:${a.uid}`)).outbox).toEqual([]); expect(await remoteRecordCount(request, a.uid)).toBe(2);
+        expect(documentIds(await networkDocuments(request, a.uid, 'operations'))).toEqual(pending.map(op => op.id).sort());
+        await expect(page.locator('.receita')).toHaveCount(2);
+    } finally { await gate.close(); await background?.close(); }
 });

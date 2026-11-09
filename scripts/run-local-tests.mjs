@@ -75,7 +75,7 @@ if (browser) {
             connectAuthEmulator(auth,"http://127.0.0.1:${authPort}",{disableWarnings:true});
             await auth.authStateReady();await signInWithEmailAndPassword(auth,email,'synthetic-password-only');
         }
-        export function productionClientForTest(config){requireDemo(config);return production(config);}
+        export function productionClientForTest(config){requireDemo(config);return production(config,{createFirestore:()=>getFirestore()});}
         export function criarFirebaseSync(config) {
             if(config.projectId!=="${project}" || !["127.0.0.1","localhost"].includes(location.hostname)) throw new Error("Ambiente local inválido");
             // Deterministic regression gate, armed only by the dedicated synthetic test.
@@ -159,7 +159,14 @@ if (browser) {
             // Synthetic blackhole includes requests initiated by the SW, which Playwright
             // routing alone cannot intercept. Closing the synthetic context aborts these sockets.
             if (accountBrowser && req.headers.cookie?.includes('cf-synthetic-blackhole=1')) { blackholedPaths.push(req.url); console.log('SYNTHETIC_SW_NETWORK_BLACKHOLE',req.url); req.socket.setTimeout(0); return; }
-            const pathname = decodeURIComponent(new URL(req.url, "http://127.0.0.1").pathname);
+            const localURL = new URL(req.url, "http://127.0.0.1");
+            const pathname = decodeURIComponent(localURL.pathname);
+            // Visual/local persistence fixtures explicitly opt into the existing
+            // loopback QA mode; the account application keeps its Google gate.
+            if (!accountBrowser && pathname === '/local-only.html' && localURL.searchParams.get('indexeddb_homologacao') !== '1') {
+                localURL.searchParams.set('indexeddb_homologacao', '1');
+                res.writeHead(302, { Location: localURL.pathname + localURL.search }).end(); return;
+            }
             if (accountBrowser && pathname === '/synthetic-network-evidence') { res.writeHead(200, {'Content-Type':'application/json'}).end(JSON.stringify(blackholedPaths)); return; }
             const file = path.resolve(site, `.${pathname === "/" ? "/index.html" : pathname}`);
             if (!file.startsWith(site + path.sep)) { res.writeHead(403).end(); return; }

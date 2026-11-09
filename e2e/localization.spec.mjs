@@ -17,7 +17,7 @@ test('six languages switch without reload, preserve user data and do not write f
  await prepare(context,page);
  await page.locator('#abrir-ajustes').click();
  const before=await page.evaluate(async()=>{
-  const db=await new Promise((resolve,reject)=>{const req=indexedDB.open('controleFinanceiro:integridade:v1',1);req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error);});
+  const db=await new Promise((resolve,reject)=>{const req=indexedDB.open('controleFinanceiro:integridade:v1');req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error);});
   try{return await new Promise((resolve,reject)=>{const tx=db.transaction('documents','readonly'),r=tx.objectStore('documents').getAll();tx.oncomplete=()=>resolve(JSON.stringify(r.result));tx.onabort=()=>reject(tx.error);});}finally{db.close();}
  });
  await page.evaluate(()=>{
@@ -52,7 +52,7 @@ test('six languages switch without reload, preserve user data and do not write f
   expect(result.identity).toBe('unchanged');
  }
  const after=await page.evaluate(async()=>{
-  const db=await new Promise(resolve=>{const req=indexedDB.open('controleFinanceiro:integridade:v1',1);req.onsuccess=()=>resolve(req.result);});
+  const db=await new Promise((resolve,reject)=>{const req=indexedDB.open('controleFinanceiro:integridade:v1');req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error);});
   try{return await new Promise(resolve=>{const tx=db.transaction('documents','readonly'),r=tx.objectStore('documents').getAll();tx.oncomplete=()=>resolve(JSON.stringify(r.result));});}finally{db.close();}
  });
  expect(after).toBe(before);

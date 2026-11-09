@@ -10,7 +10,8 @@ async function setup(online = false) {
     const stores = new Map(), observers = new Set(), clients = new Map(); let user = null, view;
     const notify = next => { user = next; for (const fn of [...observers]) fn(user); };
     const client = new Proxy({ ready: async () => user, onUser(fn) { observers.add(fn); queueMicrotask(() => { if (observers.has(fn)) fn(user); }); return () => observers.delete(fn); }, protocolVersion: 2 }, {
-        get(target, key) { if (key in target) return target[key]; if (typeof key === 'symbol') return undefined;
+        get(target, key) { if (key === 'authenticatedUser') return () => user;
+            if (key in target) return target[key]; if (typeof key === 'symbol') return undefined;
             return (uid, ...args) => { if (uid !== user?.uid) throw new Error('Synthetic auth mismatch'); if (!clients.has(uid)) clients.set(uid, realContractClient({ projectId: config.projectId, uid }).client); return clients.get(uid)[key]?.(uid, ...args); };
         }
     });
