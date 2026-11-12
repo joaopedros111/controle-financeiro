@@ -109,6 +109,36 @@ test('Google account: login, real edits/settings, confirmed logout, zero reload 
     const recovered = await stored(page, `estado:${user.uid}`); expect(recovered.dados).toEqual(before.dados);
 });
 
+test('same-owner local cache promotion to restored Google Auth preserves an open financial draft', async ({ context, page, request }) => {
+    await context.addInitScript(() => { window.__holdAuthBootstrap = sessionStorage.getItem('synthetic-hold-restored-auth') === '1'; });
+    const a = await account(request); await start(context, page); await signIn(page, a);
+    const gate = await holdSyntheticFirestore(context);
+    try {
+        await addIncome(page, 'SYNTHETIC DURABLE BEFORE HANDOFF', '19');
+        await expect.poll(async () => (await stored(page, `fila:${a.uid}`)).outbox.length).toBe(1);
+        const before = pendingPayload(await stored(page, `fila:${a.uid}`));
+        await page.evaluate(() => sessionStorage.setItem('synthetic-hold-restored-auth', '1'));
+        await page.reload({ waitUntil: 'domcontentloaded' });
+        await expect(page.locator('#adicionar-receita')).toBeEnabled();
+        await expect.poll(() => page.evaluate(() => typeof window.__releaseAuthBootstrap)).toBe('function');
+        await page.locator('#adicionar-receita').click();
+        await page.locator('#receita-nome').fill('SYNTHETIC DRAFT DURING HANDOFF');
+        await page.locator('#receita-valor').fill('38');
+        await page.evaluate(() => window.__releaseAuthBootstrap());
+        await expect(page.locator('#conta-sincronizacao')).toContainText(a.email);
+        await expect(page.locator('#adicionar-receita')).toBeEnabled();
+        await expect(page.locator('#dialogo-receita')).toBeVisible();
+        await expect(page.locator('#receita-nome')).toHaveValue('SYNTHETIC DRAFT DURING HANDOFF');
+        await expect(page.locator('#receita-valor')).toHaveValue('38');
+        await page.locator('#receita-repetir').uncheck(); await page.locator('#form-receita button[type="submit"]').click();
+        await expect.poll(async () => (await stored(page, `fila:${a.uid}`)).outbox.length).toBe(2);
+        expect(pendingPayload(await stored(page, `fila:${a.uid}`))).toEqual(expect.arrayContaining(before));
+        await gate.release(); await synced(page);
+        expect(await remoteRecordCount(request, a.uid)).toBe(2);
+        await expect(page.locator('.receita')).toHaveCount(2);
+    } finally { await gate.close(); }
+});
+
 test('offline logout preserves pending operations and A-B-A isolates owners then recovers pending ACKs', async ({ context, page, request }) => {
     const a = await account(request), b = await account(request, 'B'); await start(context, page); await signIn(page, a);
     await context.setOffline(true); await addIncome(page, 'SYNTHETIC PENDING');
@@ -698,7 +728,31 @@ visibilityTest('unstable network: apparently online Firestore blackhole times ou
     } finally { await gate.close(); await background?.close(); }
 });
 
-visibilityTest('unstable network: reload preserves exact pending edits while Firestore is held and foreground recovers without duplicates', async ({ context, page, request }) => {
+visibilityTest('unstable network: reload preserves exact pending edits while Firestore is held and foreground recovers without duplicates', async ({ context, page, request }, info) => {
+    const diagnosticEvents = [];
+    await context.exposeBinding('__reportReloadDialog', (_source, event) => diagnosticEvents.push(event));
+    await context.addInitScript(() => {
+        const events = window.__reloadDialogEvents = [];
+        const record = (kind, extra = {}) => {
+            events.push({ at: performance.now(), kind, ready: document.readyState, visible: document.visibilityState,
+                initializing: document.documentElement?.classList.contains('app-inicializando'),
+                dialogOpen: document.getElementById('dialogo-receita')?.open,
+                buttonDisabled: document.getElementById('adicionar-receita')?.disabled, ...extra });
+            if (events.length > 100) events.shift();
+            void window.__reportReloadDialog(events.at(-1));
+        };
+        for (const method of ['showModal', 'close']) {
+            const original = HTMLDialogElement.prototype[method];
+            HTMLDialogElement.prototype[method] = function (...args) {
+                if (this.id === 'dialogo-receita') record(method, { stack: new Error().stack });
+                return original.apply(this, args);
+            };
+        }
+        for (const type of ['pointerdown', 'pointerup', 'click']) document.addEventListener(type, event => {
+            if (event.target?.closest?.('#adicionar-receita,#dialogo-receita')) record(type, { target: event.target.id, x: event.clientX, y: event.clientY });
+        }, true);
+        document.addEventListener('visibilitychange', () => record('visibilitychange'));
+    });
     const a = await account(request); await start(context, page); await signIn(page, a);
     const gate = await holdSyntheticFirestore(context); let background;
     try {
@@ -708,7 +762,21 @@ visibilityTest('unstable network: reload preserves exact pending edits while Fir
         await page.reload({ waitUntil: 'domcontentloaded' }); await expect(page.locator('main.container')).toBeVisible();
         await expect(page.locator('#adicionar-receita')).toBeEnabled(); expect(await page.evaluate(() => navigator.onLine)).toBe(true);
         expect(pendingPayload(await stored(page, `fila:${a.uid}`))).toEqual(pendingBefore);
-        await addIncome(page, 'SYNTHETIC PENDING AFTER RELOAD', '38');
+        await closeOptions(page); await page.locator('#adicionar-receita').click();
+        try { await expect(page.locator('#dialogo-receita')).toBeVisible({ timeout: 3000 }); }
+        catch (error) {
+            diagnosticEvents.push({ kind: 'failed-dialog-state', state: await page.evaluate(() => ({
+                ready: document.readyState, visible: document.visibilityState, initializing: document.documentElement.className,
+                dialogOpen: document.getElementById('dialogo-receita').open,
+                buttonDisabled: document.getElementById('adicionar-receita').disabled,
+                observerCount: window.__authSubscriptions,
+                status: document.getElementById('estado-sincronizacao').textContent
+            })) });
+            throw error;
+        }
+        await page.locator('#receita-nome').fill('SYNTHETIC PENDING AFTER RELOAD'); await page.locator('#receita-valor').fill('38');
+        await page.locator('#receita-repetir').uncheck(); await page.locator('#form-receita button[type="submit"]').click();
+        await expect(page.locator('#dialogo-receita')).not.toBeVisible();
         await expect.poll(async () => (await stored(page, `fila:${a.uid}`)).outbox.length).toBe(2);
         const pending = pendingPayload(await stored(page, `fila:${a.uid}`)); expect(pending).toEqual(expect.arrayContaining(pendingBefore));
         await expect(page.locator('#estado-sincronizacao')).not.toHaveText('Sincronizado'); expect(await remoteRecordCount(request, a.uid)).toBe(0);
@@ -719,5 +787,8 @@ visibilityTest('unstable network: reload preserves exact pending edits while Fir
         expect((await stored(page, `fila:${a.uid}`)).outbox).toEqual([]); expect(await remoteRecordCount(request, a.uid)).toBe(2);
         expect(documentIds(await networkDocuments(request, a.uid, 'operations'))).toEqual(pending.map(op => op.id).sort());
         await expect(page.locator('.receita')).toHaveCount(2);
-    } finally { await gate.close(); await background?.close(); }
+    } finally {
+        await info.attach('reload-dialog-events', { body: JSON.stringify(diagnosticEvents), contentType: 'application/json' });
+        await gate.close(); await background?.close();
+    }
 });

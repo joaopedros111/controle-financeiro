@@ -60,11 +60,12 @@ test("Firestore rules have no public grants and deny unknown user paths", async 
     assert.doesNotMatch(rules, /allow\s+read\s*,\s*write\s*:\s*if\s+true/);
 });
 
-test('generation barrier atomically publishes complete restores, fences legacy/offline clients and retains recovery namespaces', { skip: !host && 'Requires Firestore Emulator' }, async () => {
+for (const rulesFile of ['firestore.rules', 'firestore.integrity.rules']) test(`generation barrier, restore and recovery: ${rulesFile}`, { skip: !host && 'Requires Firestore Emulator' }, async () => {
     const [hostname, port] = host.split(':');
     assert.match(hostname, /^(127\.0\.0\.1|localhost)$/);
-    const rules = await readFile(new URL('../firestore.rules', import.meta.url), 'utf8');
-    const env = await initializeTestEnvironment({ projectId: 'demo-controle-financeiro', firestore: { host: hostname, port: Number(port), rules } });
+    const rules = await readFile(new URL(`../${rulesFile}`, import.meta.url), 'utf8');
+    const env = await initializeTestEnvironment({ projectId: rulesFile === 'firestore.rules' ? 'demo-controle-financeiro' : 'demo-generation-integrity', firestore: { host: hostname, port: Number(port), rules } });
+    await env.clearFirestore();
     try {
         const uid = 'generation-owner', db = env.authenticatedContext(uid).firestore();
         const legacy = {
@@ -78,9 +79,9 @@ test('generation barrier atomically publishes complete restores, fences legacy/o
         } }, orcamentos: { padrao: { Casa: 200 }, meses: { '2026-10': { Casa: 150 } } } });
         const first = { month: '2026-10', type: 'receitas', id: 'same', record: { id: 'same', nome: 'Old', valor: 999 }, deleted: false, revision: 'old', updatedAt: serverTimestamp() };
         const legacyRef = doc(db, 'users', uid, 'records', financialKey(first));
-        await setDoc(legacyRef, first);
+        await env.withSecurityRulesDisabled(context => setDoc(doc(context.firestore(), 'users', uid, 'records', financialKey(first)), first));
         const dead = { month: first.month, type: first.type, id: 'deleted', deleted: true, revision: 'dead', updatedAt: serverTimestamp() };
-        await setDoc(doc(db, 'users', uid, 'records', financialKey(dead)), dead);
+        await env.withSecurityRulesDisabled(context => setDoc(doc(context.firestore(), 'users', uid, 'records', financialKey(dead)), dead));
         const job = { generation: 'restore-one', baseGeneration: 'legacy', state: raw };
         let checks = 0;
         await assert.rejects(client.publishRestore(uid, job, () => ++checks < 6), { code: 'persistence/cancelled' });
@@ -107,8 +108,11 @@ test('generation barrier atomically publishes complete restores, fences legacy/o
         const create = { ...makeOperation(financialKey(fresh), fresh, null), generation: job.generation };
         await client.commit(uid, create);
         const edit = { ...makeOperation(create.entityKey, { ...fresh, record: { ...fresh.record, valor: 30 } }, create.id), generation: job.generation };
-        await client.commit(uid, edit);
-        const deletion = { ...makeOperation(create.entityKey, { month: fresh.month, type: fresh.type, id: fresh.id, deleted: true }, edit.id), generation: job.generation };
+        const rival = { ...makeOperation(create.entityKey, { ...fresh, record: { ...fresh.record, valor: 40 } }, create.id), generation: job.generation };
+        const race = await Promise.all([client.commit(uid, edit), client.commit(uid, rival)]);
+        assert.equal(race.filter(result => result.conflict).length, 1);
+        const winner = (await client.generationSnapshot(uid)).records.find(item => item.id === fresh.id);
+        const deletion = { ...makeOperation(create.entityKey, { month: fresh.month, type: fresh.type, id: fresh.id, deleted: true }, winner.revision), generation: job.generation };
         await client.commit(uid, deletion);
         assert.equal((await client.generationSnapshot(uid)).records.find(item => item.id === fresh.id).deleted, true);
         const second = { generation: 'restore-two', baseGeneration: job.generation, state: raw };

@@ -5135,12 +5135,25 @@ if (!IDB_HOMOLOGACAO && $("entrar-google") && $("sair-google") && firebaseConfig
             waitLocal: async () => { let pending; do { pending = idbPendente; await pending; } while (pending !== idbPendente); },
             storageBlocked: () => (idbBloqueado && !politicaDadosConta?.closing) || recuperacaoFinanceira.protegido,
             onTransition: user => {
+                // The same owner may already be editing the authorized local
+                // cache while persisted Google Auth finishes restoring. Keep
+                // that draft during the handoff, but fence writes until the
+                // Google-owned durable pair is hydrated. Other owners/logout
+                // still clear every financial interaction below.
+                const preserveLocalDraft = user && !user.localOnly && contaFinanceiraVisivel
+                    && politicaDadosConta?.access?.kind === 'local'
+                    && politicaDadosConta.access.uid === user.uid && !politicaDadosConta.closing
+                    && client?.authenticatedUser?.()?.uid === user.uid
+                    && chaveEstadoAtual === chaveLocalConta(user.uid);
                 recoverSources.hidden = true;
                 migrationPanel.hidden = true; migrationSources.replaceChildren(); reviewedMigration = null; importSources.hidden = true; delete migrationPanel.dataset.review;
                 renderAvisosFinanceiros({ recoveryNotices: [], compatibilityBlocked: false });
-                ocultarDadosFinanceiros(); resetAccountForms(); iniciarCarregamentoConta(); idbBloqueado = true;
+                if (preserveLocalDraft) {
+                    contaFinanceiraVisivel = false; idbBloqueado = true; atualizarPermissaoFinanceira();
+                } else { ocultarDadosFinanceiros(); resetAccountForms(); }
+                iniciarCarregamentoConta(); idbBloqueado = true;
                 chaveEstadoAtual = user ? chaveLocalConta(user.uid) : CHAVE_ESTADO;
-                estado = normalizarEstado(null); idbBase = structuredClone(estadoParaSalvar()); renderTudo(false);
+                if (!preserveLocalDraft) { estado = normalizarEstado(null); idbBase = structuredClone(estadoParaSalvar()); renderTudo(false); }
                 login.hidden = !!user && !user.localOnly; logout.hidden = !user || !!user.localOnly;
                 account.textContent = user?.email || user?.displayName || '';
                 $("ultima-sincronizacao").textContent = ''; delete $("ultima-sincronizacao").dataset.i18nDate;

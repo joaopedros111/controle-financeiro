@@ -6,13 +6,15 @@ if (process.env.LOCAL_TEST_EMULATORS !== "1" || process.env.FIRESTORE_EMULATOR_H
 }
 export default defineConfig({
     testDir: "./e2e", workers: 1, retries: 0, maxFailures: 1, timeout: 60_000,
-    ...(process.env.LOCAL_TEST_GOOGLE_ACCOUNT === "1"
+    ...(process.env.LOCAL_TEST_COMPATIBILITY === '1'
+        ? { testMatch: '**/client-compatibility.spec.mjs' }
+        : process.env.LOCAL_TEST_GOOGLE_ACCOUNT === "1"
         ? { testMatch: "**/google-account-policy.spec.mjs" }
         : process.env.LOCAL_TEST_EPOCH_REALTIME === '1'
         ? { testMatch: '**/epoch-realtime.spec.mjs' }
         : process.env.LOCAL_TEST_EPOCH_BROWSER === '1'
         ? { testMatch: '**/epoch-queue.spec.mjs' }
-        : { testIgnore: ['**/epoch-queue.spec.mjs', '**/epoch-realtime.spec.mjs', '**/google-account-policy.spec.mjs'] }),
+        : { testIgnore: ['**/epoch-queue.spec.mjs', '**/epoch-realtime.spec.mjs', '**/google-account-policy.spec.mjs', '**/client-compatibility.spec.mjs'] }),
     expect: { timeout: 15_000 }, reporter: "list",
     outputDir: `${process.env.LOCAL_TEST_OUTPUT}/browser-results`,
     use: { baseURL: process.env.LOCAL_TEST_BASE_URL, serviceWorkers: "block", trace: "retain-on-failure" },

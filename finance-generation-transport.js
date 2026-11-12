@@ -174,20 +174,37 @@ export function withFinanceGenerations(legacy, db, ensureUser, sdk = { collectio
             const generation = operation.generation || 'legacy';
             if (generation === 'legacy') { await assertActive(uid, generation); return legacy.commit(uid, operation); }
             if (!validConflictRecord(operation.value) || operation.entityKey !== recordEntityKey(operation.value)) throw fail('sync/invalid-data', 'Operação inválida.');
-            return runTransaction(db, async tx => {
+            const apply = () => runTransaction(db, async tx => {
                 await assertActive(uid, generation, tx);
                 const target = reference(uid, generation, 'records', operation.entityKey), receipt = reference(uid, generation, 'operations', operation.id);
                 const [prior, current] = await Promise.all([tx.get(receipt), tx.get(target)]);
                 const old = current.exists() ? current.data().value : null;
-                if (prior.exists()) return { acknowledged: true, duplicate: true, conflict: prior.data().status === 'conflict', remote: old };
+                if (prior.exists()) {
+                    const status = prior.data().status, receipt = prior.data().local;
+                    if (!['applied', 'conflict'].includes(status)) throw fail('sync/invalid-ack', 'Comprovante inválido.');
+                    const { revision, updatedAt, ...currentValue } = old || {};
+                    if (status === 'applied' && (receipt && (receipt.entityKey !== operation.entityKey || receipt.baseRevision !== operation.baseRevision
+                        || Object.hasOwn(receipt, 'value') && !recordsEquivalent(receipt.value, operation.value))
+                        || old?.revision === operation.id && !recordsEquivalent(currentValue, operation.value)))
+                        throw fail('sync/invalid-ack', 'Comprovante divergente; intenção local preservada.');
+                    return { acknowledged: true, duplicate: true, conflict: status === 'conflict', remote: old };
+                }
                 if ((old?.revision || null) !== operation.baseRevision || old?.deleted && !operation.value.deleted) {
                     tx.set(reference(uid, generation, 'conflicts', operation.id), { operationId: operation.id, entityKey: operation.entityKey, local: operation.value, remote: old, createdAt: serverTimestamp() });
                     tx.set(receipt, { status: 'conflict', createdAt: serverTimestamp() });
                     return { acknowledged: true, conflict: true, remote: old };
                 }
                 tx.set(target, { value: { ...operation.value, revision: operation.id, updatedAt: serverTimestamp() } });
-                tx.set(receipt, { status: 'applied', createdAt: serverTimestamp() });
+                tx.set(receipt, { status: 'applied', createdAt: serverTimestamp(),
+                    local: { entityKey: operation.entityKey, baseRevision: operation.baseRevision, value: operation.value } });
                 return { acknowledged: true };
+            });
+            // Same bounded reread as the legacy transport, including generation
+            // and UID fences on every attempt. Never turn a denial into an ACK.
+            return apply().catch(cause => {
+                if (cause.code !== 'permission-denied') throw cause;
+                ensureUser(uid);
+                return apply();
             });
         },
         async saveSettings(uid, value, baseRevision = null, canWrite = () => true, generation = 'legacy') {

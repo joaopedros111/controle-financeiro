@@ -1,6 +1,6 @@
 import { initializeApp } from "firebase/app";
 import { withFinanceGenerations } from "./finance-generation-transport.js";
-import { snapshotConfirmed, validConflictRecord, recordEntityKey, validSyncIdentity, unicodeWellFormed } from "./sync-core.js";
+import { snapshotConfirmed, validConflictRecord, recordEntityKey, validSyncIdentity, unicodeWellFormed, recordsEquivalent } from "./sync-core.js";
 import { initializeAuth, browserPopupRedirectResolver, GoogleAuthProvider, browserLocalPersistence, indexedDBLocalPersistence, browserSessionPersistence, signInWithPopup, signInWithRedirect, getRedirectResult, onAuthStateChanged, signOut } from "firebase/auth";
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, memoryLocalCache, getFirestore, collection, doc, getDocs, getDocsFromServer, getDoc, getDocFromServer, onSnapshot, runTransaction, serverTimestamp, query, orderBy, setDoc, Timestamp } from "firebase/firestore";
 
@@ -223,13 +223,23 @@ export function criarFirebaseSync(config, runtime = {}) {
                 || op.entityKey !== recordEntityKey(op.value)) throw new TypeError("Operação financeira inválida; os dados locais foram preservados.");
             const operationRef = doc(db, "users", uid, "operations", op.id);
             const recordRef = doc(db, "users", uid, "records", op.entityKey);
-            return runTransaction(db, async (tx) => {
+            const apply = () => runTransaction(db, async (tx) => {
                 ensureUser(uid);
                 const [prior, current] = await Promise.all([tx.get(operationRef), tx.get(recordRef)]);
                 ensureUser(uid);
                 if (prior.exists()) {
                     const status = prior.data().status;
                     if (!["applied", "conflict"].includes(status)) throw new Error("Confirmação remota de operação inválida.");
+                    if (status === 'applied') {
+                        const receipt = prior.data().local, old = current.exists() ? current.data() : null;
+                        const invalid = receipt && (receipt.entityKey !== op.entityKey || receipt.baseRevision !== op.baseRevision
+                            || Object.hasOwn(receipt, 'value') && !recordsEquivalent(receipt.value, op.value));
+                        const { revision, updatedAt, ...currentValue } = old || {};
+                        if (invalid || old?.revision === op.id && !recordsEquivalent(currentValue, op.value))
+                            throw Object.assign(new Error('Comprovante divergente; intenção local preservada.'), { code: 'sync/invalid-ack' });
+                        // Historical receipts lack the payload. Their old ACK
+                        // contract remains readable; deployment requires audit.
+                    }
                     return status === "conflict" ? { acknowledged: true, duplicate: true, conflict: true, remote: current.exists() ? current.data() : null }
                         : { acknowledged: true, duplicate: true };
                 }
@@ -241,8 +251,19 @@ export function criarFirebaseSync(config, runtime = {}) {
                     return { acknowledged: true, conflict: true, remote: old };
                 }
                 tx.set(recordRef, { ...op.value, revision: op.id, updatedAt: serverTimestamp() });
-                tx.set(operationRef, { status: "applied", createdAt: serverTimestamp() });
+                // Additive receipt: accepted by 1.1.109 rules and verified by the
+                // integrity candidate. Queue IDs and record envelopes stay stable.
+                tx.set(operationRef, { status: "applied", createdAt: serverTimestamp(),
+                    local: { entityKey: op.entityKey, baseRevision: op.baseRevision, value: op.value } });
                 return { acknowledged: true };
+            });
+            // Rules can reject a stale CAS before the SDK checks the transaction
+            // precondition. One fresh transaction records the conflict instead.
+            // A second denial propagates; the durable outbox is never discarded.
+            return apply().catch(cause => {
+                if (cause.code !== 'permission-denied') throw cause;
+                ensureUser(uid);
+                return apply();
             });
         },
         async saveAutomaticHistory(uid, item) {

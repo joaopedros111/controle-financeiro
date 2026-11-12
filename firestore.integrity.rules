@@ -1,0 +1,366 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function owner(uid) { return request.auth != null && request.auth.uid == uid; }
+    function bounded(data) { return data is map && data.size() <= 24 && data.keys().hasOnly(['month','type','id','record','deleted','revision','updatedAt','operationId','entityKey','baseRevision','status','createdAt','local','remote','theme','categories','budgets','version']); }
+    function validStamp(value) { return value is timestamp; }
+    function validRevision(data) {
+      return data.get('revision', null) is string
+        ? (data.get('revision', null).size() > 0 && data.get('revision', null).size() <= 128 && validStamp(data.get('updatedAt', null)))
+        : false;
+    }
+    function validSettingsRevision(data) {
+      return data.get('revision', null) is string
+        ? (data.get('revision', null).size() > 0 && data.get('revision', null).size() <= 128)
+        : false;
+    }
+    function validSettingsManifest(data) {
+      return data is map ? (data.keys().hasOnly(['version','theme','categoryCount','budgetCount','generation','revision'])
+        && data.keys().hasAll(['version','theme','categoryCount','budgetCount','generation','revision'])
+        ? (data.get('theme', null) is string ? (data.theme in ['claro','escuro','rosa','floresta','pangolim']
+          ? (data.get('version', null) is int ? (data.version == 4
+            ? (data.get('categoryCount', null) is int ? (data.categoryCount >= 0 && data.categoryCount <= 1000
+              ? (data.get('budgetCount', null) is int ? (data.budgetCount >= 0 && data.budgetCount <= data.categoryCount
+                ? (data.get('generation', null) is string ? (data.generation.size() > 0 && data.generation.size() <= 128 && validSettingsRevision(data) && data.generation == data.revision) : false)
+                : false) : false)
+              : false) : false)
+            : false) : false)
+          : false) : false)
+        : false) : false;
+    }
+    function validRecord(data, topId, type) {
+      return data is map ? (data.keys().hasOnly(['id','nome','valor','serie','categoria','pago','fixa','parcela','recebido'])
+        && data.keys().hasAll(['id','nome','valor'])
+        && (data.get('id', null) is string ? data.get('id', null) == topId : false)
+        && (data.get('nome', null) is string ? (data.get('nome', null).matches('.*[^\\s\\x{00A0}\\x{1680}\\x{2000}-\\x{200A}\\x{2028}\\x{2029}\\x{202F}\\x{205F}\\x{3000}\\x{FEFF}].*') && data.get('nome', null).size() <= 80) : false)
+        && (data.get('valor', null) is number ? (data.get('valor', null) >= 0 && data.get('valor', null) <= 17592186044416
+          && (((data.get('valor', null) * 100) % 1) < 0.000001 || ((data.get('valor', null) * 100) % 1) > 0.999999)) : false)
+        && (data.get('serie', null) == null ? true : (data.get('serie', null) is string ? data.get('serie', null).size() <= 128 : false))
+        && (!data.keys().hasAny(['categoria']) || (data.get('categoria', null) is string ? data.get('categoria', null).size() <= 40 : false))
+        && (!data.keys().hasAny(['pago']) || data.get('pago', null) is bool)
+        && (data.keys().hasAny(['recebido']) ? (data.get('recebido', null) is bool ? type == 'receitas' : false) : true)
+        && (!data.keys().hasAny(['fixa']) || data.get('fixa', null) is bool)
+        && (data.get('parcela', null) == null ? true : (data.get('parcela', null) is map
+          ? (data.get('parcela', null).keys().hasOnly(['atual','total']) && data.get('parcela', null).keys().hasAll(['atual','total'])
+            && (data.get('parcela', null).get('atual', null) is int && data.get('parcela', null).get('atual', null) >= 1)
+            && (data.get('parcela', null).get('total', null) is int && data.get('parcela', null).get('total', null) >= 2)
+            && data.get('parcela', null).get('atual', 0) <= data.get('parcela', null).get('total', 0))
+          : false))) : false;
+    }
+    function validRecordShape(data) {
+      return data is map ? (data.keys().hasOnly(['month','type','id','record','deleted','revision','updatedAt'])
+        ? (data.get('deleted', null) is bool ? (data.deleted
+          ? (data.keys().hasOnly(['month','type','id','deleted','revision','updatedAt'])
+            ? (data.keys().hasAll(['month','type','id','deleted','revision','updatedAt'])
+              ? (data.get('month', null) is string ? (data.month.matches('^(20[0-9]{2}|2100)-(0[1-9]|1[0-2])$')
+                ? (data.get('type', null) is string ? (data.type in ['receitas','despesas']
+                  ? (data.get('id', null) is string ? (data.id.size() > 0 && data.id.size() <= 128) : false) : false) : false) : false) : false)
+              : false) : false)
+          : (data.keys().hasOnly(['month','type','id','record','deleted','revision','updatedAt'])
+            ? (data.keys().hasAll(['month','type','id','record','deleted','revision','updatedAt'])
+              ? (data.get('month', null) is string ? (data.month.matches('^(20[0-9]{2}|2100)-(0[1-9]|1[0-2])$')
+                ? (data.get('type', null) is string ? (data.type in ['receitas','despesas']
+                  ? (data.get('id', null) is string ? (data.id.size() > 0 && data.id.size() <= 128 ? validRecord(data.get('record', null), data.id, data.type) : false) : false) : false) : false) : false) : false)
+              : false) : false)) : false)
+        : false) : false;
+    }
+    // Candidate only. firebase.json intentionally continues to reference the
+    // published rules until the rollout prerequisites have been reviewed.
+    function canonicalRecord(key, value) {
+      return validRecordShape(value) ? (validRevision(value)
+        && value.id.replace('[\\s\\x{00A0}\\x{1680}\\x{2000}-\\x{200A}\\x{2028}\\x{2029}\\x{202F}\\x{205F}\\x{3000}\\x{FEFF}]+', '').size() > 0
+        && value.id.replace('[\\x{10000}-\\x{10FFFF}]', 'aa').size() <= 128
+        && key == (value.month + '/' + value.type + '/' + value.id).toUtf8().toHexString().lower()) : false;
+    }
+    function recordPath(uid, generation, key) {
+      return generation == 'legacy'
+        ? /databases/$(database)/documents/users/$(uid)/records/$(key)
+        : /databases/$(database)/documents/users/$(uid)/financeGenerations/$(generation)/records/$(key);
+    }
+    function receiptPath(uid, generation, op) {
+      return generation == 'legacy'
+        ? /databases/$(database)/documents/users/$(uid)/operations/$(op)
+        : /databases/$(database)/documents/users/$(uid)/financeGenerations/$(generation)/operations/$(op);
+    }
+    function recordValue(data, generation) { return generation == 'legacy' ? data : data.value; }
+    function receiptShape(data) {
+      return data.keys().hasOnly(['status','createdAt','local'])
+        && data.keys().hasAll(['status','createdAt','local'])
+        && data.status == 'applied' && data.createdAt == request.time
+        && (data.get('local', null) is map ? (data.local.keys().hasOnly(['entityKey','baseRevision','value'])
+        && data.local.keys().hasAll(['entityKey','baseRevision','value'])
+        && data.local.entityKey is string && data.local.entityKey.size() <= 1500
+        && data.local.entityKey.matches('^[0-9a-f]+$')
+        && (data.local.baseRevision == null || data.local.baseRevision is string)
+        && (data.local.value is map ? (data.local.value.keys().hasOnly(['month','type','id','record','deleted'])
+          && data.local.value.keys().hasAll(['month','type','id','deleted'])) : false)) : false);
+    }
+    function validTransition(path, generation, next, base) {
+      let present = exists(path);
+      let old = present ? recordValue(get(path).data, generation) : {};
+      return present
+        ? (base == old.revision && next.revision != old.revision
+          && next.month == old.month && next.type == old.type && next.id == old.id
+          && (!old.deleted || next.deleted))
+        : base == null;
+    }
+    function pairedRecord(uid, generation, key, next) {
+      let path = recordPath(uid, generation, key);
+      let receipt = receiptPath(uid, generation, next.revision);
+      return next.revision.matches('^[A-Za-z0-9_-]{1,128}$')
+        && next.updatedAt == request.time && (!exists(receipt) && existsAfter(receipt)
+          ? (receiptShape(getAfter(receipt).data)
+            ? (getAfter(receipt).data.local.entityKey == key
+              && next.diff(getAfter(receipt).data.local.value).affectedKeys().hasOnly(['revision','updatedAt'])
+              && validTransition(path, generation, next, getAfter(receipt).data.local.baseRevision)) : false) : false);
+    }
+    function pairedReceipt(uid, generation, op, data) {
+      let path = recordPath(uid, generation, data.local.entityKey);
+      let next = existsAfter(path) ? recordValue(getAfter(path).data, generation) : {};
+      // A changed revision proves that this batch also writes the record. That
+      // write independently validates its shape, canonical key and receipt.
+      // Avoid re-evaluating the entire record schema on both batch writes.
+      return existsAfter(path) ? (next.get('revision', null) == op
+        && next.get('updatedAt', null) == request.time
+        && validTransition(path, generation, next, data.local.baseRevision)) : false;
+    }
+    function conflictPath(uid, generation, op) {
+      return generation == 'legacy'
+        ? /databases/$(database)/documents/users/$(uid)/conflicts/$(op)
+        : /databases/$(database)/documents/users/$(uid)/financeGenerations/$(generation)/conflicts/$(op);
+    }
+    function conflictReceiptShape(data) {
+      return data.keys().hasOnly(['status','createdAt']) && data.keys().hasAll(['status','createdAt'])
+        && data.status == 'conflict' && data.createdAt == request.time;
+    }
+    function pairedConflictReceipt(uid, generation, op, data) {
+      let path = conflictPath(uid, generation, op);
+      return conflictReceiptShape(data) && (!exists(path) && existsAfter(path)
+        ? (getAfter(path).data.get('operationId', '') == op && getAfter(path).data.get('createdAt', null) == request.time) : false);
+    }
+    function canonicalConflictValue(key, value) {
+      return value is map ? (value.get('deleted', null) is bool ? canonicalRecord(key, value.deleted
+        ? {'month':value.get('month', null),'type':value.get('type', null),'id':value.get('id', null),
+          'deleted':true,'revision':'conflict','updatedAt':request.time}
+        : {'month':value.get('month', null),'type':value.get('type', null),'id':value.get('id', null),
+          'record':value.get('record', null),'deleted':false,'revision':'conflict','updatedAt':request.time}) : false) : false;
+    }
+    function pairedConflictDocument(uid, generation, op, data) {
+      let receipt = receiptPath(uid, generation, op);
+      let record = recordPath(uid, generation, data.entityKey);
+      let remote = exists(record) ? recordValue(get(record).data, generation) : null;
+      return data.keys().hasOnly(['operationId','entityKey','local','remote','createdAt'])
+        && data.keys().hasAll(['operationId','entityKey','local','remote','createdAt'])
+        && data.operationId == op && op.size() > 0 && op.size() <= 128
+        && data.entityKey is string && data.entityKey.size() > 0 && data.entityKey.size() <= 1500
+        && canonicalConflictValue(data.entityKey, data.local) && data.remote == remote && data.createdAt == request.time
+        && (!exists(receipt) && existsAfter(receipt) ? conflictReceiptShape(getAfter(receipt).data) : false);
+    }
+    function automaticHistory(op, generation, data) {
+      return op.matches('^auto-history-[A-Za-z0-9_-]{1,115}$')
+        && data.get('status', '') == 'conflict' && data.get('createdAt', null) == request.time
+        && (data.get('local', null) is map ? (generation == 'legacy'
+          ? (data.keys().hasOnly(['status','operationId','entityKey','local','remote','createdAt'])
+            && data.keys().hasAll(['status','operationId','entityKey','local','remote','createdAt'])
+            && data.operationId == op && data.entityKey is string && data.entityKey.size() <= 1500
+            && data.local.keys().hasOnly(['policy','value']) && data.local.keys().hasAll(['policy','value'])
+            && data.local.policy is string && data.local.value is map && data.remote is map)
+          : (data.keys().hasOnly(['status','local','createdAt']) && data.keys().hasAll(['status','local','createdAt'])
+            && data.local.get('id', '') == op && data.local.get('entityKey', null) is string
+            && data.local.get('policy', null) is string)) : false);
+    }
+    function validCategorySetting(data) {
+      return data is map && data.keys().hasOnly(['name','budget']) && data.keys().hasAll(['name'])
+        && data.name is string && data.name.size() > 0 && data.name.size() <= 40
+        && data.name.replace('[\\s\\x{00A0}\\x{1680}\\x{2000}-\\x{200A}\\x{2028}\\x{2029}\\x{202F}\\x{205F}\\x{3000}\\x{FEFF}]+', '').size() > 0
+        && data.name.replace('[\\x{10000}-\\x{10FFFF}]', 'aa').size() <= 40
+        && (data.keys().hasAny(['budget']) ? (data.budget is number ? (data.budget >= 0 && data.budget <= 17592186044416) : false) : true);
+    }
+    function unpublishedSettingsGeneration(uid, generation) {
+      let manifest = /databases/$(database)/documents/users/$(uid)/settingsV2/finance;
+      return !exists(manifest) ? true : get(manifest).data.get('generation', '') != generation;
+    }
+    // One atomic pointer publishes a completely sealed financial generation.
+    function legacyActive(uid) {
+      return !exists(/databases/$(database)/documents/users/$(uid)/control/restore);
+    }
+    function currentGeneration(uid) {
+      return legacyActive(uid) ? 'legacy' : get(/databases/$(database)/documents/users/$(uid)/control/restore).data.activeGeneration;
+    }
+    function generationActive(uid, generation) { return owner(uid) && currentGeneration(uid) == generation; }
+    function generationPath(uid, generation) { return /databases/$(database)/documents/users/$(uid)/financeGenerations/$(generation); }
+    function generationWritable(uid, generation) {
+      let root = get(generationPath(uid, generation)).data;
+      return owner(uid) && (currentGeneration(uid) == generation
+        || (root.status == 'staging' && currentGeneration(uid) == root.baseGeneration));
+    }
+    function snapshotPath(uid, generation, id) {
+      return /databases/$(database)/documents/users/$(uid)/financeGenerations/$(generation)/settingsSnapshots/$(id);
+    }
+    function validGenerationId(id) { return id is string && id.matches('^[A-Za-z0-9_-]{1,128}$') && id != 'legacy'; }
+    function validGeneration(data) {
+      return data.keys().hasOnly(['baseGeneration','recordCount','written','lastKey','settingsId','status','createdAt'])
+        && data.keys().hasAll(['baseGeneration','recordCount','written','lastKey','settingsId','status','createdAt'])
+        && data.baseGeneration is string && data.recordCount is int && data.recordCount >= 0
+        && data.written is int && data.written >= 0 && data.written <= data.recordCount
+        && data.lastKey is string && data.lastKey.size() <= 1500 && validGenerationId(data.settingsId)
+        && data.status in ['staging','ready'] && data.createdAt is timestamp;
+    }
+    function advanceGeneration(uid, generation, old, next) {
+      let recordPath = /databases/$(database)/documents/users/$(uid)/financeGenerations/$(generation)/records/$(next.lastKey);
+      return next.diff(old).affectedKeys().hasOnly(['written','lastKey']) && next.written == old.written + 1
+        && !exists(recordPath) && existsAfter(recordPath) && getAfter(recordPath).data.index == old.written;
+    }
+    function sealGeneration(uid, generation, old, next) {
+      let settings = /databases/$(database)/documents/users/$(uid)/financeGenerations/$(generation)/settings/finance;
+      return next.diff(old).affectedKeys().hasOnly(['status']) && next.status == 'ready' && next.written == next.recordCount
+        && existsAfter(settings) && getAfter(settings).data.snapshot == next.settingsId
+        && get(snapshotPath(uid, generation, next.settingsId)).data.status == 'ready';
+    }
+    match /users/{uid}/control/restore {
+      allow read: if owner(uid);
+      allow create, update: if owner(uid) && request.resource.data.keys().hasOnly(['protocol','activeGeneration','previousGeneration','activatedAt'])
+        && request.resource.data.keys().hasAll(['protocol','activeGeneration','previousGeneration','activatedAt'])
+        && request.resource.data.protocol == 2 && validGenerationId(request.resource.data.activeGeneration)
+        && request.resource.data.previousGeneration == currentGeneration(uid) && request.resource.data.activatedAt == request.time
+        && get(generationPath(uid, request.resource.data.activeGeneration)).data.status == 'ready'
+        && get(generationPath(uid, request.resource.data.activeGeneration)).data.baseGeneration == currentGeneration(uid);
+      allow delete: if false;
+    }
+    match /users/{uid}/financeGenerations/{generation} {
+      allow read: if owner(uid);
+      allow create: if owner(uid) && validGenerationId(generation) && validGeneration(request.resource.data)
+        && request.resource.data.baseGeneration == currentGeneration(uid) && request.resource.data.written == 0
+        && request.resource.data.lastKey == '' && request.resource.data.status == 'staging' && request.resource.data.createdAt == request.time;
+      allow update: if owner(uid) && validGeneration(request.resource.data) && resource.data.status == 'staging'
+        && currentGeneration(uid) == resource.data.baseGeneration
+        && (request.resource.data.status == 'ready' ? sealGeneration(uid, generation, resource.data, request.resource.data)
+          : advanceGeneration(uid, generation, resource.data, request.resource.data));
+      allow delete: if false;
+      match /records/{id} {
+        allow get: if owner(uid);
+        allow list: if owner(uid) && get(generationPath(uid, generation)).data.status == 'ready';
+        allow create, update: if owner(uid) && (canonicalRecord(id, request.resource.data.get('value', null))
+          ? (generationActive(uid, generation)
+            ? (request.resource.data.keys().hasOnly(['value']) && pairedRecord(uid, generation, id, request.resource.data.value))
+            : (request.resource.data.keys().hasOnly(['index','value']) && !exists(/databases/$(database)/documents/users/$(uid)/financeGenerations/$(generation)/records/$(id))
+              && generationWritable(uid, generation) && get(generationPath(uid, generation)).data.status == 'staging'
+              && request.resource.data.index == get(generationPath(uid, generation)).data.written
+              && getAfter(generationPath(uid, generation)).data.written == request.resource.data.index + 1
+              && getAfter(generationPath(uid, generation)).data.lastKey == id)) : false);
+        allow delete: if false;
+      }
+      match /settingsSnapshots/{snapshot} {
+        allow read: if owner(uid);
+        allow create: if generationWritable(uid, generation) && validGenerationId(snapshot)
+          && request.resource.data.keys().hasOnly(['count','written','hash','status'])
+          && request.resource.data.keys().hasAll(['count','written','hash','status'])
+          && request.resource.data.count is int && request.resource.data.count > 0 && request.resource.data.written == 0
+          && request.resource.data.status == 'staging' && request.resource.data.hash is string
+          && request.resource.data.hash.size() > 0 && request.resource.data.hash.size() <= 128;
+        allow update: if generationWritable(uid, generation) && resource.data.status == 'staging'
+          && ((request.resource.data.diff(resource.data).affectedKeys().hasOnly(['written'])
+              && request.resource.data.written == resource.data.written + 1 && request.resource.data.written <= resource.data.count
+              && existsAfter(/databases/$(database)/documents/users/$(uid)/financeGenerations/$(generation)/settingsSnapshots/$(snapshot)/chunks/$(string(resource.data.written))))
+            || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
+              && request.resource.data.status == 'ready' && resource.data.written == resource.data.count));
+        allow delete: if false;
+        match /chunks/{chunk} {
+          allow read: if owner(uid);
+          allow create: if generationWritable(uid, generation)
+            && request.resource.data.keys().hasOnly(['index','text']) && request.resource.data.keys().hasAll(['index','text'])
+            && request.resource.data.index is int && request.resource.data.index >= 0 && chunk == string(request.resource.data.index)
+            && request.resource.data.text is string && request.resource.data.text.size() <= 128000
+            && get(snapshotPath(uid, generation, snapshot)).data.status == 'staging'
+            && get(snapshotPath(uid, generation, snapshot)).data.written == request.resource.data.index
+            && getAfter(snapshotPath(uid, generation, snapshot)).data.written == request.resource.data.index + 1;
+          allow update, delete: if false;
+        }
+      }
+      match /settings/finance {
+        allow read: if owner(uid);
+        allow create, update: if owner(uid) && request.resource.data.keys().hasOnly(['snapshot','updatedAt'])
+          && request.resource.data.keys().hasAll(['snapshot','updatedAt']) && validGenerationId(request.resource.data.snapshot)
+          && request.resource.data.updatedAt == request.time
+          && (exists(snapshotPath(uid, generation, request.resource.data.snapshot))
+            ? (get(snapshotPath(uid, generation, request.resource.data.snapshot)).data.status == 'ready'
+          && (generationActive(uid, generation) || (generationWritable(uid, generation)
+            && getAfter(generationPath(uid, generation)).data.status == 'ready'
+            && request.resource.data.snapshot == getAfter(generationPath(uid, generation)).data.settingsId))) : false);
+        allow delete: if false;
+      }
+      match /operations/{id} {
+        allow read: if owner(uid);
+        allow create: if generationActive(uid, generation) && (request.resource.data.get('status', '') == 'applied'
+          ? (receiptShape(request.resource.data) ? pairedReceipt(uid, generation, id, request.resource.data) : false)
+          : (id.matches('^auto-history-.*$') ? automaticHistory(id, generation, request.resource.data)
+            : pairedConflictReceipt(uid, generation, id, request.resource.data)));
+        allow update, delete: if false;
+      }
+      match /conflicts/{id} {
+        allow read: if owner(uid);
+        allow create: if generationActive(uid, generation) && pairedConflictDocument(uid, generation, id, request.resource.data);
+        allow update: if generationActive(uid, generation) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['resolved','resolution','resolvedAt'])
+          && request.resource.data.resolved == true && request.resource.data.resolution in ['local','remote','both'] && request.resource.data.resolvedAt == request.time;
+        allow delete: if false;
+      }
+    }
+    match /users/{uid}/records/{recordId} {
+      allow read: if owner(uid);
+      // Active record includes `record`; tombstone is the same envelope without `record`.
+      allow create, update: if owner(uid) && legacyActive(uid) && (canonicalRecord(recordId, request.resource.data)
+        ? pairedRecord(uid, 'legacy', recordId, request.resource.data) : false);
+      allow delete: if false;
+    }
+    match /users/{uid}/settings/{settingsId} {
+      allow read: if owner(uid);
+      allow create, update: if false;
+      allow delete: if false;
+    }
+    // V2 settings are additive: the old finance document remains readable as a fallback.
+    match /users/{uid}/settingsV2/{settingsId} {
+      allow read: if owner(uid);
+      allow create, update: if owner(uid) && legacyActive(uid) && settingsId == 'finance' && validSettingsManifest(request.resource.data);
+      allow delete: if false;
+      match /generations/{generation}/categories/{categoryId} {
+        allow read: if owner(uid);
+        allow create: if owner(uid) && legacyActive(uid) && generation.size() > 0 && generation.size() <= 128
+          && categoryId.matches('^c_[A-Za-z0-9%_.-]{1,500}$')
+          && unpublishedSettingsGeneration(uid, generation)
+          && validCategorySetting(request.resource.data);
+        allow update: if false;
+        allow delete: if false;
+      }
+    }
+    match /users/{uid}/operations/{operationId} {
+      allow read: if owner(uid);
+      allow create: if owner(uid) && legacyActive(uid) && bounded(request.resource.data)
+        && (request.resource.data.get('status', '') == 'applied'
+          ? (receiptShape(request.resource.data) ? pairedReceipt(uid, 'legacy', operationId, request.resource.data) : false)
+          : (operationId.matches('^auto-history-.*$') ? automaticHistory(operationId, 'legacy', request.resource.data)
+            : pairedConflictReceipt(uid, 'legacy', operationId, request.resource.data)));
+      allow update, delete: if false;
+    }
+    match /users/{uid}/conflicts/{conflictId} {
+      allow read: if owner(uid);
+      allow create: if owner(uid) && legacyActive(uid) && pairedConflictDocument(uid, 'legacy', conflictId, request.resource.data);
+      allow update: if owner(uid) && legacyActive(uid) && resource.data.keys().hasOnly(['operationId','entityKey','local','remote','createdAt'])
+        && request.resource.data.keys().hasOnly(['operationId','entityKey','local','remote','createdAt','resolved','resolution','resolvedAt'])
+        && request.resource.data.keys().hasAll(['operationId','entityKey','local','remote','createdAt','resolved','resolution','resolvedAt'])
+        && request.resource.data.operationId == resource.data.operationId
+        && request.resource.data.entityKey == resource.data.entityKey
+        && request.resource.data.local == resource.data.local
+        && request.resource.data.remote == resource.data.remote
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.resolved == true && request.resource.data.resolution in ['local','remote','both']
+        && validStamp(request.resource.data.get('resolvedAt', null));
+      allow delete: if false;
+    }
+    match /users/{uid}/meta/{metaId} {
+      allow read: if owner(uid);
+      allow create, update: if owner(uid) && legacyActive(uid) && metaId == 'sync' && bounded(request.resource.data);
+      allow delete: if false;
+    }
+    match /users/{uid}/{document=**} { allow read, write: if false; }
+  }
+}

@@ -8,17 +8,20 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
 import { prepararArtefatoPages } from "./prepare-pages.mjs";
+import { publishedSourcePlugin } from '../tests/fixtures/published-source.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const integrity = ['integrity', 'integrity-browser'].includes(process.argv[2]);
+const compatibilityBrowser = process.argv[2] === 'compatibility-browser';
 const accountBrowser = process.argv[2] === 'google-account';
 const isolatedRules = process.argv[2] === 'rules-isolated';
 const isolated = accountBrowser || isolatedRules;
 const firestorePort = isolated ? 8180 : 8080, authPort = isolated ? 9199 : 9099;
 const realtimeBrowser = process.argv[2] === 'epoch-realtime';
 const epochBrowser = process.argv[2] === 'epoch-browser' || realtimeBrowser;
-const browser = process.argv[2] === "browser" || epochBrowser || accountBrowser;
+const browser = process.argv[2] === "browser" || process.argv[2] === 'integrity-browser' || compatibilityBrowser || epochBrowser || accountBrowser;
 const epoch = process.argv[2] === "epoch" || epochBrowser;
-if (!["rules", "browser", "epoch", "epoch-browser", "epoch-realtime", "google-account", "rules-isolated"].includes(process.argv[2])) throw new Error("Use rules, browser, epoch, epoch-browser ou epoch-realtime.");
+if (!["rules", "browser", "epoch", "epoch-browser", "epoch-realtime", "google-account", "rules-isolated", "integrity", "integrity-browser", 'compatibility-browser'].includes(process.argv[2])) throw new Error("Unknown local test mode.");
 const project = accountBrowser ? "demo-controle-financeiro-google-only" : "demo-controle-financeiro";
 for (const port of isolated ? [8180, ...(browser ? [9199] : []), 4600, 4700, 9250] : browser ? [8080, 9099, 4400, 4500, 9150] : [8080, 4400, 4500, 9150]) {
     await new Promise((resolve, reject) => {
@@ -28,7 +31,7 @@ for (const port of isolated ? [8180, ...(browser ? [9199] : []), 4600, 4700, 925
 }
 const work = await mkdtemp(path.join(tmpdir(), "controle-financeiro-homolog-"));
 console.log(`Artefatos e logs isolados: ${work}`);
-await copyFile(path.join(root, epoch ? "firestore.epoch.rules" : "firestore.rules"), path.join(work, "firestore.rules"));
+await copyFile(path.join(root, epoch ? "firestore.epoch.rules" : integrity ? 'firestore.integrity.rules' : "firestore.rules"), path.join(work, "firestore.rules"));
 await writeFile(path.join(work, "firebase.json"), JSON.stringify({
     firestore: { rules: "firestore.rules" }, emulators: { singleProjectMode: false,
         ...(isolated ? { hub: {host:"127.0.0.1",port:4600}, logging: {host:"127.0.0.1",port:4700}, ui: {enabled:false} } : {}),
@@ -42,6 +45,7 @@ delete env.GOOGLE_APPLICATION_CREDENTIALS;
 delete env.DEBUG;
 for (const name of ["NO_PROXY", "no_grpc_proxy"]) env[name] = [env[name], "127.0.0.1", "localhost", "::1"].filter(Boolean).join(",");
 if (accountBrowser) env.LOCAL_TEST_GOOGLE_ACCOUNT = '1';
+if (compatibilityBrowser) env.LOCAL_TEST_COMPATIBILITY = '1';
 let server;
 if (browser) {
     const site = path.join(work, "site");
@@ -121,7 +125,7 @@ if (browser) {
                 client[operation]=(uid,callback,failure,...args)=>{log(operation,uid,'start');return original(uid,callback,error=>{log(operation,uid,'error',error?.code);failure?.(error);},...args);};
             }
             const migrationCommit=client.commit.bind(client);
-            client.commit=async(...args)=>{if(window.__holdMigrationCommit)await new Promise(resolve=>window.__releaseMigrationCommit=resolve);return migrationCommit(...args);};
+            client.commit=async(...args)=>{if(${compatibilityBrowser})window.__compatCommitCalls=(window.__compatCommitCalls||0)+1;if(window.__holdMigrationCommit)await new Promise(resolve=>window.__releaseMigrationCommit=resolve);try{return await migrationCommit(...args);}catch(error){if(${compatibilityBrowser} && error.code==='permission-denied')window.__compatDenied=true;throw error;}};
             const originalMigrationSnapshot=client.localMigrationSnapshot.bind(client);
             client.localMigrationSnapshot=async(...args)=>{
                 const snapshot=await originalMigrationSnapshot(...args);
@@ -143,6 +147,8 @@ if (browser) {
     await build({ stdin: { contents: await readFile(fixture, 'utf8'), resolveDir: root, sourcefile: 'firebase-browser-fixture.mjs' },
         outfile: path.join(site, "firebase-sync.bundle.js"),
         bundle: true, format: "esm", platform: "browser", target: "es2022" });
+    if (compatibilityBrowser) await build({ stdin: { contents: await readFile(fixture, 'utf8'), resolveDir: root, sourcefile: 'published-browser-fixture.mjs' },
+        outfile: path.join(site, 'firebase-sync.published.bundle.js'), bundle: true, format: 'esm', platform: 'browser', target: 'es2022', plugins: [publishedSourcePlugin()] });
     }
     if (accountBrowser && process.env.STABILITY_BASELINE) {
         const filename = { published: 'published-app.js', worktree: 'worktree-before-app.js' }[process.env.STABILITY_BASELINE];
@@ -183,7 +189,7 @@ const command = browser
     ? [process.execPath, path.join(root, "node_modules", "@playwright", "test", "cli.js"), "test", "--config", path.join(root, "playwright.config.mjs"), ...process.argv.slice(3)].map(quote).join(" ")
     : [process.execPath, "--test", "--test-concurrency=1", ...(epoch
         ? [path.join(root, "tests", "finance-epoch.test.js"), path.join(root, "tests", "finance-epoch-cache.test.js"), path.join(root, "tests", "finance-epoch-realtime.test.js"), path.join(root, "tests", "finance-epoch-rules.test.js")]
-        : [path.join(root, "tests", "firestore-rules.test.js"), path.join(root, "tests", "firebase-sync-client.test.js")])].map(quote).join(" ");
+        : ['firestore-rules.test.js', 'firebase-sync-client.test.js', 'firestore-integrity.test.js', 'firestore-compatibility.test.js', 'firestore-settings-integrity.test.js', 'firestore-conflict-integrity.test.js'].map(name => path.join(root, 'tests', name)))].map(quote).join(" ");
 const log = createWriteStream(path.join(work, "execution.log"));
 const child = spawn(process.execPath, [path.join(root, "node_modules", "firebase-tools", "lib", "bin", "firebase.js"),
     "emulators:exec", "--only", browser ? "firestore,auth" : "firestore", "--project", project, "--config", path.join(work, "firebase.json"), command],

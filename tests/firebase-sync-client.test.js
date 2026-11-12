@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import vm from "node:vm";
 import { withFinanceGenerations } from '../finance-generation-transport.js';
-import { snapshotConfirmed, makeOperation, recordEntityKey, validConflictRecord, validSyncIdentity, unicodeWellFormed } from "../sync-core.js";
+import { snapshotConfirmed, makeOperation, recordEntityKey, validConflictRecord, validSyncIdentity, unicodeWellFormed, recordsEquivalent } from "../sync-core.js";
 
 const source = (await readFile(new URL("../firebase-sync-entry.js", import.meta.url), "utf8"))
     .replace(/^import .*;\r?\n/gm, "").replace("export function criarFirebaseSync", "function criarFirebaseSync");
@@ -17,7 +17,7 @@ function harness() {
         return { exists: () => present, data: () => structuredClone(value), metadata: { fromCache: false, hasPendingWrites: false } };
     };
     let lock = Promise.resolve(), failWrite = false;
-    const context = vm.createContext({ withFinanceGenerations: legacy => legacy, snapshotConfirmed, validConflictRecord, recordEntityKey, validSyncIdentity, unicodeWellFormed, console,
+    const context = vm.createContext({ withFinanceGenerations: legacy => legacy, snapshotConfirmed, validConflictRecord, recordEntityKey, validSyncIdentity, unicodeWellFormed, recordsEquivalent, console,
         initializeApp: () => ({}), initializeAuth: (_app,options) => { context.authOptions=options; return auth; }, GoogleAuthProvider: class {},
         browserLocalPersistence: {type:'LOCAL'}, indexedDBLocalPersistence: {type:'LOCAL-IDB'}, browserSessionPersistence: {type:'SESSION'}, browserPopupRedirectResolver: {},
         localStorage: {setItem:(k,v)=>data.set(k,v),getItem:k=>data.get(k)??null,removeItem:k=>data.delete(k)},
@@ -101,6 +101,20 @@ test("factory real repete operação idempotente, detecta concorrência e preser
     assert.equal(h.data.get(path).deleted, true);
 });
 
+test('integrity denial gets one bounded reread and never acknowledges a failed write', async () => {
+    const h = harness(); let calls = 0;
+    h.context.runTransaction = async () => { calls++; throw Object.assign(new Error('Denied'), { code: 'permission-denied' }); };
+    await assert.rejects(h.client.commit('alice', makeOperation(recordEntityKey(value()), value())), { code: 'permission-denied' });
+    assert.equal(calls, 2); assert.equal(h.data.size, 0);
+});
+
+test('account switch after integrity denial prevents the second transaction', async () => {
+    const h = harness(); let calls = 0;
+    h.context.runTransaction = async () => { calls++; h.auth.currentUser = { uid: 'bob' }; throw Object.assign(new Error('Denied'), { code: 'permission-denied' }); };
+    await assert.rejects(h.client.commit('alice', makeOperation(recordEntityKey(value()), value())), /autenticado/);
+    assert.equal(calls, 1); assert.equal(h.data.size, 0);
+});
+
 test("configurações só confirmam geração quando manifesto e categorias vêm do servidor", () => {
     const h = harness(), received = [];
     const stop = h.client.listenSettings("alice", (value, metadata) => received.push({ value, metadata }));
@@ -159,16 +173,17 @@ test("settings SDK cancels at the manifest boundary and retains completed genera
     for (const [key, value] of generation) assert.deepEqual(h.data.get(key), value);
 });
 
-test("cliente de produção executa transações e configurações nas regras do Emulator", {
+for (const rulesFile of ['firestore.rules', 'firestore.integrity.rules']) test(`cliente de produção executa transações e configurações: ${rulesFile}`, {
     skip: !process.env.FIRESTORE_EMULATOR_HOST && "Requires Firestore Emulator"
 }, async () => {
     const sdk = await import("firebase/firestore");
     const { initializeTestEnvironment } = await import("@firebase/rules-unit-testing");
     const [host, port] = process.env.FIRESTORE_EMULATOR_HOST.split(":");
     assert.match(host, /^(127\.0\.0\.1|localhost)$/, "Somente o Emulator local pode receber os testes.");
-    const rules = await readFile(new URL("../firestore.rules", import.meta.url), "utf8");
-    const env = await initializeTestEnvironment({ projectId: "demo-sync-client-contract", firestore: { host, port: Number(port), rules } });
-    const dependencies = { ...sdk, withFinanceGenerations, snapshotConfirmed, validConflictRecord, recordEntityKey, validSyncIdentity, unicodeWellFormed,
+    const rules = await readFile(new URL(`../${rulesFile}`, import.meta.url), "utf8");
+    const env = await initializeTestEnvironment({ projectId: rulesFile === 'firestore.rules' ? 'demo-sync-client-contract' : 'demo-sync-client-integrity', firestore: { host, port: Number(port), rules } });
+    await env.clearFirestore();
+    const dependencies = { ...sdk, withFinanceGenerations, snapshotConfirmed, validConflictRecord, recordEntityKey, validSyncIdentity, unicodeWellFormed, recordsEquivalent,
         initializeApp: () => ({}), initializeAuth: () => ({ currentUser: { uid: "alice" } }), GoogleAuthProvider: class {},
         browserLocalPersistence: {},indexedDBLocalPersistence:{},browserSessionPersistence:{},browserPopupRedirectResolver:{},
         localStorage: {setItem(k,v){this[k]=v;},getItem(k){return this[k]??null;},removeItem(k){delete this[k];}},
@@ -176,19 +191,23 @@ test("cliente de produção executa transações e configurações nas regras do
         memoryLocalCache: () => ({}), persistentLocalCache: () => ({}), persistentMultipleTabManager: () => ({}) };
     // Same realm as the SDK so Firestore sees ordinary objects, with only auth/bootstrap replaced.
     const factory = Function(...Object.keys(dependencies), `${source}\nreturn criarFirebaseSync;`)(...Object.values(dependencies));
+    let phase = 'create';
     try {
         const client = factory({}), key = recordEntityKey(value()), create = makeOperation(key, value());
         assert.equal((await client.commit("alice", create)).acknowledged, true);
         assert.equal((await client.commit("alice", create)).duplicate, true);
+        phase = 'concurrent edits';
         const results = await Promise.all([20, 30].map((amount) => client.commit("alice", makeOperation(key, value(amount), create.id))));
         assert.equal(results.filter((result) => result.conflict).length, 1);
         const records = await client.list("alice");
         assert.equal(records.length, 1);
         const remove = makeOperation(key, { month: "2026-10", type: "receitas", id: "r1", deleted: true }, records[0].revision);
+        phase = 'delete';
         await client.commit("alice", remove);
         assert.equal((await client.list("alice"))[0].deleted, true);
         assert.equal((await client.listConflicts("alice")).length, 1);
         const settings = { categories: ["Casa"], theme: "claro", budgets: { padrao: { Casa: 0.29 }, meses: {} } };
+        phase = 'settings';
         const saves = await Promise.all([client.saveSettings("alice", settings), client.saveSettings("alice", settings)]);
         assert.equal(saves.every((result) => result.acknowledged === true), true);
         const saved = saves[0];
@@ -197,7 +216,8 @@ test("cliente de produção executa transações e configurações nas regras do
         assert.equal((await client.getSettings("alice")).budgets.padrao.Casa, 0.29);
         await assert.rejects(client.list("bob"), /autenticado/);
         await assert.rejects(client.commit("alice", { ...create, entityKey: "arbitrary" }), /inválida/);
-    } finally { await env.cleanup(); }
+    } catch (error) { error.message = `${phase}: ${error.message}`; throw error; }
+    finally { await env.cleanup(); }
 });
 
 test("orçamento da categoria __proto__ é preservado na leitura", async () => {
