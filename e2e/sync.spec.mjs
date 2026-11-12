@@ -147,7 +147,7 @@ test("C: logout e troca de conta não apresentam dados ou fila de outro UID", as
     await expect(page.locator(".aviso-acao")).toHaveText("Desfazer");
     await page.locator("#abrir-ajustes").click(); await page.locator("#sair-google").click();
     await page.locator('#sair-keep').click();
-    await expect(page.locator("#conta-sincronizacao")).toBeEmpty();
+    await expect(page.locator("#conta-sincronizacao")).toContainText("Modo local");
     await expect(page.locator(".aviso-acao")).toHaveCount(0);
     await page.locator("#fechar-ajustes").click();
     await login(page, bob);
