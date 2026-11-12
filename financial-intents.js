@@ -1,5 +1,7 @@
 // Combina apenas mudanças explicitamente realizadas sobre um estado-base.
 // Estado divergente no mesmo registro ou configuração gera conflito, nunca last-writer-wins.
+import { recordsEquivalent } from './sync-core.js';
+
 export class ConflitoEdicao extends Error {
     constructor(keys) {
         super(`Edição concorrente requer revisão: ${keys.join(', ')}`);
@@ -8,7 +10,8 @@ export class ConflitoEdicao extends Error {
     }
 }
 const copy = (value) => structuredClone(value);
-const equal = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+// Normalization can reorder fields without changing their financial meaning.
+const equal = recordsEquivalent;
 const types = ['receitas', 'despesas'];
 const monthData = (state, month, type) => state?.meses?.[month]?.[type] || [];
 function recordsOf(state) {

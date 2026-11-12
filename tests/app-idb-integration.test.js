@@ -6,6 +6,28 @@ import { ServicoFinanceiroAtomico } from '../financial-atomic-service.js';
 import { validarBackup, validarTotaisMonetarios } from '../finance-core.js';
 
 const app = await readFile(new URL('../app.js', import.meta.url), 'utf8');
+test('expense success notification waits for durable persistence and is absent on failure', async () => {
+    for (const success of [true, false]) {
+        const messages = [];
+        let finish;
+        const durable = new Promise(resolve => { finish = resolve; });
+        const expense = { id: 'synthetic', valor: 12.34 };
+        const context = vm.createContext({
+            despesaEmEdicao: expense.id,
+            ui: { despesaNome: { value: 'Synthetic' }, despesaValor: { value: '45.67' },
+                despesaCategoria: { value: 'Outros' }, despesaPago: { checked: false },
+                campoPropagar: { hidden: true }, dialogoDespesa: { close() {} } },
+            normalizarValorMonetario: Number, obterMes: () => ({ despesas: [expense] }),
+            avisar: message => messages.push(message), renderDespesas() {}, atualizarResumo: () => durable
+        });
+        vm.runInContext(app.slice(app.indexOf('async function salvarDespesa()'), app.indexOf('function nomeParaMensagem(')), context);
+        const saving = context.salvarDespesa();
+        assert.deepEqual(messages, []);
+        finish(success ? true : undefined);
+        await saving;
+        assert.deepEqual(messages, success ? ['Despesa atualizada.'] : []);
+    }
+});
 const save = app.slice(app.indexOf('function salvar()'), app.indexOf('// O modo experimental'));
 assert.match(save, /service\.aplicarEdicao/, 'Testar a função real de gravação com o serviço capturado');
 const clone = (x) => structuredClone(x);

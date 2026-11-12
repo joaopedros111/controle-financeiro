@@ -12,9 +12,22 @@ const assets = [
     'financial-atomic-service.js', 'transactional-state.js', 'indexeddb-persistence.js',
     'preferences.js', 'storage.js', 'sync-core.js', 'localization.js',
     'update-manager.js', 'style.css', 'controls.css', 'version.json',
-    'manifest.json', 'sw.js'
+    'manifest.json', 'sw.js',
+    'account-local-migration.js', 'account-data-policy.js',
+    'automatic-finance-sync.js', 'automatic-sync-policy.js',
+    'account-offline-access.js', 'firebase-sync.bundle.js'
 ];
 for (const name of assets) await copyFile(path.join(source, name), path.join(temp, name));
+// O QA exercita IndexedDB sem o cache do PWA. Altera somente a cópia temporária;
+// o HTML e o Service Worker publicados permanecem intactos.
+const htmlPath = path.join(temp, 'index.html');
+const html = await readFile(htmlPath, 'utf8');
+const registroServiceWorker = /<script>\s*if \('serviceWorker' in navigator\) \{\s*window\.addEventListener\('load', \(\) => \{\s*navigator\.serviceWorker\.register\('sw\.js'\)\.catch\(console\.error\);\s*\}\);\s*\}\s*<\/script>/g;
+// Se o bootstrap original mudar, não servir silenciosamente um QA com cache ativo.
+if ([...html.matchAll(registroServiceWorker)].length !== 1) {
+    throw new Error('Registro de Service Worker inesperado no HTML; revise o isolamento do QA.');
+}
+await writeFile(htmlPath, html.replace(registroServiceWorker, '<!-- Service Worker desabilitado somente nesta cópia de QA. -->'));
 await cp(path.join(source, 'icons'), path.join(temp, 'icons'), { recursive: true });
 await writeFile(path.join(temp, 'firebase-config.js'),
     'export const firebaseConfig=Object.freeze({}); export const firebaseConfigurado=()=>false;\n');
@@ -29,12 +42,13 @@ const server = createServer(async (req, res) => {
         const data = await readFile(target);
         res.writeHead(200, { 'Content-Type': types[path.extname(target)] || 'application/octet-stream',
             'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff',
-            'Content-Security-Policy': "default-src 'self' data: blob:; connect-src 'self'; object-src 'none'; base-uri 'none'" });
+            'Content-Security-Policy': "default-src 'self' data: blob:; script-src 'self' 'sha256-WDBLfzhJodQMke6Z5XuXvBFGtKjSNSWgX+AVFaH0h4E='; worker-src 'none'; connect-src 'self'; object-src 'none'; base-uri 'none'" });
         res.end(data);
     } catch { res.writeHead(404).end(); }
 });
 await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
 console.log(`Modo IndexedDB experimental: http://127.0.0.1:${server.address().port}/?indexeddb_homologacao=1`);
+console.log('QA sem registro de Service Worker: recarregar exige o servidor ativo.');
 console.log('Abra duas abas no mesmo perfil, utilizando somente dados sintéticos. Pressione Ctrl+C para encerrar.');
 let stopping = false;
 const stop = async () => {

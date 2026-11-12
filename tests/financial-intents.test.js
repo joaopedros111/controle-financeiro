@@ -2,6 +2,29 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { combinarEdicaoFinanceira, ConflitoEdicao } from '../financial-intents.js';
 import { ServicoFinanceiroAtomico } from '../financial-atomic-service.js';
+import { normalizarEstado, validarBackup } from '../finance-core.js';
+
+test('normalized expense edit survives reload while preserving queue and real conflicts', async () => {
+    const db = adapter(), service = new ServicoFinanceiroAtomico(db, validarBackup, validQueue);
+    const empty = normalizarEstado(null);
+    const pending = { outbox: [{ id: 'pending-other' }], conflicts: [{ kind: 'existing' }], lastConfirmed: null };
+    await service.inicializar('local', empty, pending);
+    const created = structuredClone(empty);
+    created.meses['2026-10'] = { receitas: [], despesas: [{ id: 'synthetic', nome: 'Synthetic', categoria: 'Outros', valor: 12.34, pago: false, fixa: false, serie: null, parcela: null }] };
+    await service.aplicarEdicao('local', empty, created);
+    assert.equal(db.data.get('estado:local').dados.meses['2026-10'].despesas[0].valor, 12.34);
+    const base = normalizarEstado(db.data.get('estado:local').dados);
+    const edited = structuredClone(base);
+    edited.meses['2026-10'].despesas[0].valor = 45.67;
+    await service.aplicarEdicao('local', base, edited);
+    const reloaded = normalizarEstado(db.data.get('estado:local').dados);
+    assert.equal(reloaded.meses['2026-10'].despesas.length, 1);
+    assert.equal(reloaded.meses['2026-10'].despesas[0].valor, 45.67);
+    assert.deepEqual(db.data.get('fila:local'), pending);
+    const stale = structuredClone(base); stale.meses['2026-10'].despesas[0].valor = 99;
+    await assert.rejects(service.aplicarEdicao('local', base, stale), ConflitoEdicao);
+    assert.deepEqual(db.data.get('fila:local'), pending);
+});
 
 const record = (id, valor = 10) => ({ id, nome: `Synthetic ${id}`, valor });
 const estado = (...items) => ({ versao: 3, categorias: ['Outros'], meses: { '2026-10': { receitas: items, despesas: [] } } });

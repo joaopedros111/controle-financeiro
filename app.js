@@ -706,6 +706,7 @@ function salvar() {
         }
         atualizarDiagnostico();
         if (key !== CHAVE_ESTADO) window.dispatchEvent(new CustomEvent("finance-local-change", { detail: { uid, state: result.estado.dados, deletedRecords: [] } }));
+        return true;
     }).catch(async error => {
         if (error?.code === 'account/access-revoked') {
             try { await db.preservarOperacaoBloqueada(uid, base, proposta, error.code); }
@@ -742,6 +743,7 @@ function salvar() {
         console.warn("Persistencia transacional interrompida.", error?.name);
         avisar("Outra aba alterou os mesmos dados ou houve falha na gravação. Nenhuma sobrescrita foi aplicada. Recarregue para revisar.");
     });
+    return idbPendente;
 }
 
 // O modo experimental funciona apenas com dados locais, sem Firebase.
@@ -1463,7 +1465,7 @@ function atualizarResumo(persistir = true) {
 
 
 
-    if (persistir) salvar();
+    if (persistir) return salvar();
 
 }
 
@@ -2178,7 +2180,7 @@ function criarSerieDeDespesas(base, tipo, totalParcelas) {
 
 
 
-function salvarDespesa() {
+async function salvarDespesa() {
 
 
 
@@ -2213,13 +2215,14 @@ function salvarDespesa() {
         pago: ui.despesaPago.checked
     };
 
+    let mensagem;
     if (despesaEmEdicao) {
 
 
 
         const despesa = obterMes().despesas.find((d) => d.id === despesaEmEdicao);
 
-        let mensagem = "Despesa atualizada.";
+        mensagem = "Despesa atualizada.";
 
 
 
@@ -2259,7 +2262,6 @@ function salvarDespesa() {
 
 
 
-        avisar(mensagem);
 
 
 
@@ -2291,7 +2293,7 @@ function salvarDespesa() {
 
 
 
-            avisar("Despesa adicionada.");
+            mensagem = "Despesa adicionada.";
 
 
 
@@ -2329,11 +2331,11 @@ function salvarDespesa() {
 
 
 
-            avisar(tipo === "fixa"
+            mensagem = tipo === "fixa"
 
                 ? "Despesa fixa lançada em " + criadas + " meses."
 
-                : "Parcelas lançadas: " + criadas + " de " + parcelas + ".");
+                : "Parcelas lançadas: " + criadas + " de " + parcelas + ".";
 
         }
 
@@ -2347,7 +2349,7 @@ function salvarDespesa() {
 
     renderDespesas();
 
-    atualizarResumo();
+    if (await atualizarResumo() === true) avisar(mensagem);
 
 }
 
