@@ -15,7 +15,7 @@ const assets = [
     'manifest.json', 'sw.js',
     'account-local-migration.js', 'account-data-policy.js',
     'automatic-finance-sync.js', 'automatic-sync-policy.js',
-    'account-offline-access.js', 'firebase-sync.bundle.js'
+    'account-offline-access.js'
 ];
 for (const name of assets) await copyFile(path.join(source, name), path.join(temp, name));
 // O QA exercita IndexedDB sem o cache do PWA. Altera somente a cópia temporária;
