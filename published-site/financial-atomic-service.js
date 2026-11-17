@@ -1,0 +1,391 @@
+// API transacional para integração futura com os handlers do aplicativo.
+// Não altera o armazenamento legado e não realiza operações de rede.
+import { ConflitoPersistencia } from './transactional-state.js?_release=1.1.11';
+import { combinarEdicaoFinanceira } from './financial-intents.js?_release=1.1.11';
+import { registrosFinanceiros, recordEntityKey, operationId, coalesceOutbox, recordsEquivalent, blockedConflictKeys, validSyncIdentity, functionalSettings, settingsEquivalent, validateRemoteSettings, financialStatesEquivalent, equivalentConflict, acknowledgementJournalKey, acknowledgementError } from './sync-core.js?_release=1.1.11';
+
+const copy = (value) => structuredClone(value);
+const validRevision = (value) => Number.isSafeInteger(value) && value >= 0;
+export class ServicoFinanceiroAtomico {
+    constructor(db, validarEstado, validarFila = () => true, locks = globalThis.navigator?.locks) {
+        this.db = db;
+        this.settingsLocks = locks;
+        this.validarEstado = validarEstado;
+        this.validarFila = validarFila;
+    }
+    // Importação conservadora: ambos os documentos são criados juntos.
+    // Estado IndexedDB já existente jamais é substituído pela origem local.
+    // Shared across cooperating tabs; no IndexedDB transaction stays open during network I/O.
+    // Local edits remain available without Web Locks, but publication fails closed.
+    coordenarSettings(uid, executar, publicacao = false) {
+        if (!(uid === '@local' || /^[A-Za-z0-9_-]{1,128}$/.test(uid || ''))) return Promise.reject(new Error('UID invalido'));
+        if (this.settingsLocks) return this.settingsLocks.request('controleFinanceiro:settings:' + uid, executar);
+        if (publicacao) return Promise.reject(Object.assign(new Error('Publicacao de configuracoes requer Web Locks para coordenar abas.'), {code:'sync/coordination-unavailable'}));
+        return Promise.resolve().then(executar);
+    }
+    async inicializar(uid, estadoLegado, filaLegada) {
+        if (typeof uid !== 'string' || !uid.trim() || uid.includes(':') ||
+            !this.validarEstado(estadoLegado) || !this.validarFila(filaLegada)) {
+            throw new Error('Origem legada inválida; migração bloqueada');
+        }
+        const stateKey = `estado:${uid}`, queueKey = `fila:${uid}`;
+        const docs = await this.db.alterarDocumentos([stateKey, queueKey], (records) => {
+            const s = records.get(stateKey), q = records.get(queueKey);
+            if ((s === null) !== (q === null)) throw new Error('Migração parcial: revisão manual obrigatória');
+            if (s === null) {
+                records.set(stateKey, { revisao: 0, dados: copy(estadoLegado), origem: 'localStorage' });
+                records.set(queueKey, copy(filaLegada));
+            } else if (!validRevision(s.revisao) || !this.validarEstado(s.dados) || !this.validarFila(q)) {
+                throw new Error('Dados IndexedDB inválidos; migração bloqueada');
+            }
+            return records;
+        });
+        return { estado: docs.get(stateKey), fila: docs.get(queueKey) };
+    }
+    // Recovery only: never creates financial operations, including deletions.
+    async preservarEdicaoRejeitada(uid, base, proposta, reason) {
+        if (!(uid === '@local' || /^[A-Za-z0-9_-]{1,128}$/.test(uid || ''))
+            || !this.validarEstado(base) || !this.validarEstado(proposta)) throw new Error('Recuperação de edição inválida');
+        const key = `restore-recovery:${uid}:edit-${operationId(uid, reason, { base, proposta })}`;
+        const queueKey = `fila:${uid}`;
+        const docs = await this.db.alterarDocumentos([queueKey, key], docs => {
+            const queue = docs.get(queueKey);
+            if (!queue || !this.validarFila(queue)) throw new Error('Fila não inicializada');
+            if (!docs.get(key)) docs.set(key, { reason, base: copy(base), proposta: copy(proposta), state: copy(proposta) });
+            queue.recoveryKeys = [...new Set([...(queue.recoveryKeys || []), key])];
+            queue.recoveryNotices ||= [];
+            if (!queue.recoveryNotices.some(item => item.id === key)) queue.recoveryNotices.push({ id: key, code: 'rejected-edit', acknowledged: false });
+            docs.set(queueKey, queue); return docs;
+        });
+        return docs.get(queueKey);
+    }
+    // Merge transacional de intenções, sem exclusões decorrentes de snapshots velhos.
+    async aplicarEdicao(uid, estadoBase, estadoEditado, criarOperacoes = () => [], editarFila = () => {}, isCurrent = () => true, expectedGeneration = null) {
+        if (typeof uid !== 'string' || !uid.trim() || uid.includes(':') ||
+            !this.validarEstado(estadoBase) || !this.validarEstado(estadoEditado)) {
+            throw new Error('Edição financeira inválida');
+        }
+        const stateKey = `estado:${uid}`, queueKey = `fila:${uid}`;
+        const docs = await this.db.alterarDocumentos([stateKey, queueKey], (records) => {
+            if (!isCurrent()) throw Object.assign(new Error('Sessão de persistência invalidada'), { code: 'persistence/cancelled' });
+            const previous = records.get(stateKey), queue = records.get(queueKey);
+            if (!previous || !validRevision(previous.revisao) || !this.validarEstado(previous.dados) ||
+                !queue || !this.validarFila(queue) || !Array.isArray(queue.outbox)) {
+                throw new Error('Persistência não inicializada ou inválida');
+            }
+            if (queue.compatibilityBlocked) throw Object.assign(new Error('Atualize o aplicativo para continuar. Os dados locais foram preservados.'), { code: 'sync/upgrade-required' });
+            if (queue.restoreJob) throw Object.assign(new Error('Restauração em preparação; alterações anteriores não serão reaplicadas.'), { code: 'sync/restore-in-progress' });
+            if (expectedGeneration !== null && expectedGeneration !== (queue.generation || 'legacy')) throw Object.assign(new Error('A geração financeira mudou.'), { code: 'sync/generation-changed' });
+            const merged = combinarEdicaoFinanceira(estadoBase, estadoEditado, previous.dados);
+            if (!this.validarEstado(merged.estado)) throw new Error('Resultado financeiro inválido');
+            // Não gerar operações por ausência em uma cópia obsoleta.
+            const operations = criarOperacoes(copy(merged.mudancas), copy(queue), copy(merged.estado));
+            if (!Array.isArray(operations) || operations.some((op) => !op || typeof op.id !== 'string' || !op.id))
+                throw new Error('Operações de sincronização inválidas');
+            const ids = new Map(queue.outbox.map((op) => [op.id, JSON.stringify(op)]));
+            const newQueue = copy(queue);
+            const criticalEdit = merged.mudancas.length || !recordsEquivalent(previous.dados.categorias, merged.estado.categorias)
+                || !recordsEquivalent(previous.dados.orcamentos, merged.estado.orcamentos);
+            if (criticalEdit) {
+                if (newQueue.settingsPristine === true) newQueue.settingsPristine = false;
+                if (newQueue.firstLinkSource === 'anonymous') newQueue.firstLinkSource = 'account';
+            }
+            for (const op of operations) {
+                if (queue.generation) op.generation = queue.generation;
+                const prior = op.entityKey && newQueue.outbox.filter(item => item.entityKey === op.entityKey).at(-1);
+                if (prior && !newQueue.attempted?.[prior.id] && !newQueue.ackUnverifiable?.[prior.id]) {
+                    op.baseRevision = prior.baseRevision;
+                    op.id = operationId(op.entityKey, op.baseRevision, op.value);
+                    newQueue.outbox = newQueue.outbox.filter(item => item.id !== prior.id);
+                    ids.delete(prior.id);
+                }
+                if (ids.has(op.id) && ids.get(op.id) !== JSON.stringify(op)) throw new Error('Operação divergente');
+                if (!ids.has(op.id)) { newQueue.outbox.push(copy(op)); ids.set(op.id, JSON.stringify(op)); }
+            }
+            editarFila(newQueue, copy(merged.estado));
+            if (!this.validarFila(newQueue)) throw new Error('Fila resultante inválida');
+            if (!isCurrent()) throw Object.assign(new Error('Sessão de persistência invalidada'), { code: 'persistence/cancelled' });
+            const alterado = JSON.stringify(previous.dados) !== JSON.stringify(merged.estado);
+            records.set(stateKey, alterado ? { ...previous, revisao: previous.revisao + 1, dados: merged.estado } : previous);
+            records.set(queueKey, newQueue);
+            return records;
+        });
+        return { estado: docs.get(stateKey), fila: docs.get(queueKey) };
+    }
+    async prepararPublicacao(uid, base, desired, remote, reviewed = null, deletions = [], isCurrent = () => true) {
+        return this.aplicarEdicao(uid, base, desired, () => [], (queue, state) => {
+            const blocked = blockedConflictKeys(queue.conflicts, reviewed);
+            const former = new Map(remote.map(item => [recordEntityKey(item), item]));
+            const records = registrosFinanceiros(state), keys = new Set(records.map(recordEntityKey));
+            if (records.some(item => !validSyncIdentity(item.id))) throw new Error('IDs locais incompatíveis');
+            const candidates = [];
+            for (const item of [...records.map(item => ({ ...item, deleted: false })), ...deletions.filter(item => !keys.has(recordEntityKey(item))).map(item => ({ month: item.month, type: item.type, id: item.id, deleted: true }))]) {
+                const entityKey = recordEntityKey(item), old = former.get(entityKey);
+                if (blocked.has(entityKey) || old?.deleted && !item.deleted) continue;
+                const value = item.deleted ? {month:item.month,type:item.type,id:item.id,deleted:true} : {month:item.month,type:item.type,id:item.id,record:item.record,deleted:false};
+                const pending = queue.outbox.filter(op => op.entityKey === entityKey).at(-1);
+                if (!pending && old && (item.deleted ? old.deleted : recordsEquivalent(item.record, old.record))) continue;
+                if (pending && recordsEquivalent(pending.value, value)) continue;
+                const baseRevision = pending ? (queue.attempted?.[pending.id] || queue.ackUnverifiable?.[pending.id] ? pending.id : pending.baseRevision) : old?.revision || null;
+                candidates.push({id:operationId(entityKey,baseRevision,value),entityKey,baseRevision,value});
+            }
+            const attempted = queue.outbox.filter(op => queue.attempted?.[op.id] || queue.ackUnverifiable?.[op.id]);
+            queue.outbox = [...attempted, ...coalesceOutbox(queue.outbox.filter(op => !queue.attempted?.[op.id] && !queue.ackUnverifiable?.[op.id]), candidates)];
+        }, isCurrent);
+    }
+    // Capture before network/reconciliation, in the existing object store. The
+    // queue and its immutable intentions either persist together or both abort.
+    async preservarIntencoes(uid, isCurrent = () => true) {
+        for (let attempt = 0; attempt < 4; attempt++) {
+            const snapshot = await this.lerFila(uid), queueKey = `fila:${uid}`;
+            const prefix = `restore-recovery:${uid}:ack-`;
+            const keys = [...new Set([...(snapshot.ackJournalKeys || []), ...snapshot.outbox.map(op => acknowledgementJournalKey(uid, op))])];
+            if (keys.some(key => typeof key !== 'string' || !key.startsWith(prefix))) throw new Error('Diário de outra conta');
+            try {
+                const docs = await this.coordenarSettings(uid, () => this.db.alterarDocumentos([queueKey, ...keys], docs => {
+                    if (!isCurrent()) throw Object.assign(new Error('Sessão alterada'), { code: 'persistence/cancelled' });
+                    const q = docs.get(queueKey);
+                    if (!q || !this.validarFila(q)) throw new Error('Fila inválida');
+                    if (q.outbox.some(op => !docs.has(acknowledgementJournalKey(uid, op)))
+                        || (q.ackJournalKeys || []).some(key => !docs.has(key))) throw Object.assign(new Error('Fila alterada durante a proteção'), { code: 'aborted' });
+                    for (const key of keys) {
+                        const saved = docs.get(key);
+                        if (!saved) continue;
+                        if (saved.kind !== 'financial-ack-intent' || saved.version !== 1 || saved.uid !== uid
+                            || acknowledgementJournalKey(uid, saved.operation) !== key || saved.generation !== (saved.operation.generation || 'legacy')) throw new Error('Diário inválido');
+                        if (saved.generation !== (q.generation || 'legacy')) continue;
+                        const pending = q.outbox.find(op => op.id === saved.operation.id);
+                        if (pending && !recordsEquivalent(pending, saved.operation)) throw new Error('Intenção divergente no diário');
+                        // An older tab can remove a queue item without settling
+                        // this journal. Recover it as ambiguous, never as a send.
+                        if (saved.status === 'ambiguous' || saved.status === 'pending' && !pending) {
+                            if (!pending) q.outbox.push(copy(saved.operation));
+                            q.ackUnverifiable ||= {};
+                            q.ackUnverifiable[saved.operation.id] = saved.code || 'sync/ack-unverifiable';
+                            docs.set(key, { ...saved, status: 'ambiguous', code: q.ackUnverifiable[saved.operation.id] });
+                        }
+                    }
+                    for (const op of q.outbox) {
+                        const key = acknowledgementJournalKey(uid, op);
+                        if (!docs.get(key)) docs.set(key, { version: 1, kind: 'financial-ack-intent', uid,
+                            generation: op.generation || 'legacy', operation: copy(op), status: 'pending' });
+                    }
+                    q.ackJournalKeys = keys; docs.set(queueKey, q); return docs;
+                }));
+                return docs.get(queueKey);
+            } catch (cause) { if (cause.code !== 'aborted' || attempt === 3) throw cause; }
+        }
+    }
+    async preservarConfirmacaoInconclusiva(uid, operation, cause) {
+        const queueKey = `fila:${uid}`, key = acknowledgementJournalKey(uid, operation);
+        const docs = await this.coordenarSettings(uid, () => this.db.alterarDocumentos([queueKey, key], docs => {
+            const q = docs.get(queueKey), saved = docs.get(key);
+            if (!q || !this.validarFila(q) || saved && !recordsEquivalent(saved.operation, operation)) throw new Error('Recuperação divergente');
+            docs.set(key, { version: 1, kind: 'financial-ack-intent', uid, generation: operation.generation || 'legacy',
+                operation: copy(operation), status: 'ambiguous', code: cause.code });
+            if ((q.generation || 'legacy') === (operation.generation || 'legacy')) {
+                if (!q.outbox.some(op => op.id === operation.id)) q.outbox.push(copy(operation));
+                q.ackUnverifiable ||= {}; q.ackUnverifiable[operation.id] = cause.code;
+                q.ackJournalKeys = [...new Set([...(q.ackJournalKeys || []), key])];
+            }
+            docs.set(queueKey, q); return docs;
+        }));
+        return docs.get(queueKey);
+    }
+    async concluirOperacao(uid, operation, result) {
+        if (result?.acknowledged !== true) throw new Error('ACK ausente');
+        const queueKey = `fila:${uid}`, key = acknowledgementJournalKey(uid, operation);
+        const docs = await this.coordenarSettings(uid, () => this.db.alterarDocumentos([queueKey, key], docs => {
+            const fila = docs.get(queueKey), saved = docs.get(key);
+            if (!fila || !this.validarFila(fila)) throw new Error('Fila inválida');
+            if ((fila.generation || 'legacy') !== (operation.generation || 'legacy')) return docs;
+            if (!fila.outbox.some(op => op.id === operation.id)) return docs;
+            if (!recordsEquivalent(fila.outbox.find(op => op.id === operation.id), operation)) throw acknowledgementError('sync/invalid-ack');
+            if (saved && !recordsEquivalent(saved.operation, operation)) throw new Error('Intenção divergente no diário');
+            if (result.conflict) fila.conflicts.push({ kind: 'concurrent-change', operation: copy(operation), remote: result.remote || null });
+            fila.outbox = fila.outbox.filter(op => op.id !== operation.id);
+            fila.remoteRevisions ||= {};
+            if (!result.conflict) fila.remoteRevisions[operation.entityKey] = result.revision || operation.id;
+            if (fila.attempted) delete fila.attempted[operation.id];
+            if (fila.ackUnverifiable) delete fila.ackUnverifiable[operation.id];
+            docs.set(key, { version: 1, kind: 'financial-ack-intent', uid, generation: operation.generation || 'legacy',
+                operation: copy(operation), status: result.conflict ? 'conflict' : 'acknowledged' });
+            fila.ackJournalKeys = [...new Set([...(fila.ackJournalKeys || []), key])];
+            docs.set(queueKey, fila); return docs;
+        }));
+        return docs.get(queueKey);
+    }
+    async enviarFila(uid, commit, isCurrent = () => true, canSend = () => true, remote = []) {
+        const snapshot = await this.preservarIntencoes(uid, isCurrent);
+        for (const operation of snapshot.outbox) {
+            if (!isCurrent()) break;
+            const latest = await this.lerFila(uid);
+            if (latest.compatibilityBlocked || latest.restoreJob || (latest.generation || 'legacy') !== (snapshot.generation || 'legacy')) break;
+            if (latest.generation && (operation.generation || 'legacy') !== latest.generation) throw Object.assign(new Error('Operação de geração anterior bloqueada.'), { code: 'sync/generation-changed' });
+            if (!latest.outbox.some(op => op.id === operation.id)) continue;
+            if (latest.ackUnverifiable?.[operation.id]) throw acknowledgementError(latest.ackUnverifiable[operation.id]);
+            if (!canSend(operation)) continue;
+            const claimed = await this.alterarFila(uid, fila => {
+                // Another tab may have marked this intention ambiguous since
+                // lerFila. Recheck inside the transaction before claiming it.
+                if (fila.ackUnverifiable?.[operation.id]) throw acknowledgementError(fila.ackUnverifiable[operation.id]);
+                if (fila.outbox.some(op => op.id === operation.id)) {
+                    fila.attempted ||= {}; fila.attempted[operation.id] = true;
+                }
+                return fila;
+            });
+            if (!claimed.outbox.some(op => op.id === operation.id)) continue;
+            if (!isCurrent()) break;
+            let result;
+            try { result = await commit(uid, copy(operation)); }
+            catch (cause) {
+                if (['sync/ack-unverifiable', 'sync/invalid-ack'].includes(cause.code)) await this.preservarConfirmacaoInconclusiva(uid, operation, cause);
+                throw cause;
+            }
+            await this.concluirOperacao(uid, operation, result);
+        }
+        return this.lerFila(uid);
+    }
+    async aplicar(uid, revisaoEsperada, proximoEstado, operacoes = []) {
+        if (typeof uid !== 'string' || !uid.trim() || uid.includes(':')) throw new Error('UID inválido');
+        if (!validRevision(revisaoEsperada) || !this.validarEstado(proximoEstado) ||
+            !Array.isArray(operacoes) || operacoes.some((op) => !op || typeof op.id !== 'string' || !op.id))
+            throw new Error('Atualização inválida');
+        const stateKey = `estado:${uid}`, queueKey = `fila:${uid}`;
+        const result = await this.db.alterarDocumentos([stateKey, queueKey], (docs) => {
+            const previous = docs.get(stateKey);
+            if (!previous || !validRevision(previous.revisao) || previous.revisao !== revisaoEsperada)
+                throw new ConflitoPersistencia();
+            const queue = copy(docs.get(queueKey) || { outbox: [], conflicts: [], lastConfirmed: null });
+            if (!this.validarFila(queue) || !Array.isArray(queue.outbox)) throw new Error('Fila inválida');
+            const existing = new Map(queue.outbox.map((op) => [op.id, JSON.stringify(op)]));
+            for (const op of operacoes) {
+                if (existing.has(op.id) && existing.get(op.id) !== JSON.stringify(op))
+                    throw new Error('ID de operação duplicado com payload divergente');
+                if (!existing.has(op.id)) {
+                    queue.outbox.push(copy(op));
+                    existing.set(op.id, JSON.stringify(op));
+                }
+            }
+            if (!this.validarFila(queue)) throw new Error('Fila inválida');
+            docs.set(stateKey, { ...previous, dados: copy(proximoEstado), revisao: previous.revisao + 1 });
+            docs.set(queueKey, queue);
+            return docs;
+        });
+        return { estado: result.get(stateKey), fila: result.get(queueKey) };
+    }
+    // A fila é modificada dentro da transação IndexedDB, nunca por read-modify-write
+    // realizado em memória entre abas. O método não faz rede nem altera o estado.
+    async lerFila(uid) {
+        if (!(uid === '@local' || /^[A-Za-z0-9_-]{1,128}$/.test(uid || ''))) throw new Error('UID inválido');
+        const fila = await this.db.ler(`fila:${uid}`);
+        if (!fila || !this.validarFila(fila) || !Array.isArray(fila.outbox))
+            throw new Error('Fila não inicializada ou inválida');
+        return copy(fila);
+    }
+    async confirmarSincronizacao(uid, estadoEsperado, quando, isCurrent) {
+        if (!/^[A-Za-z0-9_-]{1,128}$/.test(uid || '') || !this.validarEstado(estadoEsperado)
+            || typeof quando !== 'string' || typeof isCurrent !== 'function') throw new Error('Confirmação inválida');
+        let confirmed = false;
+        const stateKey = `estado:${uid}`, queueKey = `fila:${uid}`;
+        const result = await this.db.alterarDocumentos([stateKey, queueKey], docs => {
+            const state = docs.get(stateKey), queue = docs.get(queueKey);
+            if (!state || !this.validarEstado(state.dados) || !queue || !this.validarFila(queue)) throw new Error('Persistência inválida');
+            if (isCurrent() && financialStatesEquivalent(state.dados, estadoEsperado)
+                && !queue.outbox.length && !queue.conflicts.length && !queue.restoredPending && !queue.restoreJob && !queue.compatibilityBlocked
+                && !queue.automaticSettingsDirty && !Object.keys(queue.ackUnverifiable || {}).length
+                && !queue.automaticHistory?.some(item => !item.uploaded)
+                && !queue.automaticResolutions?.some(item => !item.confirmed)
+                && !queue.conflictDecisions?.some(item => item.status !== 'confirmed')) {
+                queue.lastConfirmed = !Number.isFinite(Date.parse(queue.lastConfirmed)) || quando > queue.lastConfirmed ? quando : queue.lastConfirmed;
+                queue.migrationPending = false;
+                queue.confirmedRevision = state.revisao;
+                queue.confirmedGeneration = queue.generation || 'legacy';
+                confirmed = true;
+            }
+            return docs;
+        });
+        return { confirmed, fila: result.get(queueKey) };
+    }
+    async confirmarDecisao(uid, conflict, expected, isCurrent) {
+        return this.coordenarSettings(uid, () => this.db.alterarDocumentos([`estado:${uid}`, `fila:${uid}`], docs => {
+            if (!isCurrent()) throw Object.assign(new Error('Session invalidated'), {code:'persistence/cancelled'});
+            const queue = docs.get(`fila:${uid}`), state = docs.get(`estado:${uid}`);
+            if (!queue || !this.validarFila(queue) || !state || !this.validarEstado(state.dados)) throw new Error('Invalid persistence');
+            const decision = queue.conflictDecisions?.find(item => equivalentConflict(item.conflict, conflict) && item.status !== 'confirmed');
+            if (!decision || !financialStatesEquivalent(state.dados, expected)
+                || !financialStatesEquivalent(decision.state, expected)
+                || conflict.kind !== 'settings' && queue.outbox.some(op => op.entityKey === (conflict.operation?.entityKey || recordEntityKey(conflict.remote || conflict.operation?.value || conflict)))) return docs;
+            const originals = queue.conflicts.filter(item => equivalentConflict(item, conflict));
+            queue.conflictHistory ||= [];
+            queue.conflictHistory.push(...originals.map(item => ({conflict:copy(item), choice:decision.choice, confirmedAt:new Date().toISOString()})));
+            queue.conflicts = queue.conflicts.filter(item => !equivalentConflict(item, conflict));
+            decision.status = 'confirmed';
+            if (conflict.kind === 'settings' && !queue.conflicts.some(item => item.kind === 'settings'))
+                queue.settingsBaseline = {version:expected.versao, categories:copy(expected.categorias), theme:expected.tema, budgets:copy(expected.orcamentos)};
+            return docs;
+        }));
+    }
+    async alterarFila(uid, transformar) {
+        if (!(uid === '@local' || /^[A-Za-z0-9_-]{1,128}$/.test(uid || '')) || typeof transformar !== 'function')
+            throw new Error('UID ou transformação inválida');
+        return this.coordenarSettings(uid, () => this.db.alterar(`fila:${uid}`, (original) => {
+            if (!original || !this.validarFila(original) || !Array.isArray(original.outbox))
+                throw new Error('Fila não inicializada ou inválida');
+            const atual = copy(original);
+            const proxima = transformar(atual);
+            if (!proxima || typeof proxima.then === 'function' || !this.validarFila(proxima)
+                || !Array.isArray(proxima.outbox)) throw new Error('Fila resultante inválida');
+            return copy(proxima);
+        }));
+    }
+    async enfileirar(uid, operation) {
+        if (!operation || typeof operation.id !== 'string' || !operation.id)
+            throw new Error('Operação inválida');
+        return this.alterarFila(uid, (fila) => {
+            const atual = fila.outbox.find((item) => item.id === operation.id);
+            if (atual && JSON.stringify(atual) !== JSON.stringify(operation))
+                throw new Error('ID de operação duplicado com payload divergente');
+            if (!atual) fila.outbox.push(copy(operation));
+            return fila;
+        });
+    }
+    async registrarConflitoSettings(uid, conflito, isCurrent = () => true) {
+        const candidate = copy(conflito);
+        if (candidate?.kind !== 'settings' || !functionalSettings(candidate.local)
+            || !validateRemoteSettings(candidate.remote)) throw new Error('Conflito de configurações inválido');
+        return this.alterarFila(uid, fila => {
+            if (!isCurrent()) throw Object.assign(new Error('Sessão de persistência invalidada'), { code: 'persistence/cancelled' });
+            // Inspect the current queue inside the transaction, including entries
+            // added by another tab. Existing entries remain byte-for-byte intact.
+            if (!settingsEquivalent(candidate.local, candidate.remote) && !fila.conflicts.some(item =>
+                item?.kind === 'settings' && settingsEquivalent(item.local, candidate.local)
+                && settingsEquivalent(item.remote, candidate.remote))) fila.conflicts.push(candidate);
+            return fila;
+        });
+    }
+    async registrarConflito(uid, conflito) {
+        const id = conflito?.operation?.id || conflito?.operationId;
+        if (typeof id !== 'string' || !id) throw new Error('Conflito inválido');
+        return this.alterarFila(uid, (fila) => {
+            if (!fila.conflicts.some((item) => (item?.operation?.id || item?.operationId) === id))
+                fila.conflicts.push(copy(conflito));
+            return fila;
+        });
+    }
+    async confirmar(uid, operationId, quando) {
+        if (!(uid === '@local' || /^[A-Za-z0-9_-]{1,128}$/.test(uid || '')) || typeof operationId !== 'string' || !operationId || typeof quando !== 'string' || !quando)
+            throw new Error('ACK inválido');
+        const key = `fila:${uid}`;
+        return this.db.alterar(key, (original) => {
+            if (!original || !this.validarFila(original) || !Array.isArray(original.outbox))
+                throw new Error('Fila indisponível');
+            const queue = copy(original);
+            const found = queue.outbox.findIndex((op) => op.id === operationId);
+            if (found < 0) return queue;
+            queue.outbox.splice(found, 1);
+            queue.lastConfirmed = quando;
+            return queue;
+        });
+    }
+}

@@ -1,4 +1,4 @@
-name: Deploy Controle Financeiro to GitHub Pages
+name: Publicar Controle Financeiro 1.1.11
 
 on:
   push:
@@ -13,7 +13,7 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  build:
+  deploy:
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -21,64 +21,26 @@ jobs:
       id-token: write
     environment:
       name: github-pages
-      url: ${{ steps.deploy.outputs.page_url }}
+      url: ${{ steps.deployment.outputs.page_url }}
+
     steps:
-      - name: Checkout main
+      - name: Checkout
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '24.21.0'
+      - name: Verificar arquivos aprovados
+        run: |
+          cd published-site
+          sha256sum -c ../release-1.1.11.sha256
+          node -e "const v=require('./version.json'); if(v.version!=='1.1.11') process.exit(1)"
 
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Set up Java for Firestore rules emulator
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: 21
-
-      - name: Preparar Chromium para testes
-        run: node node_modules/@playwright/test/cli.js install --with-deps chromium
-
-      - name: Run tests
-        run: node --test
-
-      - name: Test Firestore security rules
-        run: npm run test:rules
-
-      - name: Check JavaScript syntax
-        run: npm run check
-
-      - name: Configure GitHub Pages
+      - name: Configurar GitHub Pages
         uses: actions/configure-pages@v5
 
-      - name: Confirm this is still the latest main commit
-        id: current
-        run: |
-          git fetch --no-tags origin main
-          if [ "$(git rev-parse FETCH_HEAD)" = "$GITHUB_SHA" ]; then
-            echo "is_current=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "is_current=false" >> "$GITHUB_OUTPUT"
-            echo "Skipping deployment because main has advanced beyond this run."
-          fi
-
-      - name: Prepare static site and release identity
-        if: steps.current.outputs.is_current == 'true'
-        run: node scripts/prepare-pages.mjs "$GITHUB_WORKSPACE" "$GITHUB_WORKSPACE/_site" "$GITHUB_RUN_NUMBER"
-
-      - name: Upload Pages artifact
-        if: steps.current.outputs.is_current == 'true'
+      - name: Enviar artefato
         uses: actions/upload-pages-artifact@v3
         with:
-          path: _site
+          path: published-site
 
-      - name: Deploy to GitHub Pages
-        if: steps.current.outputs.is_current == 'true'
-        id: deploy
+      - name: Publicar GitHub Pages
+        id: deployment
         uses: actions/deploy-pages@v4

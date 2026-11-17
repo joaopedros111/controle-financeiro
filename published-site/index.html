@@ -1,0 +1,622 @@
+<!DOCTYPE html>
+<html lang="pt-BR" class="app-inicializando">
+<head>
+    <meta charset="UTF-8">
+    <meta name="app-version" content="1.1.11">
+
+    <!-- Mobile: escala correta + respeito às áreas seguras do iPhone/Android -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+
+    <meta name="color-scheme" content="light dark">
+    <meta name="theme-color" content="#ffffff">
+    <meta name="description" content="Controle suas entradas e despesas por mês, categorias, pagamentos e parcelas.">
+    <title>Controle Financeiro</title>
+
+    <link rel="manifest" href="manifest.json?_release=1.1.11">
+
+    <link rel="icon" href="icons/icon-192.png?_release=1.1.11">
+    <link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon.png?_release=1.1.11">
+
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="Finanças">
+
+    <script>
+        // Preferência estritamente visual: evita a piscada do tema padrão antes
+        // de o módulo e o IndexedDB da conta estarem disponíveis.
+        try {
+            const temaInicial = localStorage.getItem("controleFinanceiro:tema-inicial");
+            if (["claro", "escuro", "rosa", "pangolim", "floresta"].includes(temaInicial)) {
+                document.documentElement.dataset.tema = temaInicial === "floresta" ? "claro" : temaInicial;
+            }
+        } catch { /* O bootstrap assíncrono continua mesmo sem localStorage. */ }
+    </script>
+
+    <link rel="stylesheet" href="style.css?_release=1.1.11">
+    <link rel="stylesheet" href="controls.css?_release=1.1.11">
+</head>
+
+
+<body>
+
+
+
+    <div id="carregando-aplicativo" class="carregando-aplicativo" role="status" aria-live="polite">
+        <span class="carregando-aplicativo-indicador" aria-hidden="true"></span>
+        <span>Carregando seus dados…</span>
+    </div>
+
+    <main class="container">
+        <section id="aviso-recuperacao-financeira" class="bloco" role="status" aria-live="polite" hidden>
+            <p></p>
+            <button id="baixar-recuperacao-financeira" class="btn btn-secundario" type="button">Baixar histórico</button>
+            <button id="rever-confirmacoes-financeiras" class="btn btn-secundario" type="button" hidden>Rever confirmação</button>
+        </section>
+        <section id="aviso-compatibilidade-financeira" class="bloco" role="alert" hidden>
+            <p>Atualização obrigatória: esta versão não é compatível com a geração da conta. Os dados locais foram preservados.</p>
+            <button id="atualizar-compatibilidade-financeira" class="btn btn-secundario" type="button">Atualizar aplicativo</button>
+        </section>
+<nav class="periodo" aria-label="Período">
+    <button id="mes-anterior" class="btn btn-icone" type="button" aria-label="Mês anterior">‹</button>
+    <label class="sr-only" for="ano">Ano</label>
+    <select id="ano"></select>
+    <label class="sr-only" for="mes">Mês</label>
+    <select id="mes">
+        <option value="1">Janeiro</option>
+        <option value="2">Fevereiro</option>
+        <option value="3">Março</option>
+        <option value="4">Abril</option>
+        <option value="5">Maio</option>
+        <option value="6">Junho</option>
+        <option value="7">Julho</option>
+        <option value="8">Agosto</option>
+        <option value="9">Setembro</option>
+        <option value="10">Outubro</option>
+        <option value="11">Novembro</option>
+        <option value="12">Dezembro</option>
+    </select>
+    <button id="hoje" class="btn btn-secundario" type="button">Hoje</button>
+    <button id="mes-proximo" class="btn btn-icone" type="button" aria-label="Próximo mês">›</button>
+    <div class="resumo-acoes">
+        <button id="abrir-calculadora" class="btn btn-icone resumo-calculadora" type="button" aria-label="Abrir calculadora" title="Calculadora"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M8 7h8M8 11h2m4 0h2M8 15h2m4 0h2M8 19h2m4 0h2"/></svg></button>
+        <button id="abrir-calendario-resumo" class="btn btn-icone resumo-calendario" type="button" aria-label="Selecionar data no calendário" title="Selecionar data no calendário"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="3.5" y="5" width="17" height="16" rx="2"/><path d="M7.5 3v4M16.5 3v4M4 9.5h16M8 13h.01M12 13h.01M16 13h.01M8 17h.01M12 17h.01"/></svg></button>
+        <button id="alternar-visibilidade-resumo" class="btn btn-icone resumo-visibilidade" type="button" aria-label="Ocultar valores financeiros do resumo" title="Ocultar valores financeiros do resumo" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg></button>
+        <input id="data-calendario-resumo" class="resumo-seletor-data" type="date" min="2000-01-01" max="2100-12-31" tabindex="-1" aria-hidden="true">
+    </div>
+</nav>
+
+
+<!-- Resumo do mês -->
+
+<section class="resumo" aria-labelledby="titulo-resumo">
+
+    <div class="resumo-cabecalho">
+    <h2 id="titulo-resumo" class="resumo-titulo">
+        RESUMO DO MÊS
+    </h2>
+    </div>
+
+    <div class="grafico-legenda compromisso-legenda"><span><i class="legenda-pago"></i>Pago</span><span><i class="legenda-pendente"></i>Pendente no mês</span><span><span>Taxa de economia</span><strong id="taxa-economia"></strong></span></div>
+    <div class="barra" id="barra">
+        <div class="barra-pago" id="barra-pago"></div>
+        <div class="barra-pendente" id="barra-pendente"></div>
+    </div>
+
+    <dl class="indicadores">
+
+        <div>
+            <dt>Entradas</dt>
+            <dd id="total-receitas">R$ 0,00</dd>
+        </div>
+
+        <div>
+            <dt>Despesas</dt>
+            <dd id="total-despesas">R$ 0,00</dd>
+        </div>
+
+        <div>
+            <dt>Saldo do mês</dt>
+            <dd id="saldo-valor" class="saldo-valor">R$ 0,00</dd>
+        </div>
+
+        <div>
+            <dt>Pendente no mês</dt>
+            <dd id="valor-pendente">R$ 0,00</dd>
+        </div>
+
+    </dl>
+
+    <p class="barra-texto" id="texto-comprometido">
+        Informe suas receitas para ver quanto da renda está comprometido.
+    </p>
+
+</section>
+
+<section class="bloco grafico-bloco" aria-labelledby="titulo-grafico">
+    <div class="bloco-topo grafico-topo">
+        <div>
+            <span class="grafico-sobretitulo">PANORAMA</span>
+            <h2 id="titulo-grafico">Gastos por categoria</h2>
+        </div>
+    </div>
+    <div class="panorama-graficos">
+        <section class="grafico-categorias" aria-labelledby="titulo-grafico-categorias">
+        <div class="grafico-categorias-topo">
+            <h3 id="titulo-grafico-categorias">Gastos do mês</h3>
+            <span id="periodo-grafico-categorias" class="grafico-periodo"></span>
+        </div>
+        <div class="grafico-categorias-conteudo">
+            <ul id="legenda-grafico-categorias" class="legenda-grafico-categorias" aria-label="Categorias e valores das despesas"></ul>
+        </div>
+        <p id="vazio-grafico-categorias" class="grafico-categorias-vazio" hidden>Adicione despesas neste mês para ver a divisão por categoria.</p>
+        </section>
+    </div>
+</section>
+
+        <!-- Despesas -->
+
+<section id="secao-despesas" class="bloco despesas" aria-labelledby="titulo-despesas">
+    <div class="bloco-topo">
+        <div class="bloco-titulo-retratil">
+            <h2 id="titulo-despesas">Despesas do mês</h2>
+        <button class="bloco-retrair" type="button" data-registra-tela="lancamentos" aria-expanded="false" aria-controls="conteudo-despesas" aria-label="Expandir despesas">
+                <svg class="bloco-seta" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m7 10 5 5 5-5"/></svg>
+            </button>
+        </div>
+        <button id="adicionar-despesa" class="btn btn-primario" type="button">
+            Adicionar
+        </button>
+    </div>
+
+    <div id="conteudo-despesas" hidden>
+        <div id="lista-despesas"></div>
+        <p class="vazio" id="vazio-despesas"></p>
+        <div class="total">
+            <span id="total-rotulo">Total a pagar</span>
+            <span id="total-valor">R$ 0,00</span>
+        </div>
+    </div>
+</section>
+
+
+
+<!-- Entradas -->
+
+<section id="secao-entradas" class="bloco" aria-labelledby="titulo-receitas">
+    <div class="bloco-topo">
+        <div class="bloco-titulo-retratil">
+            <h2 id="titulo-receitas">Entradas</h2>
+        <button class="bloco-retrair" type="button" data-registra-tela="lancamentos" aria-expanded="false" aria-controls="conteudo-receitas" aria-label="Expandir entradas">
+                <svg class="bloco-seta" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m7 10 5 5 5-5"/></svg>
+            </button>
+        </div>
+        <button id="adicionar-receita" class="btn btn-primario" type="button">
+            Adicionar
+        </button>
+    </div>
+
+    <div id="conteudo-receitas" hidden>
+        <div id="lista-receitas"></div>
+        <p class="vazio" id="vazio-receitas">
+            Nenhuma receita neste mês. Adicione salário, renda extra ou outros valores recebidos.
+        </p>
+        <div class="total total-receitas">
+            <span>Total</span>
+            <span id="total-receitas-lista">R$ 0,00</span>
+        </div>
+    </div>
+</section>
+
+
+
+
+
+
+
+    </main>
+
+<button id="abrir-ajustes" class="btn btn-icone ajustes-botao" type="button" aria-label="Abrir opções" title="Opções"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 6h16M4 12h16M4 18h16"/><circle cx="8" cy="6" r="1.5"/><circle cx="15" cy="12" r="1.5"/><circle cx="10" cy="18" r="1.5"/></svg></button>
+
+<dialog id="dialogo-ajustes" aria-labelledby="titulo-ajustes">
+    <div class="dialogo-corpo ajustes-corpo">
+        <div class="bloco-topo">
+            <h2 id="titulo-ajustes">Op&#231;&#245;es</h2>
+            <button id="fechar-ajustes" class="btn btn-icone" type="button" aria-label="Fechar ajustes" autofocus>×</button>
+        </div>
+        <section class="ajustes-secao" aria-labelledby="titulo-categorias-orcamentos">
+            <h3 id="titulo-categorias-orcamentos">Categorias e orçamentos</h3>
+            <button id="abrir-categorias-orcamento" class="btn btn-secundario" type="button">Gerenciar categorias</button>
+            <button id="abrir-limites-orcamento" class="btn btn-secundario" type="button">Configurar limites de orçamento</button>
+        </section>
+        <section class="ajustes-secao" aria-labelledby="titulo-aparencia">
+            <h3 id="titulo-aparencia">Aparência e visualização</h3>
+            <div class="ajuste-linha">
+                <div><strong>Tema</strong><span>Aurora, Midnight, Peônia ou Pangolim</span></div>
+                <button id="alternar-tema" class="btn btn-secundario tema-botao" type="button" aria-label="Tema atual: Aurora. Mudar para Midnight." title="Tema atual: Aurora. Mudar para Midnight.">☀️ <span>Aurora</span></button>
+            </div>
+            <label class="ajuste-linha ajuste-controle densidade-controle" for="densidade-interface">
+                <span>Densidade da interface <output id="valor-densidade-interface" for="densidade-interface" aria-live="polite">50%</output></span>
+                <input id="densidade-interface" type="range" min="0" max="100" step="1" value="50" aria-valuetext="50%">
+            </label>
+            <label class="ajuste-linha ajuste-controle ajuste-alternancia" for="mostrar-resumo-mes">
+                <span>Exibir resumo do mês na tela de início</span>
+                <input id="mostrar-resumo-mes" type="checkbox" checked>
+            </label>
+            <label class="ajuste-linha ajuste-controle ajuste-alternancia" for="mostrar-graficos">
+                <span>Exibir gráficos na tela inicial</span>
+                <input id="mostrar-graficos" type="checkbox" checked>
+            </label>
+            <label class="ajuste-linha ajuste-controle ajuste-alternancia" for="mostrar-despesas-mes">
+                <span>Exibir Despesas do mês na tela inicial</span>
+                <input id="mostrar-despesas-mes" type="checkbox" checked>
+            </label>
+            <label class="ajuste-linha ajuste-controle ajuste-alternancia" for="mostrar-entradas">
+                <span>Exibir Entradas na tela inicial</span>
+                <input id="mostrar-entradas" type="checkbox" checked>
+            </label>
+            <label class="ajuste-linha ajuste-controle ajuste-alternancia" for="ocultar-ao-iniciar">
+                <span>Iniciar com valores ocultos</span>
+                <input id="ocultar-ao-iniciar" type="checkbox">
+            </label>
+        </section>
+        <section class="ajustes-secao" aria-labelledby="titulo-sincronizacao">
+            <h3 id="titulo-sincronizacao">Sincronização entre dispositivos</h3>
+            <p id="estado-sincronizacao" class="nota" role="status" aria-live="polite">Somente neste dispositivo.</p>
+            <p id="conta-sincronizacao" class="nota"></p>
+            <p id="ultima-sincronizacao" class="nota"></p>
+            <div class="acoes">
+                <button id="entrar-google" class="btn btn-secundario" type="button">Entrar com Google</button>
+                <button id="sair-google" class="btn btn-secundario" type="button" hidden>Sair da conta</button>
+            </div>
+           
+            <p class="nota">Os dados desta conta sincronizam automaticamente. Alterações concorrentes ficam preservadas no histórico de recuperação.</p>
+                </section>
+        <section class="ajustes-secao" aria-labelledby="titulo-botao-menu">
+            <h3 id="titulo-botao-menu">Botão de opções</h3>
+            <label class="ajuste-linha ajuste-controle" for="posicao-botao-menu">
+                <span>Posição</span>
+                <select id="posicao-botao-menu">
+                    <option value="centro">Centro</option>
+                    <option value="direita">Direita</option>
+                    <option value="esquerda">Esquerda</option>
+                    <option value="arrastavel">Arrastável</option>
+                </select>
+            </label>
+            <label class="ajuste-linha ajuste-controle" for="transparencia-botao-menu">
+                <span>Transparência <output id="valor-transparencia-botao">45%</output></span>
+                <input id="transparencia-botao-menu" type="range" min="20" max="80" value="45">
+            </label>
+            <label class="ajuste-linha ajuste-controle" for="tamanho-botao-menu">
+                <span>Tamanho do botão <output id="valor-tamanho-botao-menu">58 px</output></span>
+                <input id="tamanho-botao-menu" type="range" min="44" max="76" step="2" value="58">
+            </label>
+        </section>
+        <section class="ajustes-secao" aria-labelledby="titulo-idioma-moeda">
+            <h3 id="titulo-idioma-moeda">Idioma e moeda</h3>
+            <label class="ajuste-linha ajuste-controle" for="idioma-interface">
+                <span>Idioma</span>
+                <select id="idioma-interface">
+                    <option value="pt-BR">Português (Brasil)</option>
+                    <option value="en">English</option>
+                    <option value="es">Español</option>
+                    <option value="fr">Français</option>
+                    <option value="de">Deutsch</option>
+                    <option value="ja">日本語</option>
+                </select>
+            </label>
+            <label class="ajuste-linha ajuste-controle" for="moeda-interface">
+                <span>Moeda de exibição</span>
+                <select id="moeda-interface">
+                    <option value="BRL">Real brasileiro (BRL)</option>
+                    <option value="USD">Dólar americano (USD)</option>
+                    <option value="EUR">Euro (EUR)</option>
+                    <option value="JPY">Iene japonês (JPY)</option>
+                </select>
+            </label>
+            <p class="nota">A moeda altera somente a apresentação dos valores. Os números armazenados não são convertidos.</p>
+        </section>
+        <section class="ajustes-secao" aria-labelledby="titulo-ferramentas">
+            <h3 id="titulo-ferramentas">Dados e segurança</h3>
+            <label class="ajuste-linha ajuste-controle" for="escopo-csv">
+                <span>Período do CSV</span>
+                <select id="escopo-csv"><option value="mes">Mês selecionado</option><option value="todos">Todos os meses</option></select>
+            </label>
+            <div class="acoes acoes-ferramentas">
+                <button id="copiar-mes-anterior" class="btn btn-secundario" type="button">Copiar mês anterior</button>
+                <button id="exportar-csv" class="btn btn-secundario" type="button">Exportar CSV</button>
+                <button id="exportar-backup" class="btn btn-secundario" type="button">Salvar backup</button>
+                <button id="importar-backup" class="btn btn-secundario" type="button">Restaurar backup</button>
+                <button id="exportar-historico-recuperacao" class="btn btn-secundario" type="button" aria-describedby="descricao-historico-recuperacao">Baixar histórico</button>
+                <button id="limpar-mes" class="btn btn-perigo" type="button">Limpar m&#234;s atual</button>
+                <button id="excluir-tudo" class="btn btn-perigo" type="button">Excluir tudo</button>
+            </div>
+            <p id="descricao-historico-recuperacao" class="nota">Baixa uma cópia das alterações concorrentes preservadas para recuperação.</p>
+            <input id="arquivo-backup" type="file" accept="application/json,.json" hidden>
+            <p id="diagnostico-dados" class="nota" aria-live="polite"></p>
+            <p id="ultima-operacao-dados" class="nota"></p>
+            <p class="nota">Na conta Google, importar adiciona os dados do backup e sincroniza automaticamente, sem excluir dados ausentes do arquivo.</p>
+        </section>
+        <section class="ajustes-secao" aria-labelledby="titulo-sobre">
+            <h3 id="titulo-sobre">Sobre e diagnóstico</h3>
+            <p class="nota">Nome: Controle Financeiro</p>
+            <p class="nota">Versão instalada: <strong id="versao-instalada">Consultando…</strong></p>
+            <p class="nota">Versão publicada: <strong id="versao-publicada">Não verificada</strong></p>
+            <p class="nota">Última verificação: <span id="data-verificacao-atualizacao">Não registrada.</span></p>
+            <p class="nota">Resultado: <span id="resultado-verificacao-atualizacao">Não verificada.</span></p>
+            <p id="diagnostico-app" class="nota"></p>
+        </section>
+        <section class="ajustes-secao" aria-labelledby="titulo-atualizacoes">
+            <h3 id="titulo-atualizacoes">Atualizações</h3>
+            <button id="atualizar-app" class="btn btn-secundario ajustes-categorias-botao" type="button">Verificar atualização</button>
+            <button id="cancelar-atualizacao" class="btn btn-secundario" type="button" hidden>Cancelar preparação da atualização</button>
+            <p id="status-atualizacao" class="nota" aria-live="polite">A versão publicada será consultada quando houver conexão.</p>
+        </section>
+    </div>
+</dialog>
+
+<dialog id="dialogo-calculadora" class="dialogo-calculadora" aria-label="Calculadora">
+    <div class="dialogo-corpo calculadora-corpo">
+        <div class="bloco-topo">
+            <h2>Calculadora</h2>
+            <button id="fechar-calculadora" class="btn btn-icone" type="button" aria-label="Fechar calculadora" autofocus>×</button>
+        </div>
+        <input id="visor-calculadora" class="visor-calculadora" type="text" inputmode="none" aria-label="Expressão e resultado" autocomplete="off" readonly>
+        <div class="teclas-calculadora">
+            <button id="limpar-calculadora" type="button" aria-label="Limpar tudo">C</button><button id="apagar-calculadora" type="button" aria-label="Apagar último caractere">⌫</button><button type="button" data-calculadora="(" aria-label="Abrir parêntese">(</button><button type="button" data-calculadora=")" aria-label="Fechar parêntese">)</button>
+            <button type="button" data-calculadora="7">7</button><button type="button" data-calculadora="8">8</button><button type="button" data-calculadora="9">9</button><button type="button" data-calculadora="/">÷</button>
+            <button type="button" data-calculadora="4">4</button><button type="button" data-calculadora="5">5</button><button type="button" data-calculadora="6">6</button><button type="button" data-calculadora="*">×</button>
+            <button type="button" data-calculadora="1">1</button><button type="button" data-calculadora="2">2</button><button type="button" data-calculadora="3">3</button><button type="button" data-calculadora="-">−</button>
+            <button type="button" data-calculadora="0">0</button><button type="button" data-calculadora=".">,</button><button type="button" data-calculadora="%">%</button><button type="button" data-calculadora="+">+</button>
+            <button class="tecla-resultado" id="calcular-resultado" type="button">=</button>
+        </div>
+    </div>
+</dialog>
+
+
+
+    <!-- Adicionar / editar despesa -->
+
+    <dialog id="dialogo-despesa" aria-labelledby="titulo-dialogo-despesa">
+
+        <form id="form-despesa" class="dialogo-corpo" novalidate>
+
+            <div class="bloco-topo">
+
+                <h2 id="titulo-dialogo-despesa">Adicionar despesa</h2>
+
+                <button id="fechar-despesa" class="btn btn-icone" type="button" aria-label="Fechar" autofocus>×</button>
+
+            </div>
+
+
+
+            <div class="campos">
+
+                <label class="campo">
+
+                    <span>Nome</span>
+
+                    <input id="despesa-nome" type="text" maxlength="80" placeholder="Ex.: Aluguel" autocomplete="off">
+
+                </label>
+
+
+
+                <label class="campo">
+
+                    <span>Categoria</span>
+
+                    <select id="despesa-categoria"></select>
+
+                </label>
+
+
+
+                <label class="campo">
+
+                    <span>Valor</span>
+
+                    <input id="despesa-valor" type="number" min="0" step="0.01" inputmode="decimal" placeholder="0,00">
+
+                </label>
+
+
+
+                <label class="campo" id="campo-tipo">
+
+                    <span>Repetição</span>
+
+                    <select id="despesa-tipo">
+
+                        <option value="unica">Não se repete</option>
+
+                        <option value="fixa">Fixa (12 meses)</option>
+
+                        <option value="parcelada">Parcelada</option>
+
+                    </select>
+
+                    <small class="dica" id="dica-tipo"></small>
+
+                </label>
+
+
+
+                <label class="campo" id="campo-parcelas" hidden>
+
+                    <span>Número de parcelas</span>
+
+                    <input id="despesa-parcelas" type="number" min="2" max="60" step="1" inputmode="numeric" value="2">
+
+                    <small class="dica">O valor acima é o de cada parcela. As demais entram nos meses seguintes.</small>
+
+                </label>
+
+
+
+                <label class="campo-check">
+
+                    <input id="despesa-pago" type="checkbox">
+
+                    <span>Já está paga</span>
+
+                </label>
+
+
+
+                <label class="campo-check" id="campo-propagar" hidden>
+
+                    <input id="despesa-propagar" type="checkbox">
+
+                    <span id="texto-propagar">Aplicar também às próximas</span>
+
+                </label>
+
+            </div>
+
+
+
+            <div class="acoes acoes-dialogo">
+
+                <button id="cancelar-despesa" class="btn btn-secundario" type="button">Cancelar</button>
+
+                <button class="btn btn-primario" type="submit">Salvar</button>
+
+            </div>
+
+        </form>
+
+    </dialog>
+
+
+
+    <!-- Remover despesa fixa ou parcelada -->
+
+    <dialog id="dialogo-serie" aria-labelledby="titulo-dialogo-serie">
+
+        <div class="dialogo-corpo">
+
+            <h2 id="titulo-dialogo-serie">Remover despesa</h2>
+
+            <p id="texto-serie" class="texto-dialogo"></p>
+
+
+
+            <div class="acoes acoes-dialogo">
+
+                <button id="serie-cancelar" class="btn btn-secundario" type="button" autofocus>Cancelar</button>
+
+                <button id="serie-so-este" class="btn btn-secundario" type="button">Só este mês</button>
+
+                <button id="serie-proximos" class="btn btn-perigo" type="button">Este e os próximos</button>
+
+            </div>
+
+        </div>
+
+    </dialog>
+
+
+
+    <!-- Adicionar / editar entrada -->
+
+    <dialog id="dialogo-receita" aria-labelledby="titulo-dialogo-receita">
+
+        <form id="form-receita" class="dialogo-corpo" novalidate>
+
+            <div class="bloco-topo">
+
+                <h2 id="titulo-dialogo-receita">Adicionar entrada</h2>
+
+                <button id="fechar-receita" class="btn btn-icone" type="button" aria-label="Fechar" autofocus>×</button>
+
+            </div>
+
+
+
+            <div class="campos">
+
+                <label class="campo">
+
+                    <span>Nome</span>
+
+                    <input id="receita-nome" type="text" maxlength="80" placeholder="Ex.: Salário" autocomplete="off">
+
+                </label>
+
+
+
+                <label class="campo">
+
+                    <span>Valor</span>
+
+                    <input id="receita-valor" type="number" min="0" step="0.01" inputmode="decimal" placeholder="0,00">
+
+                </label>
+
+                <label class="campo-check" id="campo-recebido-receita">
+                    <input id="receita-recebido" type="checkbox">
+                    <span>Entrada recebida</span>
+                </label>
+                <label class="campo-check" id="campo-repetir-receita" hidden>
+                    <input id="receita-repetir" type="checkbox">
+                    <span>Repetir mensalmente por 12 meses</span>
+                </label>
+
+            </div>
+
+
+
+            <div class="acoes acoes-dialogo">
+
+                <button id="cancelar-receita" class="btn btn-secundario" type="button">Cancelar</button>
+
+                <button class="btn btn-primario" type="submit">Salvar</button>
+
+            </div>
+
+        </form>
+
+    </dialog>
+
+
+
+    <dialog id="dialogo-orcamentos" aria-labelledby="titulo-dialogo-orcamentos">
+        <div class="dialogo-corpo orcamentos-dialogo-corpo">
+            <div class="bloco-topo">
+                <h2 id="titulo-dialogo-orcamentos">Categorias e orçamentos</h2>
+<button class="btn btn-secundario orcamento-voltar"
+        type="button"
+        data-orcamento-voltar>Voltar</button>            </div>
+            <section id="painel-categorias-orcamento" class="painel-orcamento" aria-labelledby="titulo-gerenciar-categorias" hidden>
+                <h3 id="titulo-gerenciar-categorias">Categorias</h3>
+                <p class="nota">Adicione, renomeie ou remova categorias usadas nos lançamentos e orçamentos.</p>
+                <ul id="lista-categorias" class="lista-categorias"></ul>
+                <div class="nova-categoria">
+                    <label class="sr-only" for="nova-categoria">Nome da nova categoria</label>
+                    <input id="nova-categoria" type="text" placeholder="Nome da nova categoria" maxlength="40">
+                    <button id="adicionar-categoria" class="btn btn-primario" type="button">Adicionar categoria</button>
+                </div>
+            </section>
+            <section id="painel-limites-orcamento" class="painel-orcamento" aria-labelledby="titulo-limites-orcamento" hidden>
+                <h3 id="titulo-limites-orcamento">Limites mensais por categoria</h3>
+                <p class="nota">Os limites valem para todos os meses. Categorias sem limite ficam sem orçamento.</p>
+                <div id="lista-orcamentos" class="lista-orcamentos"></div>
+            </section>
+        </div>
+    </dialog>
+
+
+    <div id="aviso" class="aviso" role="status" aria-live="polite"></div>
+
+<script type="module" src="app.js?_release=1.1.11"></script>
+<script>
+    if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+            navigator.serviceWorker.register('sw.js').catch(console.error);
+        });
+    }
+</script>
+</body>
+</html>

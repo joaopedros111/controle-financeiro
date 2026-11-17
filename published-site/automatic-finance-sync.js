@@ -1,0 +1,650 @@
+import { chaveLocalConta, registrosFinanceiros, recordEntityKey, makeOperation, validateRemoteSettings, validRemoteTombstone,
+    validateRemoteConflicts, snapshotConfirmed, inspectRemoteKeys, settingsEquivalent, recordsEquivalent, validConflictRecord,
+    functionalSettings, readSyncMetadata, operationId, acknowledgementJournalKey, acknowledgementError } from './sync-core.js?_release=1.1.11';
+import { normalizarEstado, validarBackup, validarTotaisMonetarios } from './finance-core.js?_release=1.1.11';
+import { financeSettings, reconcileAutomatic, prepareGenerationRestore, transientSyncError } from './automatic-sync-policy.js?_release=1.1.11';
+
+const error = (code, message) => Object.assign(new Error(message), { code });
+const upgradeMessage = 'Atualização obrigatória: esta versão não é compatível com a geração da conta. Os dados locais foram preservados.';
+const networkStatus = 'Conexão lenta ou indisponível. Dados locais preservados; tentando novamente.';
+const recoveryStatus = 'Dados ativos sincronizados; há alterações somente no histórico de recuperação.';
+const pending = queue => queue.outbox.length || Object.keys(queue.ackUnverifiable || {}).length || queue.automaticSettingsDirty || queue.conflicts.length
+    || queue.compatibilityBlocked || queue.restoreJob || queue.automaticHistory?.some(item => !item.uploaded) || queue.automaticResolutions?.some(item => !item.confirmed);
+function validateRecords(items) {
+    if (!Array.isArray(items) || inspectRemoteKeys(items).duplicates.length || inspectRemoteKeys(items).mismatches.length) throw error('sync/invalid-data', 'Dados remotos incompatíveis. As cópias locais foram preservadas.');
+    const state = { meses: {} };
+    for (const item of items) {
+        if (item.deleted) { if (!validRemoteTombstone(item)) throw error('sync/invalid-data', 'Exclusão remota inválida.'); continue; }
+        state.meses[item.month] ||= { receitas: [], despesas: [] };
+        if (!['receitas', 'despesas'].includes(item.type) || !item.revision || !item.updatedAt || !validConflictRecord(item, { remote: true })) throw error('sync/invalid-data', 'Registro remoto inválido.');
+        state.meses[item.month][item.type].push(item.record);
+    }
+    if (!validarBackup(state)) throw error('sync/invalid-data', 'Dados financeiros remotos inválidos.');
+    return items;
+}
+
+export class AutomaticFinanceSync {
+    constructor({ client, db, service, readLegacy, onAccount, onState, onStatus, onTransition = () => {}, waitLocal = async () => {}, storageBlocked = () => false,
+        connectivity = globalThis, delayMs = 200, maxDelayMs = 30000, requiredProtocol = 1,
+        networkTimeoutMs = 45000, retryBaseMs = 1000, random = Math.random, localBarrier = null,
+        readLegacyMetadata = uid => readSyncMetadata(globalThis.localStorage, uid), accountPolicy = null, beforeAccountSync = null, onMigrationGate = () => {} }) {
+        Object.assign(this, { client, db, service, readLegacy, readLegacyMetadata, accountPolicy, beforeAccountSync, onMigrationGate, onAccount, onState, onStatus, onTransition, waitLocal, storageBlocked, connectivity, delayMs, maxDelayMs, requiredProtocol, networkTimeoutMs, retryBaseMs, random, localBarrier });
+        // A distinct context also fences anonymous -> login -> anonymous transitions.
+        this.session = null; this.sessionContext = {}; this.online = connectivity.navigator?.onLine !== false;
+    }
+    async start() {
+        if (this.unAuth) return;
+        this.online = this.connectivity.navigator?.onLine !== false;
+        let settleInitial;
+        const initial = new Promise(resolve => { settleInitial = resolve; });
+        let awaitingInitial = true;
+        this.unAuth = this.client.onUser(user => {
+            if (this.session?.localOnly && this.accountPolicy?.access?.kind === 'local' && (!user || !this.resumeGoogle || user.uid !== this.session.uid)) { if (awaitingInitial) { awaitingInitial = false; settleInitial(); } return; }
+            if (
+    this.accountPolicy &&
+    typeof this.client.authenticatedUser === 'function' &&
+    user !== this.client.authenticatedUser()
+) return;
+            if (user && this.session?.user === user) { if (awaitingInitial) { awaitingInitial = false; settleInitial(); } return; }
+            const transition = this.useAccount(user), session = this.session;
+            void transition.catch(cause => this.report(cause, session)).finally(() => {
+                if (awaitingInitial) { awaitingInitial = false; settleInitial(); }
+            });
+        });
+        this.offline = () => { this.online = false; clearTimeout(this.session?.timer); if (!this.session?.localOnly) this.status('Offline'); };
+        this.reconnect = () => {
+            this.online = this.connectivity.navigator?.onLine !== false;
+            if (this.online && this.session) {
+                this.session.permanent = false;
+                this.session.retryAt = 0;
+            }
+            this.request(0);
+        };
+        this.foreground = () => { if (!this.hidden()) { this.online = this.connectivity.navigator?.onLine !== false; this.request(0); } };
+        this.visibility = () => { if (this.hidden()) clearTimeout(this.session?.timer); else this.foreground(); };
+        this.connectivity.addEventListener?.('online', this.reconnect);
+        this.connectivity.addEventListener?.('offline', this.offline);
+        this.connectivity.addEventListener?.('focus', this.foreground);
+        this.connectivity.addEventListener?.('pageshow', this.foreground);
+        this.connectivity.document?.addEventListener?.('visibilitychange', this.visibility);
+        try { await this.deadline(this.client.ready()); }
+        catch (cause) { if (cause.code !== 'deadline-exceeded') throw cause; if (!this.session?.ready && !this.session?.localOnly) this.status(networkStatus); return; }
+        // Não libera a interface entre a restauração do Auth e a hidratação
+        // do estado IndexedDB pertencente ao UID restaurado.
+        try { await this.deadline(initial); }
+        catch (cause) { if (cause.code !== 'deadline-exceeded') throw cause; if (!this.session?.localOnly) this.status(networkStatus); }
+    }
+stop() {
+    this.closeSession();
+    this.unAuth?.();
+    this.unAuth = null;
+
+    this.connectivity.removeEventListener?.('online', this.reconnect);
+    this.connectivity.removeEventListener?.('offline', this.offline);
+    this.connectivity.removeEventListener?.('focus', this.foreground);
+    this.connectivity.removeEventListener?.('pageshow', this.foreground);
+    this.connectivity.document?.removeEventListener?.('visibilitychange', this.visibility);
+}
+    closeSession() {
+        const s = this.session;
+        this.session = null; this.sessionContext = {};
+        if (s) { clearTimeout(s.timer); s.networkWaiters?.forEach(cancel => cancel()); s.stops.forEach(stop => stop()); }
+    }
+    current(s) { return this.session === s; }
+    hidden() { return this.connectivity.document?.visibilityState === 'hidden'; }
+    // A deadline bounds only the waiter. It never treats a timeout as an ACK.
+    deadline(task, s = null) {
+        let timer, cancel;
+        const timeout = new Promise((_, reject) => {
+            cancel = () => reject(error('persistence/cancelled', 'Sessão alterada.'));
+            if (s) { s.networkWaiters ||= new Set(); s.networkWaiters.add(cancel); }
+            timer = setTimeout(() => reject(error('deadline-exceeded', networkStatus)), this.networkTimeoutMs);
+        });
+        return Promise.race([task, timeout]).finally(() => { clearTimeout(timer); s?.networkWaiters?.delete(cancel); });
+    }
+    async network(s, operation, { write = false } = {}) {
+        this.assertRemote(s);
+        if (!this.current(s)) throw error('persistence/cancelled', 'Sessão alterada.');
+        // An SDK write cannot be cancelled safely: retain its lock/individual ACK,
+        // and wait for it before any subsequent remote dispatch in this session.
+        if (s.pendingWrite) await this.deadline(s.pendingWrite, s);
+        this.assertRemote(s);
+        if (!this.current(s)) throw error('persistence/cancelled', 'Sessão alterada.');
+        let live = true;
+        const active = () => live && this.current(s);
+        const task = Promise.resolve().then(() => { this.assertRemote(s); if (!active()) throw error('persistence/cancelled', 'Sessão alterada.'); return operation(active); });
+        if (write) {
+            s.pendingWrite = task;
+            const clear = () => { if (s.pendingWrite === task) s.pendingWrite = null; };
+            void task.then(clear, clear);
+        }
+        try { return await this.deadline(task, s); }
+        finally { live = false; }
+    }
+    status(message, failed = false, confirmedAt = null) { this.onStatus(message, failed, confirmedAt); }
+    assertRemote(s) {
+        if (s?.localOnly || this.accountPolicy?.access?.kind === 'local') throw error('account/local-only', 'Modo local não autoriza operações remotas. Entre novamente com Google.');
+        if (s && typeof this.client.authenticatedUser === 'function' && this.client.authenticatedUser()?.uid !== s.uid) throw error('auth/user-token-expired', 'Sessão Google indisponível. Dados locais preservados; reconecte a conta.');
+    }
+    async useLocal(unlocked) {
+        const access = unlocked?.access;
+        if (!access || access.kind !== 'local' || this.accountPolicy?.access !== access || !await this.accountPolicy.isCurrent()) throw error('account/access-revoked', 'Acesso local alterado.');
+        if (this.accountPolicy.access !== access) return;
+        this.closeSession();
+        const user = { uid: access.uid, localOnly: true };
+        const s = { uid: access.uid, user, localOnly: true, stops: [], generation: access.generation, ready: false };
+        this.session = s; this.onTransition(user);
+        await this.onAccount(user);
+        if (!this.current(s) || this.accountPolicy.access !== access || !await this.accountPolicy.isCurrent()) return;
+        if (!this.current(s) || this.accountPolicy.access !== access) return;
+        this.emitState(s, unlocked.state, unlocked.queue);
+        this.status('Modo local — sem sessão Google e sem sincronização remota.');
+    }
+    async hydrateCurrent(s = this.session) {
+        if (!s || !this.current(s)) return;
+        const access = this.accountPolicy?.access;
+        const active = () => this.current(s) && (!this.accountPolicy || this.accountPolicy.access === access);
+        if (this.accountPolicy && !await this.accountPolicy.isCurrent() || !active()) return;
+        const docs = await this.db.lerDocumentos(['estado:' + s.uid, 'fila:' + s.uid]);
+        if (!active() || this.accountPolicy && !await this.accountPolicy.isCurrent() || !active()) return;
+        const state = docs.get('estado:' + s.uid), queue = docs.get('fila:' + s.uid);
+        if (!state || !Number.isSafeInteger(state.revisao) || !validarBackup(state.dados) || !validarTotaisMonetarios(state.dados) || !Array.isArray(queue?.outbox) || !Array.isArray(queue?.conflicts)) throw error('sync/invalid-local', 'Cópia local incompleta. Recuperação necessária.');
+        if ((queue.generation || 'legacy') !== s.generation) {
+            if (s.localOnly) { const local = await this.accountPolicy.offline.resume(); if (local) await this.useLocal(local); return; }
+            return this.useAccount(s.user);
+        }
+        this.emitState(s, state, queue);
+    }
+    async useAccount(user) {
+        const formerUid = this.session?.uid;
+        this.closeSession();
+        const context = this.sessionContext;
+        this.onTransition(user);
+        if (!user) {
+            this.accountPolicy?.hide();
+            await this.waitLocal();
+            if (this.sessionContext === context) {
+                if (formerUid && this.accountPolicy && !this.accountPolicy.closing) await this.accountPolicy.revoke(formerUid);
+                if (this.sessionContext === context) await this.onAccount(null);
+            }
+            return;
+        }
+        const s = { uid: user.uid, user, stops: [], attempt: 0, ready: false, permanent: false, localMigration: this.beforeAccountSync ? { pending: true, checking: true } : null };
+        this.session = s; this.status('Sincronizando');
+        await this.waitLocal(); if (!this.current(s)) return;
+        if (this.accountPolicy) {
+            try { await this.accountPolicy.identify(user, () => this.current(s) && (!this.client.authenticatedUser || this.client.authenticatedUser() === user)); }
+            catch (cause) {
+                if (this.current(s)) { this.accountPolicy.hide(); this.closeSession(); this.onTransition(null); await this.onAccount(null); this.status(cause.message, true); }
+                throw cause;
+            }
+            if (!this.current(s)) return;
+        }
+        // The authorized durable pair is rendered before discovery, SDK readiness or network.
+        const cachedPair = await this.db.ler('estado:' + s.uid);
+        if (!this.current(s)) return;
+        if (cachedPair) {
+            const q = await this.service.lerFila(s.uid);
+            if (!this.current(s)) return;
+            if (!Number.isSafeInteger(cachedPair.revisao) || cachedPair.revisao < 0 || !validarBackup(cachedPair.dados) || !validarTotaisMonetarios(cachedPair.dados) || !Array.isArray(q?.outbox) || !Array.isArray(q?.conflicts)) throw error('sync/invalid-local', 'Dados locais incompletos. Recuperação necessária.');
+            await this.onAccount(user); if (!this.current(s)) return;
+            this.emitState(s, cachedPair, q);
+        }
+        if (this.beforeAccountSync) {
+            const discovery = await this.beforeAccountSync(user, () => this.current(s));
+            if (!this.current(s)) return;
+            if (!discovery || typeof discovery.required !== 'boolean') throw error('migration/discovery-unavailable', 'Não foi possível verificar as fontes locais. A sincronização foi pausada.');
+            s.localMigration = discovery.required ? { ...discovery, pending: true, checking: false } : null;
+        }
+        const saved = this.readLegacy(chaveLocalConta(s.uid));
+        if (!['valido', 'ausente'].includes(saved.estado)) throw error('sync/invalid-local', 'Dados locais precisam de recuperação.');
+        const legacyQueue = this.readLegacyMetadata(s.uid);
+        if (!legacyQueue || typeof legacyQueue !== 'object' || Array.isArray(legacyQueue) || typeof legacyQueue.then === 'function') throw error('sync/invalid-local', 'Metadados locais inválidos.');
+        const existing = await this.db.ler(`estado:${s.uid}`);
+        if (!this.current(s)) return;
+        const initialized = await this.service.inicializar(s.uid, normalizarEstado(saved.estado === 'valido' ? saved.valor : null),
+            { outbox: [], conflicts: [], lastConfirmed: null, settingsPristine: saved.estado === 'ausente', ...legacyQueue });
+        if (!this.current(s)) return;
+        await this.onAccount(user); if (!this.current(s)) return;
+        await this.service.alterarFila(s.uid, q => { if (!this.current(s)) throw error('persistence/cancelled', 'Sessão alterada.');
+            q.automaticHasLocalSettings ??= saved.estado === 'valido' || !!existing;
+            return q; });
+        if (!this.current(s)) return;
+        s.generation = initialized.fila.generation || 'legacy';
+        this.onMigrationGate(s.localMigration);
+        this.emitState(s, initialized.estado, initialized.fila);
+        if (this.requiredProtocol > 1 && (!this.client.generationSnapshot || !this.client.generationMarker || this.client.protocolVersion < this.requiredProtocol || !this.client.protocolVersion)) {
+            await this.report(error('sync/upgrade-required', upgradeMessage), s); return;
+        }
+        this.request(0);
+    }
+    async resumeAfterLocalReview(expectedSession, action, journalKey = null) {
+        const s = expectedSession;
+        if (!['keep-separate', 'import-applied'].includes(action) || !this.current(s) || !s.localMigration?.pending)
+            throw error('migration/review-required', 'Revisão explícita da sessão atual obrigatória.');
+        if (this.accountPolicy && !await this.accountPolicy.isCurrent()) throw error('persistence/cancelled', 'Sessão alterada.');
+        const queue = await this.service.lerFila(s.uid);
+        if (!this.current(s) || (queue.generation || 'legacy') !== s.generation) throw error('sync/generation-changed', 'A geração local mudou; refaça a revisão.');
+        if (action === 'import-applied') {
+            if (!journalKey?.startsWith('restore-recovery:' + s.uid + ':migration-')) throw error('migration/review-required', 'Diário obrigatório.');
+            const journal = await this.db.ler(journalKey);
+            if (!this.current(s) || !journal || journal.version !== 1 || journal.kind !== 'anonymous-google-import' || journal.uid !== s.uid || journal.generation !== s.generation
+                || !['applied', 'confirmed'].includes(journal.state) || !journal.consent?.explicit || !journal.consent?.ownershipAcknowledged)
+                throw error('migration/review-required', 'Importação durável não comprovada.');
+        }
+        s.localMigration = null; this.onMigrationGate(null);
+        this.request(0);
+    }
+    request(delay = this.delayMs) {
+        if (this.localBarrier?.fechada) return;
+        const s = this.session;
+        if (!s || s.localOnly || s.permanent || s.localMigration?.pending || this.hidden()) return;
+        clearTimeout(s.timer);
+        if (!this.online) { this.status('Offline'); return; }
+        s.timer = setTimeout(() => { void this.run(s); }, Math.max(delay, (s.retryAt || 0) - Date.now()));
+        s.timer.unref?.();
+    }
+    localChanged() {
+        if (this.session?.localOnly) { this.status('Modo local — sem sessão Google e sem sincronização remota.'); return; }
+        if (this.session) this.session.localVersion = (this.session.localVersion || 0) + 1;
+        this.request(0);
+    }
+    report(cause, s = this.session) {
+        if (cause?.code === 'update/draining') return;
+        if (!s || !this.current(s)) return;
+        if (['sync/ack-unverifiable', 'sync/invalid-ack'].includes(cause.code)) {
+            s.permanent = true; this.status(cause.message, true);
+            return Promise.all([this.db.ler(`estado:${s.uid}`), this.service.lerFila(s.uid)]).then(([stored, queue]) => {
+                if (this.current(s)) this.emitState(s, stored, queue);
+            });
+        }
+        if (cause.code === 'sync/upgrade-required' || (cause.code === 'permission-denied' && !this.client.generationSnapshot)) {
+            s.permanent = true;
+            this.status(upgradeMessage, true);
+            return this.service.alterarFila(s.uid, queue => {
+                if (!this.current(s)) throw error('persistence/cancelled', 'Sessão alterada.');
+                queue.compatibilityBlocked = { code: 'sync/upgrade-required' }; return queue;
+            }).then(async queue => {
+                const stored = await this.db.ler(`estado:${s.uid}`);
+                if (this.current(s)) { this.emitState(s, stored, queue); this.status(upgradeMessage, true); }
+            }).catch(failure => { if (this.current(s)) this.status(failure.message || upgradeMessage, true); });
+        }
+        this.status(transientSyncError(cause) ? networkStatus : ['unauthenticated', 'auth/user-token-expired', 'auth/invalid-user-token'].includes(cause.code) ? 'Sessão Google indisponível. Dados locais preservados; reconecte a conta.' : (cause.message || 'Falha na sincronização.'), !transientSyncError(cause));
+        if (transientSyncError(cause)) {
+            const ceiling = Math.min(this.maxDelayMs, this.retryBaseMs * 2 ** Math.min(s.attempt++, 8));
+            const delay = Math.round(ceiling * (.5 + .5 * this.random()));
+            s.retryAt = Date.now() + delay; this.request(delay);
+        }
+        else s.permanent = true;
+    }
+    async run(s) {
+        if (this.localBarrier?.fechada) return;
+        if (!this.current(s) || s.localOnly || !this.online || s.permanent || s.localMigration?.pending || this.hidden()) return;
+        if (s.running) { s.again = true; return; }
+        let settleRun;
+        s.finished = new Promise(resolve => { settleRun = resolve; });
+        s.running = true; s.again = false;
+        try {
+            if (this.storageBlocked()) throw error('sync/storage-blocked', 'A persistência falhou. Os dados locais foram preservados.');
+            await this.waitLocal(); if (!this.current(s)) return;
+            this.status('Sincronizando');
+            await this.cycle(s);
+            if (this.current(s)) { s.attempt = 0; s.retryAt = 0; }
+        } catch (cause) { await this.report(cause, s); }
+        finally { s.running = false; settleRun(); if (this.current(s) && s.again && !s.permanent) this.request(); }
+    }
+    async flushForLogout() {
+        const s = this.session;
+        if (s?.localMigration?.pending) throw error('migration/review-required', 'Fontes locais preservadas; revise antes de sincronizar.');
+        if (!s || s.localOnly || !this.online || this.connectivity.navigator?.onLine === false) throw error('account/offline', 'Offline: copies preserved');
+        clearTimeout(s.timer);
+        await this.waitLocal();
+        for (let attempts = 0; attempts < 8; attempts++) {
+            if (!this.current(s)) throw error('persistence/cancelled', 'Session changed');
+            if (s.running) await s.finished;
+            s.permanent = false; s.retryAt = 0;
+            await this.run(s);
+            if (!this.current(s)) throw error('persistence/cancelled', 'Session changed');
+            if (!s.again || s.permanent) return;
+            clearTimeout(s.timer);
+        }
+        throw error('account/sync-pending', 'Synchronization still pending');
+    }
+    async snapshot(s) {
+        this.assertRemote(s);
+        if (!this.current(s)) throw error('persistence/cancelled', 'Sessão alterada.');
+        if (!this.client.generationSnapshot && this.client.generationMarker && await this.network(s, () => this.client.generationMarker(s.uid))) throw error('sync/upgrade-required', upgradeMessage);
+        if (!this.current(s)) throw error('persistence/cancelled', 'Sessão alterada.');
+        const data = this.client.generationSnapshot ? await this.network(s, () => this.client.generationSnapshot(s.uid)) : null;
+        if (!this.current(s)) throw error('persistence/cancelled', 'Sessão alterada.');
+        if (data?.protocol > (this.client.protocolVersion || 2)) throw error('sync/upgrade-required', upgradeMessage);
+        const [records, settings, conflicts] = data ? [data.records, data.settings, data.conflicts]
+            : await this.network(s, () => Promise.all([this.client.list(s.uid), this.client.getSettings(s.uid), this.client.listConflicts(s.uid)]));
+        if (!this.current(s)) throw error('persistence/cancelled', 'Sessão alterada.');
+        validateRecords(records);
+        if (!validateRemoteSettings(settings) || !validateRemoteConflicts(conflicts)) throw error('sync/invalid-data', 'Configurações remotas inválidas.');
+        return { records, settings, conflicts, generation: data?.generation || 'legacy' };
+    }
+    async reconcile(s, snapshot) {
+        this.assertRemote(s);
+        if (!this.current(s)) return;
+        let known = await this.service.preservarIntencoes(s.uid, () => this.current(s));
+        if (!this.current(s)) return;
+        // Old queues need not carry an attempted flag. Inspect their receipts
+        // before the conflict policy can archive or rebase an intention.
+        if (this.client.verifyOperation && !known.restoreJob && (known.generation || 'legacy') === snapshot.generation) {
+            for (const op of known.outbox) {
+                if (known.ackUnverifiable?.[op.id]) continue;
+                try {
+                    const result = await this.network(s, () => this.client.verifyOperation(s.uid, op, { allowPending: true }));
+                    if (!this.current(s)) return;
+                    if (result.acknowledged) {
+                        await this.service.concluirOperacao(s.uid, op, result);
+                        const observed = snapshot.records.find(record => recordEntityKey(record) === op.entityKey);
+                        const { _docId, hasPendingWrites, ...remote } = observed || {};
+                        const { revision, updatedAt, ...value } = remote;
+                        // Verification can see a commit newer than this list.
+                        // Keep the individual ACK, but never apply that old list
+                        // over the local intent (especially a tombstone).
+                        if (result.conflict ? !recordsEquivalent(observed ? remote : null, result.remote)
+                            : revision !== op.id || !recordsEquivalent(value, op.value)) throw error('aborted', 'Confirmação posterior ao snapshot; nova leitura necessária.');
+                    }
+                } catch (cause) {
+                    if (!this.current(s)) return;
+                    if (!['sync/ack-unverifiable', 'sync/invalid-ack'].includes(cause.code)) throw cause;
+                    await this.service.preservarConfirmacaoInconclusiva(s.uid, op, cause);
+                }
+            }
+            known = await this.service.preservarIntencoes(s.uid, () => this.current(s));
+        }
+        if (this.client.generationMarker) {
+            const marker = await this.client.generationMarker(s.uid);
+            if (!this.current(s)) return;
+            if ((marker?.activeGeneration || 'legacy') !== snapshot.generation) throw error('aborted', 'Snapshot de geração anterior descartado.');
+        }
+        const recoveryKey = known.compatibilityBlocked
+            ? `restore-recovery:${s.uid}:compat-${operationId(s.uid, snapshot.generation, known)}`
+            : `restore-recovery:${s.uid}:before-${snapshot.generation}`;
+        const adopting = !known.restoreJob && (known.compatibilityBlocked || (known.generation || 'legacy') !== snapshot.generation);
+        const keys = [`estado:${s.uid}`, `fila:${s.uid}`, ...(known.ackJournalKeys || []), ...(adopting ? [recoveryKey] : [])];
+        const changed = await this.db.alterarDocumentos(keys, docs => {
+            if (!this.current(s)) throw error('persistence/cancelled', 'Sessão alterada.');
+            const stored = docs.get(`estado:${s.uid}`); let before = docs.get(`fila:${s.uid}`);
+            if (before.restoreJob) throw error('sync/restore-in-progress', 'Restauração em preparação.');
+            if ((before.generation || 'legacy') !== (known.generation || 'legacy')) throw error('aborted', 'Geração local mudou durante a leitura.');
+            if (before.outbox.some(op => !docs.has(acknowledgementJournalKey(s.uid, op)))) throw error('aborted', 'Nova intenção ainda precisa ser preservada.');
+            if (before.compatibilityBlocked || (before.generation || 'legacy') !== snapshot.generation) {
+                if (!adopting) throw error('aborted', 'Geração local mudou durante a leitura.');
+                if (!docs.get(recoveryKey)) docs.set(recoveryKey, { state: structuredClone(stored.dados), queue: structuredClone(before), reason: 'generation-replaced' });
+                const notices = [...(before.recoveryNotices || [])];
+                if ((before.outbox.length || before.automaticSettingsDirty || before.conflicts.length || before.restoredPending)
+                    && !notices.some(item => item.id === recoveryKey)) notices.push({ id: recoveryKey, code: 'archived-offline', acknowledged: false });
+                before = { outbox: [], conflicts: [], remoteRevisions: {}, initialized: true, automaticPolicyInitialized: true,
+                    generation: snapshot.generation, recoveryNotices: notices, recoveryKeys: [...new Set([...(before.recoveryKeys || []), recoveryKey])] };
+                stored.dados = normalizarEstado({ meses: {}, tema: stored.dados.tema });
+                s.stops.splice(0).forEach(stop => stop()); s.ready = false;
+            }
+            const plan = reconcileAutomatic(stored.dados, before, snapshot.records, snapshot.settings, snapshot.conflicts);
+            for (const op of before.outbox) if (!plan.queue.outbox.some(item => item.id === op.id)) {
+                const key = acknowledgementJournalKey(s.uid, op), saved = docs.get(key);
+                if (!saved || !recordsEquivalent(saved.operation, op)) throw error('sync/invalid-local', 'Diário de intenção ausente ou divergente.');
+                docs.set(key, { ...saved, status: 'archived', reason: 'automatic-conflict-recovery' });
+            }
+            for (const op of plan.queue.outbox) if (plan.queue.generation && !op.generation && !before.outbox.some(previous => previous.id === op.id)) op.generation = plan.queue.generation;
+            if (!validarBackup(plan.state) || !validarTotaisMonetarios(plan.state)) throw error('sync/invalid-data', 'Combinação financeira inválida.');
+            // Resume explicit old backup/first-account work. Ordinary snapshots do not stage records.
+            if (before.restoredPending || !before.initialized) {
+                const remote = new Map(snapshot.records.map(item => [recordEntityKey(item), item]));
+                for (const item of registrosFinanceiros(plan.state)) {
+                    const key = recordEntityKey(item), current = remote.get(key);
+                    if (!current && !plan.queue.outbox.some(op => op.entityKey === key)) plan.queue.outbox.push(makeOperation(key, { ...item, deleted: false }, null));
+                }
+                plan.queue.restoredPending = false; plan.queue.initialized = true; plan.queue.firstLinkReviewed = true;
+            }
+            stored.dados = plan.state; stored.revisao++;
+            docs.set(`estado:${s.uid}`, stored); docs.set(`fila:${s.uid}`, plan.queue); return docs;
+        });
+        if (this.current(s)) {
+            s.generation = snapshot.generation;
+            this.emitState(s, changed.get(`estado:${s.uid}`), changed.get(`fila:${s.uid}`));
+        }
+        return changed.get(`fila:${s.uid}`);
+    }
+    async cycle(s) {
+        this.assertRemote(s);
+        if (!this.current(s)) return;
+        if (s.localMigration?.pending) throw error('migration/review-required', 'Fontes locais precisam de revisão; nada foi publicado.');
+        const initialQueue = await this.service.lerFila(s.uid);
+        if (!this.current(s)) return;
+        if (initialQueue.compatibilityBlocked) {
+            // Only a successful, supported server read can release the durable gate.
+            const compatible = await this.snapshot(s);
+            if (!this.current(s)) return;
+            if (!initialQueue.restoreJob) await this.reconcile(s, compatible);
+            else await this.service.alterarFila(s.uid, queue => { if (!this.current(s)) throw error('persistence/cancelled', 'Sessão alterada.'); delete queue.compatibilityBlocked; return queue; });
+        }
+        if (!this.current(s)) return;
+        if (initialQueue.restoreJob) await this.resumeRestore(s, initialQueue.restoreJob);
+        if (!this.current(s)) return;
+        const localVersion = s.localVersion || 0;
+        let snapshot = await this.snapshot(s);
+        if (!this.current(s)) return;
+        await this.reconcile(s, snapshot); if (!this.current(s)) return;
+        const protectedQueue = await this.service.lerFila(s.uid);
+        if (!this.current(s)) return;
+        if (Object.keys(protectedQueue.ackUnverifiable || {}).length) throw acknowledgementError();
+        await this.network(s, active => this.service.enviarFila(s.uid, (uid, op) => active() ? this.client.commit(uid, op) : Promise.reject(error('persistence/cancelled', 'Sessão alterada.')),
+            active, () => active() && this.online && !this.hidden(), snapshot.records), { write: true });
+        if (!this.current(s)) return;
+        snapshot = await this.snapshot(s);
+        if (!this.current(s)) return;
+        let queue = await this.reconcile(s, snapshot); if (!this.current(s)) return;
+        const stored = await this.db.ler(`estado:${s.uid}`); if (!this.current(s)) return;
+        const settings = financeSettings(stored.dados);
+        if (!snapshot.settings || queue.automaticSettingsDirty || !queue.settingsBaseline && !settingsEquivalent(settings, snapshot.settings)) {
+            await this.network(s, async active => {
+            const result = await this.service.coordenarSettings(s.uid,
+                () => active() ? this.client.saveSettings(s.uid, settings, snapshot.settings?.revision || null, active, snapshot.generation) : Promise.reject(error('persistence/cancelled', 'Sessão alterada.')), true);
+            if (!this.current(s)) return;
+            if (result.conflict) { s.again = true; return; }
+            if (!result.acknowledged) throw error('sync/invalid-ack', 'Configurações sem confirmação remota.');
+            await this.service.alterarFila(s.uid, q => { if (!this.current(s)) throw error('persistence/cancelled', 'Sessão alterada.');
+                // A new local settings edit must survive this old ACK.
+                if (settingsEquivalent(q.automaticSettingsValue || settings, settings)) q.automaticSettingsDirty = false;
+                q.settingsBaseline = functionalSettings(settings); q.settingsRevision = result.revision; return q; });
+            }, { write: true });
+            if (!this.current(s)) return;
+            if (s.again) return;
+            snapshot = await this.snapshot(s); if (!this.current(s)) return;
+            queue = await this.reconcile(s, snapshot); if (!this.current(s)) return;
+        }
+        for (const item of queue.automaticHistory || []) if (!item.uploaded) {
+            if (!this.current(s)) return;
+            await this.network(s, async () => {
+            await this.client.saveAutomaticHistory(s.uid, item, snapshot.generation);
+            if (!this.current(s)) return;
+            await this.service.alterarFila(s.uid, q => { if (!this.current(s)) throw error('persistence/cancelled', 'Sessão alterada.');
+                const target = q.automaticHistory?.find(row => row.id === item.id); if (target) target.uploaded = true; return q; });
+            }, { write: true });
+        }
+        queue = await this.service.lerFila(s.uid);
+        if (!this.current(s)) return;
+        if (queue.outbox.length) { s.again = true; return; }
+        for (const resolution of queue.automaticResolutions || []) if (!resolution.confirmed) {
+            if (!this.current(s)) return;
+            await this.network(s, async () => {
+            if (!await this.client.resolveConflict(s.uid, resolution.id, resolution.choice, snapshot.generation)) throw error('sync/invalid-ack', 'Histórico sem confirmação remota.');
+            if (!this.current(s)) return;
+            await this.service.alterarFila(s.uid, q => { if (!this.current(s)) throw error('persistence/cancelled', 'Sessão alterada.');
+                const item = q.automaticResolutions?.find(row => row.id === resolution.id); if (item) item.confirmed = true; return q; });
+            }, { write: true });
+        }
+        if (!this.current(s)) return;
+        const final = await this.db.ler(`estado:${s.uid}`);
+        if (!this.current(s)) return;
+        const finalQueue = await this.service.lerFila(s.uid);
+        if (!this.current(s)) return;
+        if (pending(finalQueue)) { s.again = true; return; }
+        if (!snapshot.settings || !settingsEquivalent(financeSettings(final.dados), snapshot.settings)) { s.again = true; return; }
+        const local = new Map(registrosFinanceiros(final.dados).map(item => [recordEntityKey(item), item]));
+        const remoteKeys = new Set(snapshot.records.map(recordEntityKey));
+        if ([...local.keys()].some(key => !remoteKeys.has(key))) {
+            // Another tab may have committed and ACKed after this remote snapshot.
+            // Only diagnose untracked data against a fresh snapshot and a stable
+            // durable local revision/queue; never confirm using this older snapshot.
+            const fresh = await this.snapshot(s); if (!this.current(s)) return;
+            const latest = await this.db.ler(`estado:${s.uid}`); if (!this.current(s)) return;
+            const latestQueue = await this.service.lerFila(s.uid); if (!this.current(s)) return;
+            const freshKeys = new Set(fresh.records.map(recordEntityKey));
+            if (fresh.generation !== snapshot.generation || latest.revisao !== final.revisao
+                || JSON.stringify(latestQueue) !== JSON.stringify(finalQueue)
+                || [...local.keys()].every(key => freshKeys.has(key))) { s.again = true; return; }
+            throw error('sync/untracked-data', 'Há dados locais sem confirmação remota. A cópia local foi preservada.');
+        }
+        for (const remote of snapshot.records) if (remote.deleted ? local.has(recordEntityKey(remote)) : !recordsEquivalent(local.get(recordEntityKey(remote))?.record, remote.record)) { s.again = true; return; }
+        const confirmation = await this.service.confirmarSincronizacao(s.uid, final.dados, new Date().toISOString(), () => this.current(s));
+        if (!this.current(s)) return;
+        if (!confirmation.confirmed) { s.again = true; return; }
+        let stillConfirmed = false;
+        await this.service.alterarFila(s.uid, q => { if (!this.current(s)) throw error('persistence/cancelled', 'Sessão alterada.');
+            if (pending(q)) return q;
+            stillConfirmed = true;
+            for (const job of q.backupJobs || []) if (job.status === 'pending') job.status = 'confirmed'; return q; });
+        if (!this.current(s)) return;
+        if (!stillConfirmed || (s.localVersion || 0) !== localVersion) { s.again = true; return; }
+        if (!this.online) { this.status('Offline'); return; }
+        if (!s.ready) this.listen(s);
+        const notices = (await this.service.lerFila(s.uid)).recoveryNotices || [];
+        if (!this.current(s)) return;
+        this.status(notices.some(item => !item.acknowledged) ? recoveryStatus : 'Sincronizado', false, confirmation.fila.lastConfirmed);
+    }
+    listen(s) {
+        this.assertRemote(s);
+        s.ready = true;
+        const received = (_data, meta) => { if (this.current(s) && snapshotConfirmed(meta)) this.request(); };
+        const failure = cause => {
+            if (!this.current(s)) return;
+            s.stops.splice(0).forEach(stop => stop()); s.ready = false;
+            if (cause.code === 'permission-denied' && this.client.generationSnapshot) this.request(0); else this.report(cause, s);
+        };
+        s.stops.push(this.client.listen(s.uid, received, failure, s.generation), this.client.listenSettings(s.uid, received, failure, s.generation), this.client.listenConflicts(s.uid, received, failure, s.generation));
+        if (this.client.listenGeneration) s.stops.push(this.client.listenGeneration(s.uid, received, failure));
+    }
+    emitState(s, stored, queue) {
+        if (!this.current(s) || (s.visibleRevision ?? -1) > stored.revisao) return;
+        s.visibleRevision = stored.revisao;
+        this.onState(stored.dados, { generation: queue?.generation || 'legacy',
+            recoveryNotices: (queue?.recoveryNotices || []).filter(item => !item.acknowledged), compatibilityBlocked: Boolean(queue?.compatibilityBlocked),
+            acknowledgementPending: Object.keys(queue?.ackUnverifiable || {}).length });
+    }
+    // Explicit recovery only: verifyOperation performs no financial writes.
+    async reverConfirmacoes() {
+        const s = this.session;
+        if (!s || !this.current(s)) throw error('persistence/cancelled', 'Sessão alterada.');
+        this.assertRemote(s);
+        if (!this.online || !this.client.verifyOperation) throw error('unavailable', 'Conecte-se para rever a confirmação; operações preservadas.');
+        const queue = await this.service.preservarIntencoes(s.uid, () => this.current(s));
+        let fresh;
+        try {
+            for (const op of queue.outbox.filter(item => queue.ackUnverifiable?.[item.id])) {
+                if (!this.current(s)) throw error('persistence/cancelled', 'Sessão alterada.');
+                const result = await this.network(s, () => this.client.verifyOperation(s.uid, op));
+                if (!this.current(s)) throw error('persistence/cancelled', 'Sessão alterada.');
+                await this.service.concluirOperacao(s.uid, op, result);
+            }
+        } finally {
+            if (this.current(s)) {
+                const stored = await this.db.ler(`estado:${s.uid}`); fresh = await this.service.lerFila(s.uid);
+                if (this.current(s)) this.emitState(s, stored, fresh);
+            }
+        }
+        if (!this.current(s)) return;
+        s.permanent = false; this.request(0);
+        return fresh;
+    }
+    async resumeRestore(s, job) {
+        this.assertRemote(s);
+        if (s.localMigration?.pending) throw error('migration/review-required', 'Revisão das fontes locais obrigatória antes de retomar a restauração.');
+        if (!this.client.publishRestore) throw error('sync/upgrade-required', 'Atualize o cliente antes de restaurar.');
+        await this.network(s, async active => {
+        await this.client.publishRestore(s.uid, job, active);
+        if (!this.current(s)) return;
+        const result = await this.db.alterarDocumentos([`estado:${s.uid}`, `fila:${s.uid}`], docs => {
+            if (!this.current(s)) throw error('persistence/cancelled', 'Sessão alterada.');
+            const queue = docs.get(`fila:${s.uid}`);
+            if (!queue.restoreJob && queue.generation === job.generation) return docs;
+            if (queue.restoreJob?.generation !== job.generation) throw error('sync/restore-conflict', 'Restauração local alterada.');
+            queue.restoreJob = null; queue.generation = job.generation; queue.initialized = true;
+            queue.settingsBaseline = functionalSettings(financeSettings(job.state));
+            queue.automaticSettingsDirty = false; queue.automaticSettingsValue = null;
+            docs.set(`fila:${s.uid}`, queue); return docs;
+        });
+        this.emitState(s, result.get(`estado:${s.uid}`), result.get(`fila:${s.uid}`));
+        }, { write: true });
+    }
+    async importBackup(raw, confirm = () => false, onSessionRenewed = () => {}, updateContext = null) {
+        if (this.localBarrier && !updateContext) return this.localBarrier.executar(ctx => this.importBackup(raw, confirm, onSessionRenewed, ctx));
+        const db = updateContext ? updateContext.banco(this.db) : this.db;
+        const service = updateContext ? updateContext.servico(this.service) : this.service;
+        if (this.session?.localMigration?.pending) throw error('migration/review-required', 'Revisão das fontes locais obrigatória antes de restaurar.');
+        let s = this.session;
+        if (s?.localOnly) throw error('account/local-only', 'Restauração remota indisponível no modo local.');
+        if (!s) throw error('sync/sign-in-required', 'Entre com Google antes de importar para a conta.');
+        const previousSession = s;
+        const assertCurrent = () => {
+            if (!this.current(s)) throw error('persistence/cancelled', 'Sessão alterada durante a restauração.');
+        };
+        assertCurrent();
+        const initialQueue = await service.lerFila(s.uid);
+        assertCurrent();
+        if (initialQueue.compatibilityBlocked) throw error('sync/upgrade-required', upgradeMessage);
+        if (!this.client.publishRestore) throw error('sync/upgrade-required', 'Atualize o cliente antes de restaurar.');
+        const queueBeforeRead = await service.lerFila(s.uid);
+        assertCurrent();
+        if (queueBeforeRead.compatibilityBlocked) throw error('sync/upgrade-required', upgradeMessage);
+        const previous = await db.ler(`estado:${s.uid}`);
+        assertCurrent();
+        const restored = prepareGenerationRestore(raw, previous?.dados?.tema);
+        if (!validarTotaisMonetarios(restored)) throw error('sync/invalid-backup', 'Backup excede os limites financeiros.');
+        assertCurrent();
+        const confirmed = confirm();
+        assertCurrent();
+        if (!confirmed) return null;
+        await this.waitLocal();
+        assertCurrent();
+        let observedGeneration = null;
+        if (this.online && this.client.generationMarker) {
+            try { observedGeneration = (await this.client.generationMarker(s.uid))?.activeGeneration || 'legacy'; }
+            catch (cause) { assertCurrent(); if (!transientSyncError(cause)) throw cause; }
+        }
+        assertCurrent();
+        // Invalidate old in-flight callbacks without changing Auth or the account.
+        this.closeSession();
+        s = { uid: s.uid, user: s.user, stops: [], attempt: 0, ready: false, permanent: false };
+        this.session = s;
+        // Synchronous handoff of this operation's exact objects, never a UID-based permission.
+        onSessionRenewed(Object.freeze({ controller: this, previousSession, session: s }));
+        assertCurrent();
+        const generation = globalThis.crypto.randomUUID();
+        const recoveryKey = `restore-recovery:${s.uid}:${generation}`;
+        const result = await db.alterarDocumentos([`estado:${s.uid}`, `fila:${s.uid}`, recoveryKey], docs => {
+            assertCurrent();
+            const stored = docs.get(`estado:${s.uid}`), queue = docs.get(`fila:${s.uid}`), before = stored.dados;
+            if (queue.compatibilityBlocked) throw error('sync/upgrade-required', upgradeMessage);
+            docs.set(recoveryKey, { state: structuredClone(before), queue: structuredClone(queue), reason: 'explicit-restore' });
+            const nextQueue = { generation, initialized: true, automaticPolicyInitialized: true, outbox: [], conflicts: [], remoteRevisions: {},
+                recoveryNotices: [...(queue.recoveryNotices || []), ...((queue.outbox.length || queue.automaticSettingsDirty || queue.conflicts.length)
+                    ? [{ id: recoveryKey, code: 'archived-offline', acknowledged: false }] : [])],
+                recoveryKeys: [...(queue.recoveryKeys || []), recoveryKey],
+                restoreJob: { generation, baseGeneration: observedGeneration || queue.restoreJob?.baseGeneration || queue.generation || 'legacy', state: restored } };
+            stored.dados = restored; stored.revisao++;
+            docs.set(`estado:${s.uid}`, stored); docs.set(`fila:${s.uid}`, nextQueue); return docs;
+        }).catch(cause => { if (this.current(s)) this.localChanged(); throw cause; });
+        assertCurrent();
+        this.emitState(s, result.get(`estado:${s.uid}`), result.get(`fila:${s.uid}`));
+        assertCurrent();
+        this.localChanged();
+        assertCurrent();
+        return result.get(`estado:${s.uid}`).dados;
+    }
+}
