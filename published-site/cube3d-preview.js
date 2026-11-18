@@ -58,12 +58,7 @@
         return;
     }
 
-    if (linhaTema && secaoAparencia.contains(linhaTema)) {
-        linhaTema.insertAdjacentElement("afterend", painel);
-    } else {
-        secaoAparencia.prepend(painel);
-    }
-
+    // O Cubo 3D será o primeiro controle dentro de Configurar animações.
 
     /* Preferências visuais locais: sem conexão com a conta ou registros financeiros. */
     const CHAVE_ANIMACOES = "controleFinanceiro:animacoes-interface-v1";
@@ -119,6 +114,7 @@
     const tituloAnimacoes = document.createElement("legend");
     tituloAnimacoes.textContent = "Animações da interface";
     grupoAnimacoes.append(tituloAnimacoes);
+    grupoAnimacoes.append(painel);
     for (const [id, descricao] of TIPOS_ANIMACAO) {
         const linha = document.createElement("label");
         linha.className = "ajuste-linha ajuste-controle ajuste-alternancia animacao-interface-linha";
@@ -147,7 +143,11 @@
         "Com o Cubo 3D ligado, ele assume a transição entre meses quando disponível.";
     grupoAnimacoes.append(avisoAnimacoes);
     painelAnimacoes.append(botaoAnimacoes, grupoAnimacoes);
-    painel.insertAdjacentElement("afterend", painelAnimacoes);
+    if (linhaTema && secaoAparencia.contains(linhaTema)) {
+        linhaTema.insertAdjacentElement("afterend", painelAnimacoes);
+    } else {
+        secaoAparencia.prepend(painelAnimacoes);
+    }
 
     window.addEventListener("storage", evento => {
         if (evento.key !== CHAVE_ANIMACOES) return;
