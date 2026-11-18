@@ -2350,7 +2350,7 @@ body .panorama-graficos .categoria-barra.efeito-barra-crescer {
 #lista-despesas .despesa.efeito-lancamento-novo {
     animation: efeito-lancamento-entrada 280ms ease-out both;
 }
-.btn:not(:disabled):active,
+.btn:not(.ajustes-botao):not(:disabled):active,
 .cubo3d-botao:not(:disabled):active {
     transform: scale(.97);
     transition: transform 110ms ease-out, background-color 160ms ease-out;
@@ -2427,4 +2427,31 @@ html[data-animacao-cartoes3d-desativada] body .grafico-bloco.cartao-3d-ativo {
     transform: none !important;
     transition: none !important;
     will-change: auto;
+}
+
+/* Botão flutuante Opções: pulso no mesmo ponto, sem salto lateral.
+   O deslocamento horizontal original é mantido inclusive com movimento reduzido. */
+body .ajustes-botao {
+    --menu-deslocamento-x: -50%;
+    transform: translateX(var(--menu-deslocamento-x));
+    transition: transform 150ms cubic-bezier(.2, .75, .2, 1), background-color 160ms ease;
+    transform-origin: center center;
+}
+body[data-posicao-menu="direita"] .ajustes-botao,
+body[data-posicao-menu="esquerda"] .ajustes-botao,
+body[data-posicao-menu="arrastavel"] .ajustes-botao[style*="left"] {
+    --menu-deslocamento-x: 0%;
+}
+html:not([data-animacao-botoes-desativada]) body .ajustes-botao:not(:disabled):active {
+    transform: translateX(var(--menu-deslocamento-x)) scale(1.08);
+}
+html[data-animacao-botoes-desativada] body .ajustes-botao:active {
+    transform: translateX(var(--menu-deslocamento-x)) !important;
+    transition: none !important;
+}
+@media (prefers-reduced-motion: reduce) {
+    body .ajustes-botao { transition: none !important; }
+    body .ajustes-botao:active {
+        transform: translateX(var(--menu-deslocamento-x)) !important;
+    }
 }
