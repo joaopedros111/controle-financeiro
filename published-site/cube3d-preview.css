@@ -201,3 +201,39 @@ html[data-cube-direction="prev"]::view-transition-image-pair(finance-cube) {
     accent-color: var(--primaria-texto);
 }
 #dialogo-ajustes .animacoes-interface-opcoes > .nota { margin: 8px 12px 0; }
+
+/* A lista de efeitos fica recolhida até o usuário abrir pelo botão. */
+#dialogo-ajustes .animacoes-interface-painel {
+    display: grid;
+    gap: 8px;
+    min-width: 0;
+}
+#dialogo-ajustes .abrir-animacoes-interface {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    width: 100%;
+    min-height: 44px;
+    padding: 10px 12px;
+    text-align: left;
+    font-weight: 700;
+}
+#dialogo-ajustes .abrir-animacoes-interface::after {
+    content: "⌄";
+    display: inline-block;
+    font-size: 1.25em;
+    line-height: 1;
+    transition: transform 180ms ease-out;
+}
+#dialogo-ajustes .abrir-animacoes-interface[aria-expanded="true"]::after {
+    transform: rotate(180deg);
+}
+#dialogo-ajustes .animacoes-interface-opcoes[hidden] {
+    display: none !important;
+}
+@media (prefers-reduced-motion: reduce) {
+    #dialogo-ajustes .abrir-animacoes-interface::after {
+        transition: none;
+    }
+}
