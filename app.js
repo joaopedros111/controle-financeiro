@@ -922,6 +922,46 @@ function obterMes() {
 /* Efeitos apenas visuais: não armazenam, calculam nem sincronizam dados financeiros. */
 const movimentoReduzido = window.matchMedia?.("(prefers-reduced-motion: reduce)");
 const ponteiroComMouse = window.matchMedia?.("(hover: hover) and (pointer: fine)");
+const CHAVE_ANIMACOES_INTERFACE = "controleFinanceiro:animacoes-interface-v1";
+const ANIMACOES_INTERFACE = [
+    "barras", "contadores", "mes", "botoes", "lancamentos", "cartoes3d", "skeleton"
+];
+function normalizarAnimacoesInterface(opcoes) {
+    const objeto = opcoes && typeof opcoes === "object" && !Array.isArray(opcoes) ? opcoes : {};
+    return Object.fromEntries(ANIMACOES_INTERFACE.map(tipo => [tipo, objeto[tipo] !== false]));
+}
+function lerAnimacoesInterface() {
+    try { return normalizarAnimacoesInterface(JSON.parse(localStorage.getItem(CHAVE_ANIMACOES_INTERFACE) || "{}")); }
+    catch { return normalizarAnimacoesInterface(null); }
+}
+let animacoesInterface = lerAnimacoesInterface();
+function aplicarAnimacoesInterface() {
+    for (const tipo of ANIMACOES_INTERFACE) {
+        document.documentElement.toggleAttribute("data-animacao-" + tipo + "-desativada",
+            animacoesInterface[tipo] === false);
+    }
+}
+aplicarAnimacoesInterface();
+function efeitoPermitido(tipo) {
+    return animacoesInterface[tipo] !== false && movimentoPermitido();
+}
+function atualizarAnimacoesInterface(evento) {
+    if (evento.type === "storage" && evento.key !== CHAVE_ANIMACOES_INTERFACE) return;
+    animacoesInterface = evento.type === "storage"
+        ? lerAnimacoesInterface() : normalizarAnimacoesInterface(evento.detail);
+    aplicarAnimacoesInterface();
+    encerrarContadoresVisuais();
+    if (!efeitoPermitido("cartoes3d")) {
+        document.querySelectorAll(".cartao-3d-ativo").forEach(cartao => {
+            cartao.classList.remove("cartao-3d-ativo");
+            cartao.style.removeProperty("--cartao-rotacao-x");
+            cartao.style.removeProperty("--cartao-rotacao-y");
+        });
+    }
+}
+window.addEventListener("controle-financeiro:animacoes-atualizadas", atualizarAnimacoesInterface);
+window.addEventListener("storage", atualizarAnimacoesInterface);
+
 let animacaoMesAtiva = false;
 let efeitosInterfaceProntos = false;
 let ultimoMesReceitasRenderizado = null;
@@ -949,7 +989,7 @@ function encerrarContadoresVisuais() {
 }
 
 function animarContadoresResumo(totais) {
-    if (!animacaoMesAtiva || !movimentoPermitido() || valoresOcultos ||
+    if (!animacaoMesAtiva || !efeitoPermitido("contadores") || valoresOcultos ||
         totais.some(([, valor]) => !Number.isFinite(valor))) return;
     contadoresEmCurso = totais.map(([elemento, valor]) => {
         const rotulo = elemento.textContent;
@@ -959,7 +999,7 @@ function animarContadoresResumo(totais) {
     });
     const inicio = performance.now();
     const quadro = (agora) => {
-        if (!contadoresEmCurso || !movimentoPermitido() || valoresOcultos) {
+        if (!contadoresEmCurso || !efeitoPermitido("contadores") || valoresOcultos) {
             encerrarContadoresVisuais();
             return;
         }
@@ -978,7 +1018,7 @@ function animarContadoresResumo(totais) {
 
 function animarTrocaMes(direcao) {
     // O Cubo 3D usa View Transitions: não sobrepor dois movimentos na mesma navegação.
-    if (!movimentoPermitido() || document.documentElement.hasAttribute("data-cube-direction")) return;
+    if (!efeitoPermitido("mes") || document.documentElement.hasAttribute("data-cube-direction")) return;
     for (const elemento of document.querySelectorAll(".resumo .indicadores, .grafico-bloco .grafico-categorias-conteudo")) {
         if (typeof elemento.animate !== "function") continue;
         elemento.animate([
@@ -989,7 +1029,7 @@ function animarTrocaMes(direcao) {
 }
 
 function destacarLancamentosNovos(container, seletor, idsAnteriores) {
-    if (!idsAnteriores || !efeitosInterfaceProntos || animacaoMesAtiva || !movimentoPermitido()) return;
+    if (!idsAnteriores || !efeitosInterfaceProntos || animacaoMesAtiva || !efeitoPermitido("lancamentos")) return;
     let destacados = 0;
     for (const linha of container.querySelectorAll(seletor)) {
         if (!idsAnteriores.has(linha.dataset.id) && destacados < 6) {
@@ -1014,7 +1054,7 @@ function iniciarCartoes3D() {
         };
         cartao.addEventListener("pointermove", (evento) => {
             if (evento.pointerType !== "mouse" || !ponteiroComMouse.matches ||
-                !movimentoPermitido() || document.querySelector("dialog[open]")) {
+                !efeitoPermitido("cartoes3d") || document.querySelector("dialog[open]")) {
                 limpar();
                 return;
             }
@@ -1650,7 +1690,7 @@ function renderGraficoCategorias() {
         const barra = criarEl("span", { class: "categoria-barra" });
         barra.style.width = percentual + "%";
         barra.style.background = corDaCategoria(nome);
-        if (animacaoMesAtiva && movimentoPermitido() && itens.length <= 24) barra.classList.add("efeito-barra-crescer");
+        if (animacaoMesAtiva && efeitoPermitido("barras") && itens.length <= 24) barra.classList.add("efeito-barra-crescer");
         trilho.append(barra);
         return criarEl("li", { class: "grafico-categoria-item" }, [
             criarEl("span", { class: "grafico-categoria-nome" }, [cor, criarEl("span", { text: nome, title: nome })]),
