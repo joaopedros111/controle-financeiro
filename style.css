@@ -2332,3 +2332,79 @@ body .panorama-graficos .grafico-categoria-percentual {
         font-size: .58rem;
     }
 }
+
+/* Microinterações visuais opcionais: apenas transform/opacity, sem lógica financeira. */
+@keyframes efeito-categoria-crescer {
+    from { transform: scaleX(0); }
+    to { transform: scaleX(1); }
+}
+body .panorama-graficos .categoria-barra.efeito-barra-crescer {
+    transform-origin: left center;
+    animation: efeito-categoria-crescer 440ms cubic-bezier(.2,.72,.2,1) both;
+}
+@keyframes efeito-lancamento-entrada {
+    from { opacity: .55; transform: translate3d(0, 7px, 0); }
+    to { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+#lista-receitas .receita.efeito-lancamento-novo,
+#lista-despesas .despesa.efeito-lancamento-novo {
+    animation: efeito-lancamento-entrada 280ms ease-out both;
+}
+.btn:not(:disabled):active,
+.cubo3d-botao:not(:disabled):active {
+    transform: scale(.97);
+    transition: transform 110ms ease-out, background-color 160ms ease-out;
+}
+.indicadores dd { font-variant-numeric: tabular-nums; }
+@media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
+    body .resumo.cartao-3d-ativo,
+    body .grafico-bloco.cartao-3d-ativo {
+        transform: perspective(1000px)
+            rotateX(var(--cartao-rotacao-x, 0deg))
+            rotateY(var(--cartao-rotacao-y, 0deg));
+        transition: transform 90ms ease-out;
+        will-change: transform;
+    }
+}
+.carregando-aplicativo { flex-direction: column; }
+.carregando-aplicativo[hidden] { display: none !important; }
+.carregando-esqueleto {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    width: min(420px, calc(100vw - 40px));
+    margin: 18px auto 0;
+}
+.carregando-esqueleto > span {
+    display: block;
+    height: 72px;
+    border: 1px solid var(--borda);
+    border-radius: 14px;
+    background: var(--superficie-suave);
+    opacity: .6;
+    animation: efeito-esqueleto-respirar 1.35s ease-in-out infinite alternate;
+}
+.carregando-esqueleto > span:first-child {
+    grid-column: 1 / -1;
+    height: 46px;
+}
+.carregando-esqueleto > span:last-child {
+    grid-column: 1 / -1;
+    height: 90px;
+    animation-delay: .22s;
+}
+.carregando-esqueleto > span:nth-child(3) { animation-delay: .12s; }
+@keyframes efeito-esqueleto-respirar {
+    from { opacity: .4; }
+    to { opacity: .85; }
+}
+@media (prefers-reduced-motion: reduce) {
+    body .panorama-graficos .categoria-barra.efeito-barra-crescer,
+    #lista-receitas .receita.efeito-lancamento-novo,
+    #lista-despesas .despesa.efeito-lancamento-novo,
+    .carregando-esqueleto > span { animation: none !important; }
+    .btn:not(:disabled):active,
+    .cubo3d-botao:not(:disabled):active { transform: none !important; transition: none !important; }
+    body .resumo.cartao-3d-ativo,
+    body .grafico-bloco.cartao-3d-ativo { transform: none !important; transition: none !important; }
+}
