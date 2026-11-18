@@ -64,6 +64,81 @@
         secaoAparencia.prepend(painel);
     }
 
+
+    /* Preferências visuais locais: sem conexão com a conta ou registros financeiros. */
+    const CHAVE_ANIMACOES = "controleFinanceiro:animacoes-interface-v1";
+    const TIPOS_ANIMACAO = [
+        ["barras", "Barras dos gráficos"],
+        ["contadores", "Contadores do resumo"],
+        ["mes", "Transição entre meses"],
+        ["botoes", "Efeito de toque nos botões"],
+        ["lancamentos", "Entrada de novos lançamentos"],
+        ["cartoes3d", "Profundidade 3D dos cartões"],
+        ["skeleton", "Esqueleto de carregamento"]
+    ];
+
+    function lerAnimacoes() {
+        let salvas = {};
+        try {
+            const valor = JSON.parse(localStorage.getItem(CHAVE_ANIMACOES) || "{}");
+            if (valor && typeof valor === "object" && !Array.isArray(valor)) salvas = valor;
+        } catch {}
+        return Object.fromEntries(TIPOS_ANIMACAO.map(([id]) => [id, salvas[id] !== false]));
+    }
+
+    let animacoesAtuais = lerAnimacoes();
+    const aplicarPreferencias = () => {
+        for (const [id] of TIPOS_ANIMACAO) {
+            document.documentElement.toggleAttribute("data-animacao-" + id + "-desativada",
+                animacoesAtuais[id] === false);
+        }
+    };
+    aplicarPreferencias();
+
+    const grupoAnimacoes = document.createElement("fieldset");
+    grupoAnimacoes.className = "animacoes-interface-opcoes";
+    const tituloAnimacoes = document.createElement("legend");
+    tituloAnimacoes.textContent = "Animações da interface";
+    grupoAnimacoes.append(tituloAnimacoes);
+    for (const [id, descricao] of TIPOS_ANIMACAO) {
+        const linha = document.createElement("label");
+        linha.className = "ajuste-linha ajuste-controle ajuste-alternancia animacao-interface-linha";
+        const texto = document.createElement("span");
+        texto.textContent = descricao;
+        const campo = document.createElement("input");
+        campo.type = "checkbox";
+        campo.name = "animacao-" + id;
+        campo.checked = animacoesAtuais[id];
+        campo.addEventListener("change", () => {
+            animacoesAtuais[id] = campo.checked;
+            try {
+                localStorage.setItem(CHAVE_ANIMACOES, JSON.stringify(animacoesAtuais));
+            } catch {}
+            aplicarPreferencias();
+            window.dispatchEvent(new CustomEvent("controle-financeiro:animacoes-atualizadas",
+                { detail: { ...animacoesAtuais } }));
+        });
+        linha.append(texto, campo);
+        grupoAnimacoes.append(linha);
+    }
+    const avisoAnimacoes = document.createElement("p");
+    avisoAnimacoes.className = "nota";
+    avisoAnimacoes.textContent =
+        "Ajustes apenas deste dispositivo. A preferência Reduzir Movimento tem prioridade. " +
+        "Com o Cubo 3D ligado, ele assume a transição entre meses quando disponível.";
+    grupoAnimacoes.append(avisoAnimacoes);
+    painel.insertAdjacentElement("afterend", grupoAnimacoes);
+
+    window.addEventListener("storage", evento => {
+        if (evento.key !== CHAVE_ANIMACOES) return;
+        animacoesAtuais = lerAnimacoes();
+        const campos = grupoAnimacoes.querySelectorAll('input[type="checkbox"]');
+        campos.forEach(campo => {
+            campo.checked = animacoesAtuais[campo.name.slice("animacao-".length)];
+        });
+        aplicarPreferencias();
+    });
+
     const movimentoReduzido = window.matchMedia(
         "(prefers-reduced-motion: reduce)"
     );
