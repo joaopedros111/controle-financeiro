@@ -2244,3 +2244,87 @@ body .panorama-graficos .grafico-categoria-item {
         cursor: pointer;
     }
 }
+
+/* Panorama compacto: categoria | barra | valor | percentual. */
+body .panorama-graficos .legenda-grafico-categorias {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+}
+body .panorama-graficos .grafico-categoria-item {
+    display: grid;
+    grid-column: 1;
+    grid-template-columns: minmax(0, 1.25fr) minmax(28px, 1fr) max-content max-content;
+    grid-template-rows: minmax(20px, auto);
+    align-items: center;
+    column-gap: 6px;
+    row-gap: 0;
+    padding: 4px 0;
+}
+body .panorama-graficos .grafico-categoria-medida {
+    display: contents;
+}
+body .panorama-graficos .grafico-categoria-nome {
+    grid-column: 1;
+    grid-row: 1;
+    min-width: 0;
+    font-size: .72rem;
+}
+body .panorama-graficos .grafico-categoria-nome > span:last-child {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+body .panorama-graficos .categoria-trilho {
+    grid-column: 2;
+    grid-row: 1;
+    width: 100%;
+    min-width: 0;
+    height: 8px;
+}
+body .panorama-graficos .grafico-categoria-valor {
+    grid-column: 3;
+    grid-row: 1;
+    min-width: 0;
+    font-size: .72rem;
+    line-height: 1.2;
+    font-weight: 700;
+    white-space: nowrap;
+    text-align: right;
+}
+body .panorama-graficos .grafico-categoria-percentual {
+    grid-column: 4;
+    grid-row: 1;
+    min-width: 0;
+    padding: 0;
+    font-size: .63rem;
+    line-height: 1.2;
+    white-space: nowrap;
+    text-align: right;
+}
+@media (max-width: 600px) {
+    body .panorama-graficos .grafico-categoria-item {
+        grid-template-columns: minmax(0, 1.2fr) minmax(24px, .75fr) max-content max-content;
+        column-gap: 4px;
+        padding: 3px 0;
+    }
+    body .panorama-graficos .grafico-categoria-valor {
+        font-size: .7rem;
+    }
+    body .panorama-graficos .grafico-categoria-percentual {
+        font-size: .61rem;
+    }
+}
+@media (max-width: 360px) {
+    body .panorama-graficos .grafico-categoria-item {
+        grid-template-columns: minmax(0, 1fr) minmax(20px, .6fr) max-content max-content;
+        column-gap: 3px;
+    }
+    body .panorama-graficos .grafico-categoria-valor {
+        font-size: .66rem;
+    }
+    body .panorama-graficos .grafico-categoria-percentual {
+        font-size: .58rem;
+    }
+}
