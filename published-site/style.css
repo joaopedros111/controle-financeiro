@@ -2621,3 +2621,23 @@ body .panorama-graficos .categoria-barra.efeito-barra-crescer {
     body .resumo.cartao-3d-ativo,
     body .grafico-bloco.cartao-3d-ativo { transform: none !important; transition: none !important; }
 }
+
+/* Interruptores de microinterações: mudanças instantâneas por preferência local. */
+html[data-animacao-barras-desativada] body .panorama-graficos .efeito-barra-crescer,
+html[data-animacao-lancamentos-desativada] #lista-receitas .efeito-lancamento-novo,
+html[data-animacao-lancamentos-desativada] #lista-despesas .efeito-lancamento-novo,
+html[data-animacao-skeleton-desativada] .carregando-esqueleto > span {
+    animation: none !important;
+}
+html[data-animacao-skeleton-desativada] .carregando-esqueleto { display: none !important; }
+html[data-animacao-botoes-desativada] .btn:not(:disabled):active,
+html[data-animacao-botoes-desativada] .cubo3d-botao:not(:disabled):active {
+    transform: none !important;
+    transition: none !important;
+}
+html[data-animacao-cartoes3d-desativada] body .resumo.cartao-3d-ativo,
+html[data-animacao-cartoes3d-desativada] body .grafico-bloco.cartao-3d-ativo {
+    transform: none !important;
+    transition: none !important;
+    will-change: auto;
+}
