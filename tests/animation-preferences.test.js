@@ -6,11 +6,16 @@ import { Script } from "node:vm";
 const ler = arquivo => readFileSync(new URL("../" + arquivo, import.meta.url), "utf8");
 const tipos = ["barras", "contadores", "mes", "botoes", "lancamentos", "cartoes3d", "skeleton"];
 
-test("sete controles independentes ao lado do Cubo 3D", () => {
+test("Cubo 3D e sete controles independentes em Aparência", () => {
     const codigo = ler("published-site/cube3d-preview.js");
     assert.doesNotThrow(() => new Script(codigo));
     for (const tipo of tipos) assert.ok(codigo.includes('["' + tipo + '",'), tipo);
-    assert.match(codigo, /painel\.insertAdjacentElement\("afterend", grupoAnimacoes\)/);
+    assert.match(codigo, /grupoAnimacoes\.append\(painel\)/);
+    assert.match(codigo, /painelAnimacoes\.append\(botaoAnimacoes, grupoAnimacoes\)/);
+    assert.match(codigo, /linhaTema\.insertAdjacentElement\("afterend", painelAnimacoes\)/);
+    assert.match(codigo, /botaoAnimacoes\.setAttribute\("aria-expanded", String\(expandir\)\)/);
+    assert.match(codigo, /grupoAnimacoes\.hidden = true/);
+    assert.match(codigo, /localStorage\.setItem\(CHAVE, habilitado \? "ligado" : "desligado"\)/);
     assert.match(codigo, /campo\.type = "checkbox"/);
     assert.match(codigo, /localStorage\.setItem\(CHAVE_ANIMACOES/);
     assert.match(codigo, /CustomEvent\("controle-financeiro:animacoes-atualizadas"/);
@@ -46,6 +51,7 @@ test("desativação visual e Skeleton acessível", () => {
         assert.match(html, /localStorage\.getItem\("controleFinanceiro:animacoes-interface-v1"\)/);
     }
     assert.match(ler("published-site/cube3d-preview.css"), /animacoes-interface-opcoes/);
+    assert.match(ler("published-site/cube3d-preview.css"), /animacoes-interface-opcoes\[hidden\]/);
 });
 
 test("botão Opções cresce sem perder a posição horizontal original", () => {
