@@ -95,8 +95,27 @@
     };
     aplicarPreferencias();
 
+    const painelAnimacoes = document.createElement("div");
+    painelAnimacoes.className = "animacoes-interface-painel";
+
+    const botaoAnimacoes = document.createElement("button");
+    botaoAnimacoes.id = "abrir-configuracoes-animacoes";
+    botaoAnimacoes.type = "button";
+    botaoAnimacoes.className = "btn btn-secundario abrir-animacoes-interface";
+    botaoAnimacoes.textContent = "Configurar animações";
+    botaoAnimacoes.setAttribute("aria-controls", "painel-configuracoes-animacoes");
+    botaoAnimacoes.setAttribute("aria-expanded", "false");
+
     const grupoAnimacoes = document.createElement("fieldset");
+    grupoAnimacoes.id = "painel-configuracoes-animacoes";
     grupoAnimacoes.className = "animacoes-interface-opcoes";
+    grupoAnimacoes.hidden = true;
+    botaoAnimacoes.addEventListener("click", () => {
+        const expandir = grupoAnimacoes.hidden;
+        grupoAnimacoes.hidden = !expandir;
+        botaoAnimacoes.setAttribute("aria-expanded", String(expandir));
+        botaoAnimacoes.textContent = expandir ? "Ocultar animações" : "Configurar animações";
+    });
     const tituloAnimacoes = document.createElement("legend");
     tituloAnimacoes.textContent = "Animações da interface";
     grupoAnimacoes.append(tituloAnimacoes);
@@ -127,7 +146,8 @@
         "Ajustes apenas deste dispositivo. A preferência Reduzir Movimento tem prioridade. " +
         "Com o Cubo 3D ligado, ele assume a transição entre meses quando disponível.";
     grupoAnimacoes.append(avisoAnimacoes);
-    painel.insertAdjacentElement("afterend", grupoAnimacoes);
+    painelAnimacoes.append(botaoAnimacoes, grupoAnimacoes);
+    painel.insertAdjacentElement("afterend", painelAnimacoes);
 
     window.addEventListener("storage", evento => {
         if (evento.key !== CHAVE_ANIMACOES) return;
