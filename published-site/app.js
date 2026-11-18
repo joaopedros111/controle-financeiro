@@ -956,6 +956,124 @@ function obterMes() {
 
 
 
+/* Efeitos apenas visuais: não armazenam, calculam nem sincronizam dados financeiros. */
+const movimentoReduzido = window.matchMedia?.("(prefers-reduced-motion: reduce)");
+const ponteiroComMouse = window.matchMedia?.("(hover: hover) and (pointer: fine)");
+let animacaoMesAtiva = false;
+let efeitosInterfaceProntos = false;
+let ultimoMesReceitasRenderizado = null;
+let ultimoMesDespesasRenderizado = null;
+let quadroContadores = 0;
+let contadoresEmCurso = null;
+
+function movimentoPermitido() {
+    return !movimentoReduzido?.matches && !document.hidden &&
+        !navigator.connection?.saveData &&
+        !document.documentElement.classList.contains("app-inicializando") &&
+        !document.documentElement.classList.contains("app-carregando-conta");
+}
+
+function encerrarContadoresVisuais() {
+    if (quadroContadores) cancelAnimationFrame(quadroContadores);
+    quadroContadores = 0;
+    if (!contadoresEmCurso) return;
+    for (const { elemento, rotulo } of contadoresEmCurso) {
+        elemento.textContent = rotulo;
+        elemento.removeAttribute("aria-label");
+        elemento.removeAttribute("aria-live");
+    }
+    contadoresEmCurso = null;
+}
+
+function animarContadoresResumo(totais) {
+    if (!animacaoMesAtiva || !movimentoPermitido() || valoresOcultos ||
+        totais.some(([, valor]) => !Number.isFinite(valor))) return;
+    contadoresEmCurso = totais.map(([elemento, valor]) => {
+        const rotulo = elemento.textContent;
+        elemento.setAttribute("aria-label", rotulo);
+        elemento.setAttribute("aria-live", "off");
+        return { elemento, valor, rotulo };
+    });
+    const inicio = performance.now();
+    const quadro = (agora) => {
+        if (!contadoresEmCurso || !movimentoPermitido() || valoresOcultos) {
+            encerrarContadoresVisuais();
+            return;
+        }
+        const progresso = Math.min(1, (agora - inicio) / 460);
+        const suave = 1 - Math.pow(1 - progresso, 3);
+        for (const { elemento, valor } of contadoresEmCurso) {
+            elemento.textContent = progresso === 1
+                ? formatarMoeda(valor)
+                : formatarMoeda(Math.round(valor * 100 * suave) / 100);
+        }
+        if (progresso < 1) quadroContadores = requestAnimationFrame(quadro);
+        else encerrarContadoresVisuais();
+    };
+    quadroContadores = requestAnimationFrame(quadro);
+}
+
+function animarTrocaMes(direcao) {
+    // O Cubo 3D usa View Transitions: não sobrepor dois movimentos na mesma navegação.
+    if (!movimentoPermitido() || document.documentElement.hasAttribute("data-cube-direction")) return;
+    for (const elemento of document.querySelectorAll(".resumo .indicadores, .grafico-bloco .grafico-categorias-conteudo")) {
+        if (typeof elemento.animate !== "function") continue;
+        elemento.animate([
+            { opacity: .72, transform: "translate3d(" + (direcao * 12) + "px, 0, 0)" },
+            { opacity: 1, transform: "translate3d(0, 0, 0)" }
+        ], { duration: 260, easing: "cubic-bezier(.2,.7,.2,1)" });
+    }
+}
+
+function destacarLancamentosNovos(container, seletor, idsAnteriores) {
+    if (!idsAnteriores || !efeitosInterfaceProntos || animacaoMesAtiva || !movimentoPermitido()) return;
+    let destacados = 0;
+    for (const linha of container.querySelectorAll(seletor)) {
+        if (!idsAnteriores.has(linha.dataset.id) && destacados < 6) {
+            linha.classList.add("efeito-lancamento-novo");
+            destacados++;
+        }
+    }
+}
+
+function iniciarCartoes3D() {
+    if (!ponteiroComMouse) return;
+    for (const cartao of document.querySelectorAll(".resumo, .grafico-bloco")) {
+        let quadro = 0;
+        let rotacaoX = 0;
+        let rotacaoY = 0;
+        const limpar = () => {
+            if (quadro) cancelAnimationFrame(quadro);
+            quadro = 0;
+            cartao.classList.remove("cartao-3d-ativo");
+            cartao.style.removeProperty("--cartao-rotacao-x");
+            cartao.style.removeProperty("--cartao-rotacao-y");
+        };
+        cartao.addEventListener("pointermove", (evento) => {
+            if (evento.pointerType !== "mouse" || !ponteiroComMouse.matches ||
+                !movimentoPermitido() || document.querySelector("dialog[open]")) {
+                limpar();
+                return;
+            }
+            const area = cartao.getBoundingClientRect();
+            if (!area.width || !area.height) return;
+            rotacaoX = ((area.top + area.height / 2 - evento.clientY) / area.height * 4).toFixed(2);
+            rotacaoY = ((evento.clientX - area.left - area.width / 2) / area.width * 4).toFixed(2);
+            if (quadro) return;
+            quadro = requestAnimationFrame(() => {
+                quadro = 0;
+                cartao.style.setProperty("--cartao-rotacao-x", rotacaoX + "deg");
+                cartao.style.setProperty("--cartao-rotacao-y", rotacaoY + "deg");
+                cartao.classList.add("cartao-3d-ativo");
+            });
+        }, { passive: true });
+        cartao.addEventListener("pointerleave", limpar);
+        cartao.addEventListener("pointercancel", limpar);
+    }
+}
+
+window.addEventListener("pagehide", encerrarContadoresVisuais);
+
 function mudarPeriodo(ano, mes) {
 
 
@@ -984,6 +1102,9 @@ function mudarPeriodo(ano, mes) {
 
 
 
+    const mesAnteriorParaEfeito = periodo.ano * 12 + periodo.mes;
+    const mesAtualParaEfeito = ano * 12 + mes;
+    const animarMes = mesAnteriorParaEfeito !== mesAtualParaEfeito && movimentoPermitido();
     periodo = { ano, mes };
 
     if (preferenciasMenu.referenciaMes === "ultimo") {
@@ -993,7 +1114,10 @@ function mudarPeriodo(ano, mes) {
 
 
 
-    renderTudo(false);
+    animacaoMesAtiva = animarMes;
+    try { renderTudo(false); }
+    finally { animacaoMesAtiva = false; }
+    if (animarMes) animarTrocaMes(mesAtualParaEfeito > mesAnteriorParaEfeito ? 1 : -1);
 
 }
 
@@ -1144,7 +1268,13 @@ function renderReceitas() {
 
 
 
+    const mesRenderizado = chaveMes(periodo.ano, periodo.mes);
+    const idsAnteriores = mesRenderizado === ultimoMesReceitasRenderizado
+        ? new Set([...ui.listaReceitas.querySelectorAll(".receita[data-id]")].map(linha => linha.dataset.id))
+        : null;
     ui.listaReceitas.replaceChildren(...receitas.map(criarLinhaReceita));
+    destacarLancamentosNovos(ui.listaReceitas, ".receita[data-id]", idsAnteriores);
+    ultimoMesReceitasRenderizado = mesRenderizado;
 
     ui.vazioReceitas.hidden = receitas.length > 0;
 
@@ -1282,6 +1412,10 @@ linha.append(
 
 function renderDespesas() {
     const despesas = obterMes().despesas;
+    const mesRenderizado = chaveMes(periodo.ano, periodo.mes);
+    const idsAnteriores = mesRenderizado === ultimoMesDespesasRenderizado
+        ? new Set([...ui.listaDespesas.querySelectorAll(".despesa[data-id]")].map(linha => linha.dataset.id))
+        : null;
     const grupos = agruparLancamentosComOrcamento(despesas, estado.categorias, estado.orcamentos)
         .sort((a, b) => a.categoria.localeCompare(b.categoria, LOCALES[idiomaAtual] || "pt-BR"));
     const recolhidas = new Set([...ui.listaDespesas.querySelectorAll("details.despesa-grupo:not([open])")].map((el) => el.dataset.categoria));
@@ -1313,6 +1447,8 @@ function renderDespesas() {
             .sort((a, b) => a.nome.localeCompare(b.nome, LOCALES[idiomaAtual] || "pt-BR", { sensitivity: "base" }))
             .map(criarLinhaDespesa))
     ])));
+    destacarLancamentosNovos(ui.listaDespesas, ".despesa[data-id]", idsAnteriores);
+    ultimoMesDespesasRenderizado = mesRenderizado;
     ui.vazioDespesas.hidden = despesas.length > 0;
     ui.vazioDespesas.textContent =
     "Toque em Adicionar para começar";
@@ -1402,6 +1538,8 @@ function definirLimiteOrcamento(mapa, categoria, limite) {
 // de despesas/receitas, então o cursor do usuário nunca é perdido.
 
 function atualizarResumo(persistir = true) {
+    // Uma nova renderização sempre prevalece sobre quadros visuais antigos.
+    encerrarContadoresVisuais();
 
 
 
@@ -1440,6 +1578,10 @@ function atualizarResumo(persistir = true) {
     ui.totalDespesas.textContent = formatarMoeda(despesa);
 
     ui.valorPendente.textContent = formatarMoeda(pendente);
+    animarContadoresResumo([
+        [ui.totalReceitas, receita], [ui.totalDespesas, despesa],
+        [ui.saldoValor, saldo], [ui.valorPendente, pendente]
+    ]);
 
 
 
@@ -1560,6 +1702,7 @@ function renderGraficoCategorias() {
         const barra = criarEl("span", { class: "categoria-barra" });
         barra.style.width = percentual + "%";
         barra.style.background = corDaCategoria(nome);
+        if (animacaoMesAtiva && movimentoPermitido() && itens.length <= 24) barra.classList.add("efeito-barra-crescer");
         trilho.append(barra);
         return criarEl("li", { class: "grafico-categoria-item" }, [
             criarEl("span", { class: "grafico-categoria-nome" }, [cor, criarEl("span", { text: nome, title: nome })]),
@@ -4164,6 +4307,7 @@ function prepararInterfaceInicial() {
     aplicarPreferenciasMenu();
     aplicarPrivacidade();
     atualizarDiagnostico();
+    iniciarCartoes3D();
     return abrirSecaoInicial();
 }
 const telaInicialAplicada = prepararInterfaceInicial();
@@ -4174,6 +4318,7 @@ function concluirCarregamentoConta() {
     document.documentElement.classList.remove("app-inicializando", "app-carregando-conta");
     document.body.removeAttribute("aria-busy");
     $("carregando-aplicativo")?.setAttribute("hidden", "");
+    efeitosInterfaceProntos = true;
     renderTema();
 }
 function iniciarCarregamentoConta() {
