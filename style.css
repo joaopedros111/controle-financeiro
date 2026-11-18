@@ -2248,16 +2248,18 @@ body .panorama-graficos .grafico-categoria-item {
 /* Panorama compacto: categoria | barra | valor | percentual. */
 body .panorama-graficos .legenda-grafico-categorias {
     display: grid;
-    grid-template-columns: minmax(0, 1fr);
-    gap: 0;
+    /* Colunas compartilhadas: todas as barras usam as mesmas bordas verticais. */
+    grid-template-columns: minmax(0, 1.25fr) minmax(28px, 1fr) max-content max-content;
+    column-gap: 6px;
+    row-gap: 0;
 }
 body .panorama-graficos .grafico-categoria-item {
     display: grid;
-    grid-column: 1;
-    grid-template-columns: minmax(0, 1.25fr) minmax(28px, 1fr) max-content max-content;
+    grid-column: 1 / -1;
+    grid-template-columns: subgrid;
     grid-template-rows: minmax(20px, auto);
     align-items: center;
-    column-gap: 6px;
+    column-gap: inherit;
     row-gap: 0;
     padding: 4px 0;
 }
@@ -2304,9 +2306,11 @@ body .panorama-graficos .grafico-categoria-percentual {
     text-align: right;
 }
 @media (max-width: 600px) {
-    body .panorama-graficos .grafico-categoria-item {
+    body .panorama-graficos .legenda-grafico-categorias {
         grid-template-columns: minmax(0, 1.2fr) minmax(24px, .75fr) max-content max-content;
         column-gap: 4px;
+    }
+    body .panorama-graficos .grafico-categoria-item {
         padding: 3px 0;
     }
     body .panorama-graficos .grafico-categoria-valor {
@@ -2317,7 +2321,7 @@ body .panorama-graficos .grafico-categoria-percentual {
     }
 }
 @media (max-width: 360px) {
-    body .panorama-graficos .grafico-categoria-item {
+    body .panorama-graficos .legenda-grafico-categorias {
         grid-template-columns: minmax(0, 1fr) minmax(20px, .6fr) max-content max-content;
         column-gap: 3px;
     }
