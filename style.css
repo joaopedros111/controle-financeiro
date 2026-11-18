@@ -2147,3 +2147,69 @@ body .panorama-graficos .grafico-categoria-item {
         overflow-wrap: anywhere;
     }
 }
+
+/* Ajuste de layout: ferramentas junto ao resumo e seta direita no extremo. */
+.periodo {
+    grid-template-columns: 44px minmax(0, 1fr) 76px auto 44px;
+    grid-template-rows: auto;
+}
+.periodo #mes-anterior { grid-column: 1; grid-row: 1; justify-self: start; }
+.periodo #mes { grid-column: 2; grid-row: 1; min-width: 0; }
+.periodo #ano { grid-column: 3; grid-row: 1; min-width: 0; }
+.periodo #hoje { grid-column: 4; grid-row: 1; justify-self: end; }
+.periodo #mes-proximo { grid-column: 5; grid-row: 1; justify-self: end; }
+.resumo-cabecalho {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    column-gap: 8px;
+    row-gap: 4px;
+}
+.resumo-cabecalho .resumo-titulo { flex: 1 1 auto; min-width: 0; margin-bottom: 0; }
+.resumo-cabecalho .resumo-acoes {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex: 0 0 auto;
+    margin-left: auto;
+}
+.resumo-cabecalho .resumo-acoes > .btn-icone {
+    flex: 0 0 44px;
+    width: 44px;
+    min-width: 44px;
+    height: 44px;
+    min-height: 44px;
+    padding: 8px;
+    margin: 0;
+}
+.resumo-cabecalho .resumo-seletor-data {
+    position: absolute;
+    top: 0;
+    left: 50px;
+    right: auto;
+    width: 44px;
+    height: 44px;
+    opacity: 0;
+    pointer-events: none;
+}
+@media (max-width: 420px) {
+    .periodo {
+        grid-template-columns: 44px minmax(0, 1fr) 64px minmax(38px, auto) 44px;
+        gap: 4px;
+        padding: 6px;
+    }
+    .periodo #hoje { grid-column: 4; grid-row: 1; min-width: 38px; padding-inline: 6px; }
+    .periodo #mes-proximo { grid-column: 5; grid-row: 1; }
+    .resumo-cabecalho .resumo-acoes { gap: 4px; }
+    .resumo-cabecalho .resumo-seletor-data { left: 48px; }
+}
+@media (max-width: 360px) {
+    .periodo {
+        grid-template-columns: 44px minmax(0, 1fr) 60px 40px 44px;
+        gap: 3px;
+    }
+    .periodo #hoje { grid-column: 4; grid-row: 1; width: 40px; min-width: 40px; justify-self: end; padding-inline: 4px; }
+    .periodo #mes-proximo { grid-column: 5; grid-row: 1; }
+}
