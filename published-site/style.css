@@ -2420,3 +2420,40 @@ body .despesa, body .receita { padding-block: 4px; }
     .periodo #hoje { grid-column: 4; grid-row: 1; width: 40px; min-width: 40px; justify-self: end; padding-inline: 4px; }
     .periodo #mes-proximo { grid-column: 5; grid-row: 1; }
 }
+
+/* Correção 1.1.14: atalhos sempre juntos e data tocável diretamente em iOS/PWA. */
+.resumo-cabecalho .resumo-acoes { --resumo-ferramentas-gap: 6px; }
+.ferramentas-alternativas {
+    position: relative;
+    --resumo-ferramentas-gap: 8px;
+}
+.resumo-cabecalho .resumo-acoes > .resumo-seletor-data,
+.ferramentas-alternativas > .resumo-seletor-data {
+    position: absolute;
+    top: 0;
+    left: calc(44px + var(--resumo-ferramentas-gap));
+    right: auto;
+    width: 44px;
+    height: 44px;
+    z-index: 2;
+    pointer-events: none;
+}
+@media (max-width: 420px) {
+    .resumo-cabecalho .resumo-acoes { --resumo-ferramentas-gap: 4px; }
+}
+@media (hover: none) and (pointer: coarse) {
+    .resumo-cabecalho .resumo-acoes > .resumo-seletor-data,
+    .ferramentas-alternativas > .resumo-seletor-data {
+        opacity: 0.01;
+        pointer-events: auto;
+    }
+    .resumo-seletor-data::-webkit-calendar-picker-indicator {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        padding: 0;
+        cursor: pointer;
+    }
+}
