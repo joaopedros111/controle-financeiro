@@ -47,3 +47,15 @@ test("desativação visual e Skeleton acessível", () => {
     }
     assert.match(ler("published-site/cube3d-preview.css"), /animacoes-interface-opcoes/);
 });
+
+test("botão Opções cresce sem perder a posição horizontal original", () => {
+    for (const arquivo of ["style.css", "published-site/style.css"]) {
+        const css = ler(arquivo);
+        assert.match(css, /--menu-deslocamento-x: -50%/);
+        assert.match(css, /--menu-deslocamento-x: 0%/);
+        assert.match(css, /transform: translateX\(var\(--menu-deslocamento-x\)\) scale\(1\.08\)/);
+        assert.match(css, /html\[data-animacao-botoes-desativada\] body \.ajustes-botao:active/);
+        assert.match(css, /body \.ajustes-botao:active \{\s*transform: translateX\(var\(--menu-deslocamento-x\)\) !important;/);
+        assert.match(css, /\.btn:not\(\.ajustes-botao\):not\(:disabled\):active/);
+    }
+});
