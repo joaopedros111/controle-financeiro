@@ -1,4 +1,4 @@
-name: Publicar Controle Financeiro 1.1.12
+name: Publicar Controle Financeiro 1.1.13
 
 on:
   push:
@@ -30,8 +30,8 @@ jobs:
       - name: Verificar arquivos aprovados
         run: |
           cd published-site
-          sha256sum -c ../release-1.1.12.sha256
-          node -e "const v=require('./version.json'); if(v.version!=='1.1.12') process.exit(1)"
+          sha256sum -c ../release-1.1.13.sha256
+          node -e "const v=require('./version.json'); if(v.version!=='1.1.13') process.exit(1)"
 
       - name: Configurar GitHub Pages
         uses: actions/configure-pages@v5

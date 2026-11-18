@@ -1,8 +1,8 @@
 // API transacional para integração futura com os handlers do aplicativo.
 // Não altera o armazenamento legado e não realiza operações de rede.
-import { ConflitoPersistencia } from './transactional-state.js?_release=1.1.11';
-import { combinarEdicaoFinanceira } from './financial-intents.js?_release=1.1.11';
-import { registrosFinanceiros, recordEntityKey, operationId, coalesceOutbox, recordsEquivalent, blockedConflictKeys, validSyncIdentity, functionalSettings, settingsEquivalent, validateRemoteSettings, financialStatesEquivalent, equivalentConflict, acknowledgementJournalKey, acknowledgementError } from './sync-core.js?_release=1.1.11';
+import { ConflitoPersistencia } from './transactional-state.js?_release=1.1.13';
+import { combinarEdicaoFinanceira } from './financial-intents.js?_release=1.1.13';
+import { registrosFinanceiros, recordEntityKey, operationId, coalesceOutbox, recordsEquivalent, blockedConflictKeys, validSyncIdentity, functionalSettings, settingsEquivalent, validateRemoteSettings, financialStatesEquivalent, equivalentConflict, acknowledgementJournalKey, acknowledgementError } from './sync-core.js?_release=1.1.13';
 
 const copy = (value) => structuredClone(value);
 const validRevision = (value) => Number.isSafeInteger(value) && value >= 0;

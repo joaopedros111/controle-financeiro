@@ -1,6 +1,6 @@
-import { OfflineAccountAccess } from './account-offline-access.js?_release=1.1.11';
-﻿import { validarBackup, validarTotaisMonetarios } from './finance-core.js?_release=1.1.11';
-import { chaveLocalConta, financialStatesEquivalent } from './sync-core.js?_release=1.1.11';
+import { OfflineAccountAccess } from './account-offline-access.js?_release=1.1.13';
+﻿import { validarBackup, validarTotaisMonetarios } from './finance-core.js?_release=1.1.13';
+import { chaveLocalConta, financialStatesEquivalent } from './sync-core.js?_release=1.1.13';
 
 export const ANONYMOUS_KEYS = Object.freeze(['estado:@local', 'fila:@local']);
 export const LEGACY_STORAGE_KEYS = Object.freeze([

@@ -1,8 +1,8 @@
 import { chaveLocalConta, registrosFinanceiros, recordEntityKey, makeOperation, validateRemoteSettings, validRemoteTombstone,
     validateRemoteConflicts, snapshotConfirmed, inspectRemoteKeys, settingsEquivalent, recordsEquivalent, validConflictRecord,
-    functionalSettings, readSyncMetadata, operationId, acknowledgementJournalKey, acknowledgementError } from './sync-core.js?_release=1.1.11';
-import { normalizarEstado, validarBackup, validarTotaisMonetarios } from './finance-core.js?_release=1.1.11';
-import { financeSettings, reconcileAutomatic, prepareGenerationRestore, transientSyncError } from './automatic-sync-policy.js?_release=1.1.11';
+    functionalSettings, readSyncMetadata, operationId, acknowledgementJournalKey, acknowledgementError } from './sync-core.js?_release=1.1.13';
+import { normalizarEstado, validarBackup, validarTotaisMonetarios } from './finance-core.js?_release=1.1.13';
+import { financeSettings, reconcileAutomatic, prepareGenerationRestore, transientSyncError } from './automatic-sync-policy.js?_release=1.1.13';
 
 const error = (code, message) => Object.assign(new Error(message), { code });
 const upgradeMessage = 'Atualização obrigatória: esta versão não é compatível com a geração da conta. Os dados locais foram preservados.';
