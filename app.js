@@ -3762,8 +3762,13 @@ ui.abrirAjustes.addEventListener("click", (evento) => {
 });
 ui.fecharAjustes.addEventListener("click", () => ui.dialogoAjustes.close());
 ui.abrirCalculadora.addEventListener("click", () => abrirDialogoModal(ui.dialogoCalculadora));
-ui.abrirCalendarioResumo.addEventListener("click", () => {
+const prepararDataCalendarioResumo = () => {
     ui.dataCalendarioResumo.value = `${periodo.ano}-${String(periodo.mes).padStart(2, "0")}-01`;
+};
+// Receber diretamente o toque no input permite abrir o picker nativo em iOS.
+ui.dataCalendarioResumo.addEventListener("pointerdown", prepararDataCalendarioResumo);
+ui.abrirCalendarioResumo.addEventListener("click", () => {
+    prepararDataCalendarioResumo();
     try {
         if (typeof ui.dataCalendarioResumo.showPicker === "function") ui.dataCalendarioResumo.showPicker();
         else ui.dataCalendarioResumo.click();
