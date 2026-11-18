@@ -169,3 +169,35 @@ html[data-cube-direction="prev"]::view-transition-image-pair(finance-cube) {
     flex: 0 0 auto;
     min-height: 40px;
 }
+
+/* Grupo de efeitos logo abaixo do interruptor do Cubo 3D. */
+#dialogo-ajustes .animacoes-interface-opcoes {
+    min-width: 0;
+    margin: 0;
+    padding: 8px 0 0;
+    border: 0;
+}
+#dialogo-ajustes .animacoes-interface-opcoes legend {
+    padding: 0 0 6px;
+    color: var(--texto);
+    font-size: .88rem;
+    font-weight: 800;
+}
+#dialogo-ajustes .animacao-interface-linha {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    min-height: 44px;
+    padding: 10px 12px;
+    cursor: pointer;
+}
+#dialogo-ajustes .animacao-interface-linha > span { min-width: 0; }
+#dialogo-ajustes .animacao-interface-linha > input[type="checkbox"] {
+    flex: 0 0 auto;
+    width: 20px;
+    height: 20px;
+    cursor: pointer;
+    accent-color: var(--primaria-texto);
+}
+#dialogo-ajustes .animacoes-interface-opcoes > .nota { margin: 8px 12px 0; }
