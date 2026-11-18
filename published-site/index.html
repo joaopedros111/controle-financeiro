@@ -31,6 +31,17 @@
                 document.documentElement.dataset.tema = temaInicial === "floresta" ? "claro" : temaInicial;
             }
         } catch { /* O bootstrap assíncrono continua mesmo sem localStorage. */ }
+        // Restaura preferências estritamente visuais antes do primeiro quadro.
+        try {
+            const animacoes = JSON.parse(localStorage.getItem("controleFinanceiro:animacoes-interface-v1") || "{}");
+            if (animacoes && typeof animacoes === "object" && !Array.isArray(animacoes)) {
+                for (const tipo of ["barras", "contadores", "mes", "botoes", "lancamentos", "cartoes3d", "skeleton"]) {
+                    if (animacoes[tipo] === false) {
+                        document.documentElement.setAttribute("data-animacao-" + tipo + "-desativada", "");
+                    }
+                }
+            }
+        } catch { /* As preferências são opcionais e nunca bloqueiam o carregamento. */ }
     </script>
 
     <link rel="stylesheet" href="style.css?_release=1.1.17">
