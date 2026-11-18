@@ -1,4 +1,4 @@
-name: Publicar Controle Financeiro 1.1.18
+name: Publicar Controle Financeiro 1.1.19
 
 on:
   push:
@@ -30,8 +30,8 @@ jobs:
       - name: Verificar arquivos aprovados
         run: |
           cd published-site
-          sha256sum -c ../release-1.1.18.sha256
-          node -e "const v=require('./version.json'); if(v.version!=='1.1.18') process.exit(1)"
+          sha256sum -c ../release-1.1.19.sha256
+          node -e "const v=require('./version.json'); if(v.version!=='1.1.19') process.exit(1)"
 
       - name: Configurar GitHub Pages
         uses: actions/configure-pages@v5
@@ -41,6 +41,14 @@ jobs:
         with:
           path: published-site
 
+      - name: Confirm this is still the latest main commit
+        id: current
+        run: |
+          latest=$(git ls-remote origin refs/heads/main | cut -f1)
+          test -n "$latest"
+          if [ "$latest" = "$GITHUB_SHA" ]; then echo "is_current=true" >> "$GITHUB_OUTPUT"; fi
+
       - name: Publicar GitHub Pages
+        if: steps.current.outputs.is_current == 'true'
         id: deployment
         uses: actions/deploy-pages@v4

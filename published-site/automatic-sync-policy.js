@@ -1,5 +1,5 @@
-import { normalizarEstado, validarBackup } from './finance-core.js?_release=1.1.13';
-import { registrosFinanceiros, recordEntityKey, operationId, recordsEquivalent, settingsEquivalent, functionalSettings, makeOperation, validSyncIdentity, validConflictRecord, validateRemoteSettings } from './sync-core.js?_release=1.1.13';
+import { normalizarEstado, validarBackup } from './finance-core.js?_release=1.1.19';
+import { registrosFinanceiros, recordEntityKey, operationId, recordsEquivalent, settingsEquivalent, functionalSettings, makeOperation, validSyncIdentity, validConflictRecord, validateRemoteSettings } from './sync-core.js?_release=1.1.19';
 
 export const financeSettings = state => ({ version: state.versao || 3, categories: [...(state.categorias || [])].sort(),
     theme: state.tema || 'claro', budgets: state.orcamentos || { padrao: {}, meses: {} } });

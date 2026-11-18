@@ -1,4 +1,4 @@
-import { ACCOUNT_ACCESS_KEY, assertAccountAccess, validAccountControl, confirmedForRemoval } from './account-data-policy.js?_release=1.1.13';
+import { ACCOUNT_ACCESS_KEY, assertAccountAccess, validAccountControl, confirmedForRemoval } from './account-data-policy.js?_release=1.1.19';
 // Persistência transacional opt-in. Não substitui o armazenamento legado até a homologação.
 const DATABASE = 'controleFinanceiro:integridade:v1';
 const STORE = 'documents';

@@ -1,6 +1,6 @@
 // Combina apenas mudanças explicitamente realizadas sobre um estado-base.
 // Estado divergente no mesmo registro ou configuração gera conflito, nunca last-writer-wins.
-import { recordsEquivalent } from './sync-core.js?_release=1.1.13';
+import { recordsEquivalent } from './sync-core.js?_release=1.1.19';
 
 export class ConflitoEdicao extends Error {
     constructor(keys) {

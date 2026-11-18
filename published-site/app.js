@@ -1,17 +1,17 @@
-import { migrarFonteDaConta } from './account-local-migration.js?_release=1.1.18';
-import { BarreiraPersistencia } from './update-persistence-barrier.js?_release=1.1.18';
-import { AccountDataPolicy, ACCOUNT_NOTICE_KEY } from './account-data-policy.js?_release=1.1.18';
-import { criarRecuperacaoFinanceira, storage as storagePadrao, capturarDependenciasAplicacao } from "./storage.js?_release=1.1.18";
-import { abrirPersistenciaFinanceira } from "./indexeddb-persistence.js?_release=1.1.18";
-import { ServicoFinanceiroAtomico } from "./financial-atomic-service.js?_release=1.1.18";
-import { CATEGORIAS_PADRAO, CATEGORIA_FIXA, normalizarEstado as normalizarEstadoCore, normalizarValorMonetario, mesFinanceiroValido, validarBackup, validarTotaisMonetarios, migrarDadosLegados, calcularExpressao, somarCentavos, gerarCsv, agruparDespesasPorCategoria, agruparLancamentosComOrcamento, renomearCategoriaOrcamentos, removerCategoriaOrcamentos, criarSerieReceitas, listarReceitasDaSerie, editarReceita, excluirReceita } from "./finance-core.js?_release=1.1.18";
-import { apresentarValorFinanceiro, calcularEspacamentosDensidade, normalizarPreferenciasMenu, resolverTelaInicial } from "./preferences.js?_release=1.1.18";
-import { criarConfirmacaoAtualizacao, criarVerificadorAutomatico, instalarAtualizacao, lerVersaoControlador, lerVersaoInstalada, lerVersaoPublicada, validarVersaoAplicacao, verificarComConfirmacao, lerVersaoAguardando, atualizarComPersistencia, TIMEOUT_INSTALACAO_SERVICE_WORKER_MS, TIMEOUT_FLUXO_ATUALIZACAO_MS } from "./update-manager.js?_release=1.1.18";
-import { aplicarIdioma, formatarMoeda as formatarMoedaLocalizada, LOCALES, textoTraduzido } from "./localization.js?_release=1.1.18";
-import { firebaseConfig, firebaseConfigurado } from "./firebase-config.js?_release=1.1.18";
-import { AutomaticFinanceSync } from "./automatic-finance-sync.js?_release=1.1.18";
-import { financeSettings, captureRejectedLocalEdit } from "./automatic-sync-policy.js?_release=1.1.18";
-import { chaveLocalConta, registrosFinanceiros, combinarRegistros, migrationBackup, operationId, jsonCanonico, recordsEquivalent, coalesceOutbox, flushSyncQueue, createSyncSessionGuard, validateRemoteSettings, mergeRemoteSettings, validRemoteTombstone, reconcileRemoteConflicts, validateRemoteConflicts, snapshotConfirmed, recordEntityKey, inspectRemoteKeys, validConflictRecord, readSyncMetadata, blockedConflictKeys, validSyncIdentity, financialStatesEquivalent, functionalSettings, settingsEquivalent, equivalentConflict, pendingConflictCount } from "./sync-core.js?_release=1.1.18";
+import { migrarFonteDaConta } from './account-local-migration.js?_release=1.1.19';
+import { BarreiraPersistencia } from './update-persistence-barrier.js?_release=1.1.19';
+import { AccountDataPolicy, ACCOUNT_NOTICE_KEY } from './account-data-policy.js?_release=1.1.19';
+import { criarRecuperacaoFinanceira, storage as storagePadrao, capturarDependenciasAplicacao } from "./storage.js?_release=1.1.19";
+import { abrirPersistenciaFinanceira } from "./indexeddb-persistence.js?_release=1.1.19";
+import { ServicoFinanceiroAtomico } from "./financial-atomic-service.js?_release=1.1.19";
+import { CATEGORIAS_PADRAO, CATEGORIA_FIXA, normalizarEstado as normalizarEstadoCore, normalizarValorMonetario, mesFinanceiroValido, validarBackup, validarTotaisMonetarios, migrarDadosLegados, calcularExpressao, somarCentavos, gerarCsv, agruparDespesasPorCategoria, agruparLancamentosComOrcamento, renomearCategoriaOrcamentos, removerCategoriaOrcamentos, criarSerieReceitas, listarReceitasDaSerie, editarReceita, excluirReceita } from "./finance-core.js?_release=1.1.19";
+import { apresentarValorFinanceiro, calcularEspacamentosDensidade, normalizarPreferenciasMenu, resolverTelaInicial } from "./preferences.js?_release=1.1.19";
+import { criarConfirmacaoAtualizacao, criarVerificadorAutomatico, instalarAtualizacao, lerVersaoControlador, lerVersaoInstalada, lerVersaoPublicada, validarVersaoAplicacao, verificarComConfirmacao, lerVersaoAguardando, atualizarComPersistencia, TIMEOUT_INSTALACAO_SERVICE_WORKER_MS, TIMEOUT_FLUXO_ATUALIZACAO_MS } from "./update-manager.js?_release=1.1.19";
+import { aplicarIdioma, formatarMoeda as formatarMoedaLocalizada, LOCALES, textoTraduzido } from "./localization.js?_release=1.1.19";
+import { firebaseConfig, firebaseConfigurado } from "./firebase-config.js?_release=1.1.19";
+import { AutomaticFinanceSync } from "./automatic-finance-sync.js?_release=1.1.19";
+import { financeSettings, captureRejectedLocalEdit } from "./automatic-sync-policy.js?_release=1.1.19";
+import { chaveLocalConta, registrosFinanceiros, combinarRegistros, migrationBackup, operationId, jsonCanonico, recordsEquivalent, coalesceOutbox, flushSyncQueue, createSyncSessionGuard, validateRemoteSettings, mergeRemoteSettings, validRemoteTombstone, reconcileRemoteConflicts, validateRemoteConflicts, snapshotConfirmed, recordEntityKey, inspectRemoteKeys, validConflictRecord, readSyncMetadata, blockedConflictKeys, validSyncIdentity, financialStatesEquivalent, functionalSettings, settingsEquivalent, equivalentConflict, pendingConflictCount } from "./sync-core.js?_release=1.1.19";
 
 const barreiraPersistencia = new BarreiraPersistencia();
 let tentativaAtualizacao = null;
@@ -3910,11 +3910,9 @@ function aplicarVisibilidadeSecoes() {
     $("secao-despesas").hidden = !preferenciasMenu.mostrarDespesas;
     $("secao-entradas").hidden = !preferenciasMenu.mostrarEntradas;
     const alternativas = document.querySelector(".ferramentas-alternativas");
-    // Os atalhos acompanham o Resumo do mês, independentemente da visibilidade das despesas.
-    // Se o resumo estiver oculto, permanecem disponíveis na área de ferramentas alternativas.
-    const destino = preferenciasMenu.mostrarResumo ? document.querySelector(".resumo-acoes") : alternativas;
-    destino.append(ui.abrirCalculadora, ui.abrirCalendarioResumo,
-        ui.alternarVisibilidadeResumo, ui.dataCalendarioResumo);
+    (preferenciasMenu.mostrarResumo ? document.querySelector(".resumo-cabecalho") : alternativas).append(ui.alternarVisibilidadeResumo);
+    if (preferenciasMenu.mostrarDespesas) document.querySelector(".despesas-acoes-topo").prepend(ui.abrirCalculadora);
+    else alternativas.append(ui.abrirCalculadora);
 }
 function abrirSecaoInicial() {
     const telaSolicitada = resolverTelaInicial(preferenciasMenu);
@@ -4112,8 +4110,7 @@ ui.abrirCalculadora.addEventListener("click", () => abrirDialogoModal(ui.dialogo
 const prepararDataCalendarioResumo = () => {
     ui.dataCalendarioResumo.value = `${periodo.ano}-${String(periodo.mes).padStart(2, "0")}-01`;
 };
-// No iOS, um toque REAL no input de data abre o seletor nativo.
-// O input transparente recebe o toque na área do ícone; não simular click().
+// Receber diretamente o toque no input permite abrir o picker nativo em iOS.
 ui.dataCalendarioResumo.addEventListener("pointerdown", prepararDataCalendarioResumo);
 ui.abrirCalendarioResumo.addEventListener("click", () => {
     prepararDataCalendarioResumo();
