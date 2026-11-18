@@ -3727,9 +3727,11 @@ function aplicarVisibilidadeSecoes() {
     $("secao-despesas").hidden = !preferenciasMenu.mostrarDespesas;
     $("secao-entradas").hidden = !preferenciasMenu.mostrarEntradas;
     const alternativas = document.querySelector(".ferramentas-alternativas");
-    (preferenciasMenu.mostrarResumo ? document.querySelector(".resumo-cabecalho") : alternativas).append(ui.alternarVisibilidadeResumo);
-    if (preferenciasMenu.mostrarDespesas) document.querySelector(".despesas-acoes-topo").prepend(ui.abrirCalculadora);
-    else alternativas.append(ui.abrirCalculadora);
+    // Os atalhos acompanham o Resumo do mês, independentemente da visibilidade das despesas.
+    // Se o resumo estiver oculto, permanecem disponíveis na área de ferramentas alternativas.
+    const destino = preferenciasMenu.mostrarResumo ? document.querySelector(".resumo-acoes") : alternativas;
+    destino.append(ui.abrirCalculadora, ui.abrirCalendarioResumo,
+        ui.alternarVisibilidadeResumo, ui.dataCalendarioResumo);
 }
 function abrirSecaoInicial() {
     const telaSolicitada = resolverTelaInicial(preferenciasMenu);
@@ -3924,8 +3926,14 @@ ui.abrirAjustes.addEventListener("click", (evento) => {
 });
 ui.fecharAjustes.addEventListener("click", () => ui.dialogoAjustes.close());
 ui.abrirCalculadora.addEventListener("click", () => abrirDialogoModal(ui.dialogoCalculadora));
-ui.abrirCalendarioResumo.addEventListener("click", () => {
+const prepararDataCalendarioResumo = () => {
     ui.dataCalendarioResumo.value = `${periodo.ano}-${String(periodo.mes).padStart(2, "0")}-01`;
+};
+// No iOS, um toque REAL no input de data abre o seletor nativo.
+// O input transparente recebe o toque na área do ícone; não simular click().
+ui.dataCalendarioResumo.addEventListener("pointerdown", prepararDataCalendarioResumo);
+ui.abrirCalendarioResumo.addEventListener("click", () => {
+    prepararDataCalendarioResumo();
     try {
         if (typeof ui.dataCalendarioResumo.showPicker === "function") ui.dataCalendarioResumo.showPicker();
         else ui.dataCalendarioResumo.click();
