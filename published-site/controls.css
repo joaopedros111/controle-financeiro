@@ -231,3 +231,9 @@
         overflow-wrap: anywhere;
     }
 }
+
+main.container { padding-bottom: calc(var(--menu-tamanho, 58px) + max(20px, env(safe-area-inset-bottom)) + 12px); }
+.ferramentas-alternativas { display: flex; justify-content: flex-end; gap: 8px; }
+.ferramentas-alternativas:empty { display: none; }
+.aviso { bottom: calc(var(--menu-tamanho, 58px) + max(20px, env(safe-area-inset-bottom)) + 8px); }
+body[data-posicao-menu="arrastavel"] .ajustes-botao { z-index: 1001; }

@@ -3,7 +3,7 @@
   "short_name": "Finanças",
   "description": "Controle suas entradas e despesas por mês, categorias, pagamentos e parcelas.",
   "lang": "pt-BR",
-  "start_url": "./index.html?_release=1.1.11",
+  "start_url": "./index.html?_release=1.1.12",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait",
@@ -11,25 +11,25 @@
   "theme_color": "#ffffff",
   "icons": [
     {
-      "src": "icons/icon-192.png?_release=1.1.11",
+      "src": "icons/icon-192.png?_release=1.1.12",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "icons/icon-512.png?_release=1.1.11",
+      "src": "icons/icon-512.png?_release=1.1.12",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "icons/icon-maskable-192.png?_release=1.1.11",
+      "src": "icons/icon-maskable-192.png?_release=1.1.12",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "maskable"
     },
     {
-      "src": "icons/icon-maskable-512.png?_release=1.1.11",
+      "src": "icons/icon-maskable-512.png?_release=1.1.12",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"

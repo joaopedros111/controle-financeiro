@@ -2147,3 +2147,210 @@ body .panorama-graficos .grafico-categoria-item {
         overflow-wrap: anywhere;
     }
 }
+
+/* Prévia da tela inicial: controles próximos do contexto e hierarquia financeira. */
+main.container { width: min(calc(100% - 24px), 760px); }
+.periodo {
+    grid-template-columns: 44px minmax(96px, 1fr) 78px 44px 44px auto;
+    gap: 6px;
+    padding: 6px;
+}
+.periodo #mes-anterior { grid-column: 1; }
+.periodo #mes { grid-column: 2; font-size: 1rem; }
+.periodo #ano { grid-column: 3; font-size: .95rem; }
+.periodo #mes-proximo { grid-column: 4; }
+.periodo .resumo-acoes { grid-column: 5; grid-row: 1; }
+.periodo #hoje { grid-column: 6; font-size: .8rem; box-shadow: none; }
+.periodo select { min-height: 44px; background: var(--superficie-suave); box-shadow: none; }
+.periodo .resumo-seletor-data { inset: 0; width: 44px; height: 44px; pointer-events: none; }
+.resumo-cabecalho { margin-bottom: 8px; }
+.resumo-visibilidade, .resumo-calculadora { margin: 0; }
+.resumo-visibilidade .olho-risco { display: none; }
+body.valores-ocultos .resumo-visibilidade .olho-risco { display: block; }
+.indicadores > div:nth-child(3) {
+    grid-column: 1 / -1;
+    grid-row: 1;
+    padding: 14px;
+    background: color-mix(in srgb, var(--primaria-suave) 45%, var(--superficie));
+    border-color: color-mix(in srgb, var(--primaria) 25%, var(--borda));
+}
+.indicadores > div:nth-child(3) dd { font-size: clamp(1.5rem, 5vw, 2rem); line-height: 1.15; }
+.indicadores > div:nth-child(3) dd.negativo { color: var(--vermelho); }
+.indicadores > div:nth-child(4) { grid-column: 1 / -1; }
+.resumo-compromisso { margin-top: 16px; }
+.resumo-compromisso .barra-texto { margin: 0 0 8px; font-weight: 700; }
+.resumo-compromisso .barra { height: 10px; margin-bottom: 10px; }
+.resumo-compromisso .compromisso-legenda { margin-bottom: 0; }
+.despesas-acoes-topo { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; }
+.despesa-grupo-topo { cursor: pointer; min-height: 48px; align-items: center; list-style: none; }
+.despesa-grupo-topo::-webkit-details-marker { display: none; }
+.despesa-grupo-topo::after { content: '⌄'; color: var(--texto-secundario); font-size: 1.1rem; }
+.despesa-grupo:not([open]) > .despesa-grupo-topo::after { transform: rotate(-90deg); }
+.despesa-grupo-topo:focus-visible { outline: 2px solid var(--primaria-texto); outline-offset: -3px; }
+.despesa-grupo-topo h3 { flex: 1 1 90px; }
+.despesa-orcamento { display: grid; gap: 5px; padding: 8px 12px 3px; }
+.despesa-orcamento-texto { color: var(--texto-secundario); font-size: .72rem; font-variant-numeric: tabular-nums; }
+.despesa-orcamento-barra { width: 100%; height: 6px; border: 0; border-radius: 99px; overflow: hidden; accent-color: var(--primaria); }
+.despesa-orcamento-barra::-webkit-progress-bar { background: var(--borda); }
+.despesa-orcamento-barra::-webkit-progress-value { background: var(--primaria); }
+.despesa-orcamento-barra::-moz-progress-bar { background: var(--primaria); }
+.acima-do-orcamento .despesa-orcamento-barra { accent-color: var(--vermelho); }
+.acima-do-orcamento .despesa-orcamento-barra::-webkit-progress-value { background: var(--vermelho); }
+.acima-do-orcamento .despesa-orcamento-barra::-moz-progress-bar { background: var(--vermelho); }
+body .despesa, body .receita { padding-block: 4px; }
+.despesa > .editar-despesa, .despesa > .remover-despesa { --acao-fundo: transparent; --acao-icone: var(--texto-secundario); --acao-borda: transparent; }
+@media (min-width: 601px) {
+    .indicadores { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .indicadores > div:nth-child(4) { grid-column: auto; }
+}
+@media (max-width: 420px) {
+    .periodo { grid-template-columns: 44px minmax(0, 1fr) 65px 44px 44px 48px; gap: 3px; }
+    .periodo #mes, .periodo #ano { font-size: .83rem; padding-inline: 3px; }
+    .periodo .btn-icone { width: 44px; min-width: 44px; }
+    .periodo #hoje { grid-column: 6; grid-row: 1; min-height: 44px; padding: 4px; }
+}
+
+@media (max-width: 360px) {
+    .periodo { grid-template-columns: 44px minmax(0, 1fr) 65px 44px 44px; }
+    .periodo #hoje { grid-column: 1 / -1; grid-row: 2; justify-self: end; padding-inline: 12px; }
+}
+
+@media (max-width: 600px) {
+    #secao-despesas { padding-inline: 12px; }
+    #secao-despesas > .bloco-topo { gap: 4px; flex-wrap: wrap; }
+    #secao-despesas .bloco-titulo-retratil { gap: 0; }
+    #secao-despesas h2 { font-size: 1rem; }
+    .despesas-acoes-topo { margin-inline-start: auto; }
+    #adicionar-despesa { padding-inline: 10px; }
+    #secao-entradas { padding-inline: 12px; }
+    body .despesa, body .receita {
+        --nome-lancamento-minimo: 0px;
+        gap: clamp(2px, .8vw, 4px);
+        padding-block: 2px;
+    }
+    .despesa-grupo-itens, #lista-receitas:not(:empty) { padding-inline: 6px; }
+    .despesa .nome-despesa, .receita .nome-receita {
+        display: -webkit-box;
+        -webkit-box-orient: vertical;
+        -webkit-line-clamp: 2;
+        white-space: normal;
+    }
+    .resumo .indicadores { gap: 5px; }
+    .indicadores > div:nth-child(3) { padding: 9px 10px; }
+    .indicadores > div:nth-child(4) { display: flex; align-items: baseline; justify-content: space-between; gap: 6px; }
+    .resumo-compromisso { margin-top: 10px; }
+    .panorama-graficos .legenda-grafico-categorias { grid-template-columns: minmax(0, 1fr) fit-content(40%) auto; }
+    body .panorama-graficos .grafico-categoria-item { row-gap: 3px; padding-block: 5px; }
+    .panorama-graficos .grafico-categoria-medida { display: contents; }
+    .panorama-graficos .grafico-categoria-nome { font-size: .82rem; }
+    .panorama-graficos .grafico-categoria-nome > span:last-child { white-space: normal; overflow-wrap: anywhere; }
+    .panorama-graficos .categoria-trilho { grid-area: 2 / 1 / 3 / -1; height: 6px; }
+    .panorama-graficos .grafico-categoria-valor { grid-area: 1 / 2; font-size: .83rem; font-weight: 700; }
+    .panorama-graficos .grafico-categoria-percentual { grid-area: 1 / 3; font-size: .7rem; }
+}
+
+@media (max-width: 600px) {
+    .despesa-nome, .receita-identificacao { flex-wrap: nowrap; }
+    .despesa-nome .marca, .receita-identificacao .marca { flex: 0 0 auto; padding-inline: 4px; }
+}
+/* INICIO: refinamento compacto rodada 3 */
+/*
+ * Ajuste exclusivo para listas financeiras em telas pequenas.
+ * Preserva a grade, os controles e os estados existentes.
+ */
+@media (max-width: 600px) {
+    #lista-despesas .despesa,
+    #lista-receitas .receita {
+        grid-template-columns:
+            22px minmax(0, 1fr) auto auto 34px 34px;
+        column-gap: 4px;
+        row-gap: 3px;
+        align-items: center;
+        padding-top: 7px;
+        padding-bottom: 7px;
+        min-width: 0;
+    }
+
+    #lista-despesas .despesa-nome,
+    #lista-receitas .receita-identificacao {
+        min-width: 0;
+        max-width: 100%;
+        display: flex;
+        flex-wrap: nowrap;
+        align-items: center;
+        gap: 3px;
+        overflow: hidden;
+    }
+
+    #lista-despesas .nome-despesa,
+    #lista-receitas .nome-receita {
+        min-width: 0;
+        flex: 0 1 auto;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        overflow-wrap: normal;
+        word-break: normal;
+        font-size: 0.83rem;
+    }
+
+    #lista-despesas .marca,
+    #lista-receitas .marca {
+        flex: 0 0 auto;
+        width: auto;
+        max-width: 40px;
+        white-space: nowrap;
+        padding: 2px 4px;
+        font-size: 0.63rem;
+        line-height: 1.2;
+    }
+
+    #lista-despesas .situacao,
+    #lista-receitas .situacao {
+        white-space: nowrap;
+        font-size: 0.64rem;
+    }
+
+    #lista-despesas .valor-despesa,
+    #lista-receitas .valor-receita {
+        white-space: nowrap;
+        font-size: 0.78rem;
+        font-variant-numeric: tabular-nums;
+        letter-spacing: -0.025em;
+    }
+
+    #lista-despesas .despesa button,
+    #lista-receitas .receita button {
+        width: 34px;
+        min-width: 34px;
+        height: 38px;
+        min-height: 38px;
+        padding: 0;
+    }
+}
+
+@media (max-width: 380px) {
+    #lista-despesas .despesa,
+    #lista-receitas .receita {
+        column-gap: 3px;
+        grid-template-columns:
+            22px minmax(0, 1fr) auto auto 32px 32px;
+    }
+
+    #lista-despesas .despesa button,
+    #lista-receitas .receita button {
+        width: 32px;
+        min-width: 32px;
+    }
+
+    #lista-despesas .valor-despesa,
+    #lista-receitas .valor-receita {
+        font-size: 0.72rem;
+    }
+
+    #lista-despesas .situacao,
+    #lista-receitas .situacao {
+        font-size: 0.6rem;
+    }
+}
+/* FIM: refinamento compacto rodada 3 */

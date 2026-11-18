@@ -1221,7 +1221,7 @@ linha.append(
         class: "pago-despesa",
         checked: despesa.pago,
         title: despesa.pago ? "Marcar como a pagar" : "Marcar como paga",
-        "aria-label": "Despesa paga"
+        "aria-label": textoTraduzido("Despesa paga") + ": " + (despesa.nome.trim() || textoTraduzido("Sem nome"))
     }),
 
         criarEl("span", {
@@ -1284,12 +1284,15 @@ function renderDespesas() {
     const despesas = obterMes().despesas;
     const grupos = agruparLancamentosComOrcamento(despesas, estado.categorias, estado.orcamentos)
         .sort((a, b) => a.categoria.localeCompare(b.categoria, LOCALES[idiomaAtual] || "pt-BR"));
-    ui.listaDespesas.replaceChildren(...grupos.map((grupo) => criarEl("section", {
+    const recolhidas = new Set([...ui.listaDespesas.querySelectorAll("details.despesa-grupo:not([open])")].map((el) => el.dataset.categoria));
+    ui.listaDespesas.replaceChildren(...grupos.map((grupo) => criarEl("details", {
+        open: !recolhidas.has(grupo.categoria),
+        dataset: { categoria: grupo.categoria },
         class: "despesa-grupo" + (grupo.excedido ? " acima-do-orcamento" : ""),
         "data-i18n-preserve-aria": "",
         "aria-label": grupo.excedido ? `${grupo.categoria}, ${textoTraduzido("orçamento excedido")}` : grupo.categoria
     }, [
-        criarEl("div", { class: "despesa-grupo-topo" }, [
+        criarEl("summary", { class: "despesa-grupo-topo" }, [
             criarEl("h3", { class: "despesa-grupo-categoria", text: grupo.categoria }),
             criarEl("div", { class: "despesa-grupo-resumo" }, [
                 criarEl("strong", {
@@ -1302,6 +1305,10 @@ function renderDespesas() {
                 })])
             ])
         ]),
+        ...(grupo.limiteCentavos > 0 && !valoresOcultos ? [criarEl("div", { class: "despesa-orcamento" }, [
+            criarEl("span", { class: "despesa-orcamento-texto", text: formatarPercentual(grupo.totalCentavos / grupo.limiteCentavos * 100) + " do limite" }),
+            criarEl("progress", { class: "despesa-orcamento-barra", max: 100, value: Math.min(100, Math.max(0, grupo.totalCentavos / grupo.limiteCentavos * 100)), "aria-label": grupo.categoria + ": " + formatarPercentual(grupo.totalCentavos / grupo.limiteCentavos * 100) + " do limite" })
+        ])] : []),
         criarEl("div", { class: "despesa-grupo-itens" }, [...grupo.despesas]
             .sort((a, b) => a.nome.localeCompare(b.nome, LOCALES[idiomaAtual] || "pt-BR", { sensitivity: "base" }))
             .map(criarLinhaDespesa))
@@ -3719,6 +3726,10 @@ function aplicarVisibilidadeSecoes() {
     document.querySelector(".resumo").hidden = !preferenciasMenu.mostrarResumo;
     $("secao-despesas").hidden = !preferenciasMenu.mostrarDespesas;
     $("secao-entradas").hidden = !preferenciasMenu.mostrarEntradas;
+    const alternativas = document.querySelector(".ferramentas-alternativas");
+    (preferenciasMenu.mostrarResumo ? document.querySelector(".resumo-cabecalho") : alternativas).append(ui.alternarVisibilidadeResumo);
+    if (preferenciasMenu.mostrarDespesas) document.querySelector(".despesas-acoes-topo").prepend(ui.abrirCalculadora);
+    else alternativas.append(ui.abrirCalculadora);
 }
 function abrirSecaoInicial() {
     const telaSolicitada = resolverTelaInicial(preferenciasMenu);
@@ -3784,8 +3795,8 @@ function aplicarPreferenciasMenu() {
     ui.escopoCsv.value = preferenciasMenu.escopoCsv;
     aplicarVisibilidadeSecoes();
     if (preferenciasMenu.posicao === "arrastavel" && Number.isFinite(preferenciasMenu.x) && Number.isFinite(preferenciasMenu.y)) {
-        ui.abrirAjustes.style.left = preferenciasMenu.x + "px";
-        ui.abrirAjustes.style.top = preferenciasMenu.y + "px";
+        ui.abrirAjustes.style.left = `clamp(max(8px, env(safe-area-inset-left)), ${preferenciasMenu.x}px, calc(100% - var(--menu-tamanho) - max(8px, env(safe-area-inset-right))))`;
+        ui.abrirAjustes.style.top = `clamp(max(8px, env(safe-area-inset-top)), ${preferenciasMenu.y}px, calc(100% - var(--menu-tamanho) - max(8px, env(safe-area-inset-bottom))))`;
         ui.abrirAjustes.style.right = "auto";
         ui.abrirAjustes.style.bottom = "auto";
     } else {
@@ -3882,8 +3893,8 @@ ui.abrirAjustes.addEventListener("pointermove", (evento) => {
     const maxY = Math.max(margem, window.innerHeight - botao.offsetHeight - margem);
     const x = Math.min(maxX, Math.max(margem, Number(botao.dataset.posicaoX) + dx));
     const y = Math.min(maxY, Math.max(margem, Number(botao.dataset.posicaoY) + dy));
-    botao.style.left = x + "px";
-    botao.style.top = y + "px";
+    botao.style.left = `clamp(max(8px, env(safe-area-inset-left)), ${x}px, calc(100% - var(--menu-tamanho) - max(8px, env(safe-area-inset-right))))`;
+    botao.style.top = `clamp(max(8px, env(safe-area-inset-top)), ${y}px, calc(100% - var(--menu-tamanho) - max(8px, env(safe-area-inset-bottom))))`;
     botao.style.right = "auto";
     botao.style.bottom = "auto";
     preferenciasMenu.x = x;

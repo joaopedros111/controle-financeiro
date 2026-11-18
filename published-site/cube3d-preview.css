@@ -1,0 +1,171 @@
+/*
+ * Cubo 3D experimental - estilo Ubuntu Compiz.
+ * Duas faces perpendiculares, girando como uma unica estrutura.
+ */
+
+.cubo3d-controle {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    padding: 2px 4px 8px;
+}
+
+.cubo3d-botao {
+    min-height: 36px;
+    padding: 7px 12px;
+    border: 1px solid var(--borda);
+    border-radius: 12px;
+    background: var(--superficie);
+    color: var(--texto);
+    cursor: pointer;
+    font: inherit;
+    font-size: .78rem;
+    font-weight: 700;
+    transition: border-color .2s ease, color .2s ease;
+}
+
+.cubo3d-botao[aria-pressed="true"] {
+    border-color: var(--primaria-texto);
+    color: var(--primaria-texto);
+}
+
+/*
+ * A cena tem uma camera com perspectiva.
+ * As duas imagens ficam em planos perpendiculares.
+ * O par inteiro gira, e nao cada plano isoladamente.
+ */
+
+html[data-cube-direction]::view-transition-group(finance-cube) {
+    animation: none;
+    perspective: 1400px;
+    perspective-origin: 50% 42%;
+    overflow: visible;
+}
+
+html[data-cube-direction]::view-transition-image-pair(finance-cube) {
+    isolation: auto;
+    transform-style: preserve-3d;
+    transform-origin: 50% 50%;
+    animation-duration: 650ms;
+    animation-timing-function: cubic-bezier(.22,.68,.18,1);
+    animation-fill-mode: both;
+}
+
+/* Frente do cubo: mes que estamos deixando. */
+html[data-cube-direction]::view-transition-old(finance-cube) {
+    animation: cubo-face-antiga 650ms ease-in-out both;
+    transform: translateZ(var(--cube3d-depth, 200px));
+    backface-visibility: hidden;
+    transform-style: preserve-3d;
+    box-shadow: 0 0 45px rgba(0,0,0,.23);
+}
+
+/* Face lateral do cubo: mes que estamos abrindo. */
+html[data-cube-direction="next"]::view-transition-new(finance-cube) {
+    animation: cubo-face-nova 650ms ease-in-out both;
+    transform: rotateY(90deg) translateZ(var(--cube3d-depth, 200px));
+    backface-visibility: hidden;
+    transform-style: preserve-3d;
+    box-shadow: 0 0 45px rgba(0,0,0,.23);
+}
+
+html[data-cube-direction="prev"]::view-transition-new(finance-cube) {
+    animation: cubo-face-nova 650ms ease-in-out both;
+    transform: rotateY(-90deg) translateZ(var(--cube3d-depth, 200px));
+    backface-visibility: hidden;
+    transform-style: preserve-3d;
+    box-shadow: 0 0 45px rgba(0,0,0,.23);
+}
+
+html[data-cube-direction="next"]::view-transition-image-pair(finance-cube) {
+    animation-name: cubo-girar-proximo;
+}
+
+html[data-cube-direction="prev"]::view-transition-image-pair(finance-cube) {
+    animation-name: cubo-girar-anterior;
+}
+
+/*
+ * Recuar a estrutura pela metade da largura preserva
+ * o tamanho normal da face frontal no inicio e no fim.
+ */
+@keyframes cubo-girar-proximo {
+    from {
+        transform: translateZ(calc(-1 * var(--cube3d-depth, 200px)))
+                   rotateY(0deg);
+    }
+    to {
+        transform: translateZ(calc(-1 * var(--cube3d-depth, 200px)))
+                   rotateY(-90deg);
+    }
+}
+
+@keyframes cubo-girar-anterior {
+    from {
+        transform: translateZ(calc(-1 * var(--cube3d-depth, 200px)))
+                   rotateY(0deg);
+    }
+    to {
+        transform: translateZ(calc(-1 * var(--cube3d-depth, 200px)))
+                   rotateY(90deg);
+    }
+}
+
+/* Sombreamento gradual, simulando a iluminacao da cena. */
+@keyframes cubo-face-antiga {
+    0% {
+        filter: brightness(1);
+        opacity: 1;
+    }
+    65% {
+        filter: brightness(.76);
+        opacity: 1;
+    }
+    100% {
+        filter: brightness(.65);
+        opacity: 1;
+    }
+}
+
+@keyframes cubo-face-nova {
+    0% {
+        filter: brightness(.65);
+        opacity: 1;
+    }
+    45% {
+        filter: brightness(.82);
+        opacity: 1;
+    }
+    100% {
+        filter: brightness(1);
+        opacity: 1;
+    }
+}
+
+/* Acessibilidade: sem rotacao para movimento reduzido. */
+@media (prefers-reduced-motion: reduce) {
+    html::view-transition-image-pair(finance-cube),
+    html::view-transition-old(finance-cube),
+    html::view-transition-new(finance-cube) {
+        animation-duration: .01ms !important;
+    }
+}
+
+/* Cubo 3D integrado ao menu Opções > Aparência */
+#dialogo-ajustes .cubo3d-controle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 10px;
+    padding: 12px;
+}
+
+#dialogo-ajustes .cubo3d-controle > span {
+    font-weight: 600;
+}
+
+#dialogo-ajustes .cubo3d-botao {
+    flex: 0 0 auto;
+    min-height: 40px;
+}
