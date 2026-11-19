@@ -240,7 +240,9 @@ test("workflow de Pages publica main pelo artefato oficial sem gravar a versão 
     assert.match(workflow, /uses: actions\/configure-pages@v5/);
     assert.match(workflow, /uses: actions\/upload-pages-artifact@v3/);
     assert.match(workflow, /uses: actions\/deploy-pages@v4/);
-    assert.match(workflow, /node scripts\/prepare-pages\.mjs .*GITHUB_RUN_NUMBER/);
+    assert.ok(workflow.includes("sha256sum -c ../release-1.1.20.sha256"));
+    assert.ok(workflow.includes("v.version!=='1.1.20'"));
+    assert.doesNotMatch(workflow, /node scripts\/prepare-pages\.mjs/);
     assert.match(workflow, /Confirm this is still the latest main commit/);
     assert.match(workflow, /steps\.current\.outputs\.is_current == 'true'/);
     assert.doesNotMatch(workflow, /git push|git commit|contents:\s*write/i);

@@ -1,5 +1,5 @@
 // Restores only the last explicitly selected Google owner. Never grants remote authority.
-import { validarBackup, validarTotaisMonetarios } from './finance-core.js?_release=1.1.19';
+import { validarBackup, validarTotaisMonetarios } from './finance-core.js?_release=1.1.20';
 const CONTROL = 'account-access:v1';
 const validUid = uid => typeof uid === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(uid);
 const fail = code => { throw Object.assign(new Error(code === 'offline/invalid-data'

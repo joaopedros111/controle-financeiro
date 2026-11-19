@@ -21,7 +21,7 @@ test('Panorama keeps savings in the summary and readable category bars on mobile
     await expect(page.locator('.grafico-bloco #taxa-economia, #total-grafico-categorias, .panorama-indicadores')).toHaveCount(0);
     await expect(page.locator('.resumo .compromisso-legenda #taxa-economia')).toHaveCount(1);
     await expect(page.locator('#titulo-grafico')).toHaveText('Gastos por categoria');
-    await expect(page.locator('.categoria-trilho').first()).toHaveCSS('height', '14px');
+    await expect(page.locator('.categoria-trilho').first()).toHaveCSS('height', '8px');
     for (const width of [320, 375, 390, 414, 1280]) {
         await page.setViewportSize({ width, height: 896 });
         for (const language of ['pt-BR', 'en', 'es', 'fr', 'de', 'ja']) {
@@ -45,10 +45,24 @@ test('Panorama keeps savings in the summary and readable category bars on mobile
                     }),
                     compactRows: [...document.querySelectorAll('.grafico-categoria-item')].every(row => {
                         const name = row.querySelector('.grafico-categoria-nome').getBoundingClientRect();
-                        const measure = row.querySelector('.grafico-categoria-medida').getBoundingClientRect();
+                        const measure = row.querySelector('.grafico-categoria-valor').getBoundingClientRect();
                         const percent = row.querySelector('.grafico-categoria-percentual').getBoundingClientRect();
                         const bar = row.querySelector('.categoria-trilho').getBoundingClientRect();
-                        return row.getBoundingClientRect().height < 30 && bar.width >= 32
+                        const bounds = row.getBoundingClientRect();
+                        if (innerWidth <= 600) {
+                            const verificacoes = {
+                                altura: bounds.height < 100,
+                                larguraBarra: bar.width >= 28,
+                                alturaBarra: bar.height >= 6,
+                                bordaEsquerda: bar.left >= bounds.left - 1,
+                                bordaDireita: bar.right <= bounds.right + 1,
+                                bordaInferior: bar.bottom <= bounds.bottom + 1,
+                                nomeValor: name.right <= measure.left + 1,
+                                valorPercentual: measure.right <= percent.left + 1
+                            };
+                            return Object.values(verificacoes).every(Boolean);
+                        }
+                        return bounds.height < 30 && bar.width >= 32
                             && name.right <= measure.left && measure.right <= percent.left
                             && Math.abs((name.top + name.bottom) / 2 - (bar.top + bar.bottom) / 2) < 1;
                     }),

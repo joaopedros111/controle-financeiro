@@ -1,6 +1,7 @@
 // Servidor local isolado para ensaio manual da persistência IndexedDB.
 // Não usa a configuração Firebase real, não publica nada e não toca no localStorage de outro domínio.
 import { createServer } from 'node:http';
+import { createHash } from 'node:crypto';
 import { readFile, writeFile, copyFile, cp, mkdtemp, rm, stat } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -27,7 +28,14 @@ const registroServiceWorker = /<script>\s*if \('serviceWorker' in navigator\) \{
 if ([...html.matchAll(registroServiceWorker)].length !== 1) {
     throw new Error('Registro de Service Worker inesperado no HTML; revise o isolamento do QA.');
 }
-await writeFile(htmlPath, html.replace(registroServiceWorker, '<!-- Service Worker desabilitado somente nesta cópia de QA. -->'));
+const qaHtml = html.replace(registroServiceWorker, '<!-- Service Worker desabilitado somente nesta cópia de QA. -->');
+const inlineScripts = [...qaHtml.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi)]
+    .filter(([, attributes]) => !/\bsrc\s*=/i.test(attributes));
+if (inlineScripts.length !== 1) {
+    throw new Error('Quantidade inesperada de scripts inline no QA.');
+}
+const inlineHash = createHash('sha256').update(inlineScripts[0][2], 'utf8').digest('base64');
+await writeFile(htmlPath, qaHtml);
 await cp(path.join(source, 'icons'), path.join(temp, 'icons'), { recursive: true });
 await writeFile(path.join(temp, 'firebase-config.js'),
     'export const firebaseConfig=Object.freeze({}); export const firebaseConfigurado=()=>false;\n');
@@ -42,7 +50,7 @@ const server = createServer(async (req, res) => {
         const data = await readFile(target);
         res.writeHead(200, { 'Content-Type': types[path.extname(target)] || 'application/octet-stream',
             'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff',
-            'Content-Security-Policy': "default-src 'self' data: blob:; script-src 'self' 'sha256-WDBLfzhJodQMke6Z5XuXvBFGtKjSNSWgX+AVFaH0h4E='; worker-src 'none'; connect-src 'self'; object-src 'none'; base-uri 'none'" });
+            'Content-Security-Policy': `default-src 'self' data: blob:; script-src 'self' 'sha256-${inlineHash}'; worker-src 'none'; connect-src 'self'; object-src 'none'; base-uri 'none'` });
         res.end(data);
     } catch { res.writeHead(404).end(); }
 });

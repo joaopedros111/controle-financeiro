@@ -168,7 +168,7 @@ test('month navigation persists its preference without financial writes, notific
  await service.inicializar('local',baseline,{outbox:[{id:'pending'}],conflicts:[{kind:'preserved'}],lastConfirmed:null});
  const before=JSON.stringify([...db.docs]),h=tab(service,baseline,messages),c=h.context;let preferences=0,financialWrites=0;
  const apply=service.aplicarEdicao.bind(service);service.aplicarEdicao=(...args)=>{financialWrites++;return apply(...args);};
- Object.assign(c,{periodo:{ano:2026,mes:10},preferenciasMenu:{referenciaMes:'ultimo'},
+ Object.assign(c,{movimentoPermitido:()=>false,efeitoPermitido:()=>false,periodo:{ano:2026,mes:10},preferenciasMenu:{referenciaMes:'ultimo'},
   chaveMes:(ano,mes)=>ano+'-'+String(mes).padStart(2,'0'),salvarPreferenciasMenu:()=>preferences++,
   renderTema(){},aplicarPrivacidade(){},aplicarPreferenciasVisuais(){},renderPeriodo(){},renderReceitas(){},renderDespesas(){},
   atualizarResumo(persistir){if(persistir)c.salvar();}});
@@ -186,7 +186,7 @@ test('initial rendering after reload is silent and preserves financial state, pe
  await service.inicializar('local',baseline,{outbox:[{id:'pending'}],conflicts:[{kind:'preserved'}],lastConfirmed:'previous'});
  const before=JSON.stringify([...db.docs]),h=tab(service,baseline,messages),c=h.context;let writes=0,renders=0;
  const apply=service.aplicarEdicao.bind(service);service.aplicarEdicao=(...args)=>{writes++;return apply(...args);};
- Object.assign(c,{renderTema(){renders++;},aplicarPrivacidade(){},aplicarPreferenciasVisuais(){},aplicarPreferenciasMenu(){},
+ Object.assign(c,{iniciarCartoes3D(){},renderTema(){renders++;},aplicarPrivacidade(){},aplicarPreferenciasVisuais(){},aplicarPreferenciasMenu(){},
   renderPeriodo(){},renderReceitas(){},renderDespesas(){},atualizarResumo(persistir){if(persistir)c.salvar();}});
  vm.runInContext(app.slice(app.indexOf('function renderTudo('),app.indexOf('let ultimaRemocao =')),c);
  const start=app.indexOf('function prepararInterfaceInicial()'),end=app.indexOf('const telaInicialAplicada =');

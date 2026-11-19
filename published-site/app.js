@@ -1,17 +1,17 @@
-import { migrarFonteDaConta } from './account-local-migration.js?_release=1.1.19';
-import { BarreiraPersistencia } from './update-persistence-barrier.js?_release=1.1.19';
-import { AccountDataPolicy, ACCOUNT_NOTICE_KEY } from './account-data-policy.js?_release=1.1.19';
-import { criarRecuperacaoFinanceira, storage as storagePadrao, capturarDependenciasAplicacao } from "./storage.js?_release=1.1.19";
-import { abrirPersistenciaFinanceira } from "./indexeddb-persistence.js?_release=1.1.19";
-import { ServicoFinanceiroAtomico } from "./financial-atomic-service.js?_release=1.1.19";
-import { CATEGORIAS_PADRAO, CATEGORIA_FIXA, normalizarEstado as normalizarEstadoCore, normalizarValorMonetario, mesFinanceiroValido, validarBackup, validarTotaisMonetarios, migrarDadosLegados, calcularExpressao, somarCentavos, gerarCsv, agruparDespesasPorCategoria, agruparLancamentosComOrcamento, renomearCategoriaOrcamentos, removerCategoriaOrcamentos, criarSerieReceitas, listarReceitasDaSerie, editarReceita, excluirReceita } from "./finance-core.js?_release=1.1.19";
-import { apresentarValorFinanceiro, calcularEspacamentosDensidade, normalizarPreferenciasMenu, resolverTelaInicial } from "./preferences.js?_release=1.1.19";
-import { criarConfirmacaoAtualizacao, criarVerificadorAutomatico, instalarAtualizacao, lerVersaoControlador, lerVersaoInstalada, lerVersaoPublicada, validarVersaoAplicacao, verificarComConfirmacao, lerVersaoAguardando, atualizarComPersistencia, TIMEOUT_INSTALACAO_SERVICE_WORKER_MS, TIMEOUT_FLUXO_ATUALIZACAO_MS } from "./update-manager.js?_release=1.1.19";
-import { aplicarIdioma, formatarMoeda as formatarMoedaLocalizada, LOCALES, textoTraduzido } from "./localization.js?_release=1.1.19";
-import { firebaseConfig, firebaseConfigurado } from "./firebase-config.js?_release=1.1.19";
-import { AutomaticFinanceSync } from "./automatic-finance-sync.js?_release=1.1.19";
-import { financeSettings, captureRejectedLocalEdit } from "./automatic-sync-policy.js?_release=1.1.19";
-import { chaveLocalConta, registrosFinanceiros, combinarRegistros, migrationBackup, operationId, jsonCanonico, recordsEquivalent, coalesceOutbox, flushSyncQueue, createSyncSessionGuard, validateRemoteSettings, mergeRemoteSettings, validRemoteTombstone, reconcileRemoteConflicts, validateRemoteConflicts, snapshotConfirmed, recordEntityKey, inspectRemoteKeys, validConflictRecord, readSyncMetadata, blockedConflictKeys, validSyncIdentity, financialStatesEquivalent, functionalSettings, settingsEquivalent, equivalentConflict, pendingConflictCount } from "./sync-core.js?_release=1.1.19";
+import { migrarFonteDaConta } from './account-local-migration.js?_release=1.1.20';
+import { BarreiraPersistencia } from './update-persistence-barrier.js?_release=1.1.20';
+import { AccountDataPolicy, ACCOUNT_NOTICE_KEY } from './account-data-policy.js?_release=1.1.20';
+import { criarRecuperacaoFinanceira, storage as storagePadrao, capturarDependenciasAplicacao } from "./storage.js?_release=1.1.20";
+import { abrirPersistenciaFinanceira } from "./indexeddb-persistence.js?_release=1.1.20";
+import { ServicoFinanceiroAtomico } from "./financial-atomic-service.js?_release=1.1.20";
+import { CATEGORIAS_PADRAO, CATEGORIA_FIXA, normalizarEstado as normalizarEstadoCore, normalizarValorMonetario, mesFinanceiroValido, validarBackup, validarTotaisMonetarios, migrarDadosLegados, calcularExpressao, somarCentavos, gerarCsv, agruparDespesasPorCategoria, agruparLancamentosComOrcamento, renomearCategoriaOrcamentos, removerCategoriaOrcamentos, criarSerieReceitas, listarReceitasDaSerie, editarReceita, excluirReceita } from "./finance-core.js?_release=1.1.20";
+import { apresentarValorFinanceiro, calcularEspacamentosDensidade, normalizarPreferenciasMenu, resolverTelaInicial } from "./preferences.js?_release=1.1.20";
+import { criarConfirmacaoAtualizacao, criarVerificadorAutomatico, instalarAtualizacao, lerVersaoControlador, lerVersaoInstalada, lerVersaoPublicada, validarVersaoAplicacao, verificarComConfirmacao, lerVersaoAguardando, atualizarComPersistencia, TIMEOUT_INSTALACAO_SERVICE_WORKER_MS, TIMEOUT_FLUXO_ATUALIZACAO_MS } from "./update-manager.js?_release=1.1.20";
+import { aplicarIdioma, formatarMoeda as formatarMoedaLocalizada, LOCALES, textoTraduzido } from "./localization.js?_release=1.1.20";
+import { firebaseConfig, firebaseConfigurado } from "./firebase-config.js?_release=1.1.20";
+import { AutomaticFinanceSync } from "./automatic-finance-sync.js?_release=1.1.20";
+import { financeSettings, captureRejectedLocalEdit } from "./automatic-sync-policy.js?_release=1.1.20";
+import { chaveLocalConta, registrosFinanceiros, combinarRegistros, migrationBackup, operationId, jsonCanonico, recordsEquivalent, coalesceOutbox, flushSyncQueue, createSyncSessionGuard, validateRemoteSettings, mergeRemoteSettings, validRemoteTombstone, reconcileRemoteConflicts, validateRemoteConflicts, snapshotConfirmed, recordEntityKey, inspectRemoteKeys, validConflictRecord, readSyncMetadata, blockedConflictKeys, validSyncIdentity, financialStatesEquivalent, functionalSettings, settingsEquivalent, equivalentConflict, pendingConflictCount } from "./sync-core.js?_release=1.1.20";
 
 const barreiraPersistencia = new BarreiraPersistencia();
 let tentativaAtualizacao = null;
@@ -3910,9 +3910,15 @@ function aplicarVisibilidadeSecoes() {
     $("secao-despesas").hidden = !preferenciasMenu.mostrarDespesas;
     $("secao-entradas").hidden = !preferenciasMenu.mostrarEntradas;
     const alternativas = document.querySelector(".ferramentas-alternativas");
-    (preferenciasMenu.mostrarResumo ? document.querySelector(".resumo-cabecalho") : alternativas).append(ui.alternarVisibilidadeResumo);
-    if (preferenciasMenu.mostrarDespesas) document.querySelector(".despesas-acoes-topo").prepend(ui.abrirCalculadora);
-    else alternativas.append(ui.abrirCalculadora);
+    const destinoFerramentas = preferenciasMenu.mostrarResumo
+        ? document.querySelector(".resumo-cabecalho .resumo-acoes")
+        : alternativas;
+
+    destinoFerramentas.append(
+        ui.abrirCalculadora,
+        ui.abrirCalendarioResumo.parentElement,
+        ui.alternarVisibilidadeResumo
+    );
 }
 function abrirSecaoInicial() {
     const telaSolicitada = resolverTelaInicial(preferenciasMenu);

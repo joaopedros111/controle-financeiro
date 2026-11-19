@@ -19,7 +19,7 @@ class Element {
 function setup(language = 'pt-BR') {
     const nodes = new Map();
     const context = vm.createContext({
-        Intl, Date, LOCALES, idiomaAtual: language, valoresOcultos: false,
+        Intl, Date, LOCALES, animacaoMesAtiva: false, efeitoPermitido: () => false, idiomaAtual: language, valoresOcultos: false,
         periodo: { ano: 2026, mes: 1 }, estado: { meses: {} }, numero: Number,
         chaveMes: (year, month) => `${year}-${String(month).padStart(2, '0')}`,
         somarCentavos, agruparDespesasPorCategoria,

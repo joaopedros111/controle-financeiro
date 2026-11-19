@@ -2674,3 +2674,60 @@ body .despesa, body .receita { padding-block: 4px; }
 @keyframes revelar-categorias { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
 .economia-saldo { display: block; margin-top: 6px; color: var(--texto-secundario); font-size: .75rem; }
 @media (prefers-reduced-motion: reduce) { .categorias-retratil[open] .panorama-graficos { animation: none; } .categorias-retratil > summary::after { transition: none; } }
+
+/* 1.1.20: ferramentas da Visao geral e abertura nativa do calendario no iOS PWA. */
+.resumo-cabecalho .resumo-acoes-1120 {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-left: auto;
+    flex: 0 0 auto;
+}
+.resumo-acoes-1120 .resumo-calendario-container {
+    position: relative;
+    display: inline-flex;
+    width: 44px;
+    height: 44px;
+    flex: 0 0 44px;
+}
+.resumo-acoes-1120 .resumo-calendario-container > .resumo-calendario {
+    width: 44px;
+    min-width: 44px;
+    height: 44px;
+    min-height: 44px;
+    margin: 0;
+}
+.resumo-acoes-1120 .resumo-calendario-container > .resumo-seletor-data {
+    position: absolute;
+    inset: 0;
+    top: 0;
+    left: 0;
+    right: auto;
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    min-height: 44px;
+    padding: 0;
+    border: 0;
+    opacity: 0;
+    z-index: 3;
+    pointer-events: none;
+}
+@media (hover: none) and (pointer: coarse) {
+    .resumo-acoes-1120 .resumo-calendario-container > .resumo-seletor-data {
+        opacity: .01;
+        pointer-events: auto;
+        -webkit-appearance: auto;
+        appearance: auto;
+    }
+}
+.resumo-acoes-1120 .resumo-calculadora,
+.resumo-acoes-1120 .resumo-visibilidade {
+    margin: 0;
+    width: 44px;
+    min-width: 44px;
+    height: 44px;
+    min-height: 44px;
+}
+.grafico-categorias > .resumo-compromisso { margin: 8px 0 14px; }
+.grafico-categorias > .resumo-compromisso .compromisso-legenda { flex-wrap: wrap; }
