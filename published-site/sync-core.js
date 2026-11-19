@@ -1,4 +1,4 @@
-import { mesFinanceiroValido, validarBackup } from "./finance-core.js?_release=1.1.20";
+import { mesFinanceiroValido, validarBackup } from "./finance-core.js?_release=1.1.21";
 
 // Only complete, server-sourced snapshots without local writes can settle a queue.
 export const snapshotConfirmed = (metadata) => metadata?.fromCache === false && metadata?.hasPendingWrites === false;

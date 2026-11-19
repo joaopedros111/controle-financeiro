@@ -1,5 +1,5 @@
 // Camada de integração transacional opt-in; não apaga a fonte legada.
-import { abrirPersistenciaFinanceira } from './indexeddb-persistence.js?_release=1.1.20';
+import { abrirPersistenciaFinanceira } from './indexeddb-persistence.js?_release=1.1.21';
 
 export class ConflitoPersistencia extends Error {
     constructor(message = 'Estado alterado por outra aba; revisão necessária') {

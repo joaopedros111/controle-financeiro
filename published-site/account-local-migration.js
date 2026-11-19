@@ -1,5 +1,5 @@
-import { normalizarEstado, validarBackup, validarTotaisMonetarios } from './finance-core.js?_release=1.1.20';
-import { registrosFinanceiros, combinarRegistros, inspectRemoteKeys, validConflictRecord } from './sync-core.js?_release=1.1.20';
+import { normalizarEstado, validarBackup, validarTotaisMonetarios } from './finance-core.js?_release=1.1.21';
+import { registrosFinanceiros, combinarRegistros, inspectRemoteKeys, validConflictRecord } from './sync-core.js?_release=1.1.21';
 
 export function analisarMigracaoLocal(estadoLocal, registrosRemotos = [], filaLocal = null) {
     if (filaLocal === null || filaLocal === undefined) {
@@ -90,9 +90,9 @@ export function analisarMigracaoLocal(estadoLocal, registrosRemotos = [], filaLo
 
 // Discovery and review ONLY. Raw originals remain in their original durable stores.
 // A preview is not a backup, consent to import, or a migration completion receipt.
-import { migrarDadosLegados, normalizarValorMonetario } from './finance-core.js?_release=1.1.20';
-import { ANONYMOUS_KEYS, LEGACY_STORAGE_KEYS } from './account-data-policy.js?_release=1.1.20';
-import { chaveLocalConta, readSyncMetadata, validSyncIdentity, recordEntityKey, snapshotConfirmed, validateRemoteSettings, validateRemoteConflicts, jsonCanonico, operationId, settingsEquivalent } from './sync-core.js?_release=1.1.20';
+import { migrarDadosLegados, normalizarValorMonetario } from './finance-core.js?_release=1.1.21';
+import { ANONYMOUS_KEYS, LEGACY_STORAGE_KEYS } from './account-data-policy.js?_release=1.1.21';
+import { chaveLocalConta, readSyncMetadata, validSyncIdentity, recordEntityKey, snapshotConfirmed, validateRemoteSettings, validateRemoteConflicts, jsonCanonico, operationId, settingsEquivalent } from './sync-core.js?_release=1.1.21';
 
 const failure = (code, message) => Object.assign(new Error(message), { code });
 const ordinary = x => x !== null && typeof x === 'object' && !Array.isArray(x);
@@ -278,9 +278,9 @@ export async function revisarFontesAnonimas({ db, storage, uid, isCurrent, snaps
 export function importarFontesAnonimas() {
     throw failure('migration/import-blocked', 'Importação bloqueada: faltam contrato atômico de origem, mapeamento de filas/exclusões e recuperação durável homologada. Nenhuma fonte foi modificada.');
 }
-import { makeOperation, recordsEquivalent } from './sync-core.js?_release=1.1.20';
-import { financeSettings } from './automatic-sync-policy.js?_release=1.1.20';
-import { pendingFinancialData } from './account-data-policy.js?_release=1.1.20';
+import { makeOperation, recordsEquivalent } from './sync-core.js?_release=1.1.21';
+import { financeSettings } from './automatic-sync-policy.js?_release=1.1.21';
+import { pendingFinancialData } from './account-data-policy.js?_release=1.1.21';
 
 // An immutable reviewed plan is private until explicit consent produces a durable journal.
 const reviewedImports = new WeakMap();

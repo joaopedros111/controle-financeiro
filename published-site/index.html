@@ -2,7 +2,7 @@
 <html lang="pt-BR" class="app-inicializando">
 <head>
     <meta charset="UTF-8">
-    <meta name="app-version" content="1.1.20">
+    <meta name="app-version" content="1.1.21">
 
     <!-- Mobile: escala correta + respeito às áreas seguras do iPhone/Android -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
@@ -12,10 +12,10 @@
     <meta name="description" content="Controle suas entradas e despesas por mês, categorias, pagamentos e parcelas.">
     <title>Controle Financeiro</title>
 
-    <link rel="manifest" href="manifest.json?_release=1.1.20">
+    <link rel="manifest" href="manifest.json?_release=1.1.21">
 
-    <link rel="icon" href="icons/icon-192.png?_release=1.1.20">
-    <link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon.png?_release=1.1.20">
+    <link rel="icon" href="icons/icon-192.png?_release=1.1.21">
+    <link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon.png?_release=1.1.21">
 
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
@@ -44,9 +44,9 @@
         } catch { /* As preferências são opcionais e nunca bloqueiam o carregamento. */ }
     </script>
 
-    <link rel="stylesheet" href="style.css?_release=1.1.20">
-    <link rel="stylesheet" href="controls.css?_release=1.1.20">
-    <link rel="stylesheet" href="cube3d-preview.css?_release=1.1.20">
+    <link rel="stylesheet" href="style.css?_release=1.1.21">
+    <link rel="stylesheet" href="controls.css?_release=1.1.21">
+    <link rel="stylesheet" href="cube3d-preview.css?_release=1.1.21">
 </head>
 
 
@@ -145,10 +145,10 @@
 
 <section class="bloco grafico-bloco" aria-labelledby="titulo-grafico">
     <details class="categorias-retratil" open>
-    <summary id="titulo-grafico">Gastos por categoria</summary>
+    <summary id="titulo-grafico"><span>Detalhamento de gastos</span><span class="bloco-retrair visao-geral-retrair" aria-hidden="true"><svg class="bloco-seta" viewBox="0 0 24 24" focusable="false"><path d="m7 10 5 5 5-5"/></svg></span></summary>
     <div class="panorama-graficos">
-        <section class="grafico-categorias" aria-labelledby="titulo-grafico-categorias">
-        <div class="grafico-categorias-topo">
+        <section class="grafico-categorias" aria-labelledby="titulo-grafico">
+        <div class="grafico-categorias-topo" hidden>
             <h3 id="titulo-grafico-categorias">Gastos do mês</h3>
             <span id="periodo-grafico-categorias" class="grafico-periodo"></span>
         </div>
@@ -631,7 +631,7 @@
 
     <div id="aviso" class="aviso" role="status" aria-live="polite"></div>
 
-<script type="module" src="app.js?_release=1.1.20"></script>
+<script type="module" src="app.js?_release=1.1.21"></script>
 <script>
     if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
@@ -639,6 +639,6 @@
         });
     }
 </script>
-    <script src="cube3d-preview.js?_release=1.1.20" defer></script>
+    <script src="cube3d-preview.js?_release=1.1.21" defer></script>
 </body>
 </html>
